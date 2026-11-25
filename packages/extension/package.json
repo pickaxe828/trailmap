@@ -18,7 +18,9 @@
     "@noble/hashes": "2.4.0",
     "@stylexjs/stylex": "0.19.1",
     "@trailmap/shared": "workspace:*",
+    "@xyflow/react": "12.12.1",
     "dexie": "4.4.7",
+    "elkjs": "0.12.1",
     "react": "19.2.9",
     "react-dom": "19.2.9",
     "zod": "4.6.7"
