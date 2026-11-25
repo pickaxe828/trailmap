@@ -45,9 +45,9 @@ describe('database', () => {
     expect(inExp1.map((v) => v.id)).toEqual(['visit-1']);
   });
 
-  test('has tables for domain entities, durable jobs and model dispatches', () => {
+  test('has tables for domain entities, durable jobs, model dispatches and the correction log', () => {
     expect(db.tables.map((t) => t.name).sort()).toEqual([
-      'concepts', 'edges', 'expeditions', 'highlights', 'jobs', 'notes', 'pages', 'queries', 'queueHolds', 'sentToModel', 'threads', 'visits',
+      'concepts', 'corrections', 'edges', 'expeditions', 'highlights', 'jobs', 'notes', 'pages', 'queries', 'queueHolds', 'sentToModel', 'threads', 'visits',
     ]);
   });
 });

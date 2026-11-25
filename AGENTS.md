@@ -47,6 +47,13 @@ Before you finish a ticket run all of: `bun run typecheck && bun run test && bun
 - Later tickets extend the recorder rather than adding their own navigation listeners: `recorder.subscribe(listener)` reports every Visit created or updated, `recorder.getCurrentVisit(tabId)` says what a tab is showing, and the `shouldRecord(url)` option is where privacy filters plug in.
 - Anything that must survive a service-worker restart goes in `RecorderState` (saved after every event).
 
+## Corrections and Forget
+
+`packages/extension/src/corrections/` holds the side panel's one-click fixes (star, note, split, move, merge, rename, ignore site, forget).
+
+- `createCorrections` (`corrections.ts`, `forget.ts`) works on Dexie only. Each correction is one transaction that also writes a `corrections` log row with before/after state. `service.ts` routes side panel messages in the service worker; ignore-site goes through the privacy controller's `setSiteSkipped`, and forgets go through `recorder.forgetVisits` so an open tab can't write the forgotten Visit back.
+- **New derived data must join the Forget cascade** (`forgetCascade` in `forget.ts`) and carry `targetIds` in any correction-log entry that mentions it. The cascade test scans every table for the forgotten text, so a missed table fails there.
+
 ## Extension identity
 
 The manifest `key` pins the extension ID, so it is the same on every machine and every build:
