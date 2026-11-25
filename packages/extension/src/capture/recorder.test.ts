@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import type { Visit } from '@trailmap/shared';
+import type { Transition, Visit } from '@trailmap/shared';
 import { openTrailmapDb, type TrailmapDb } from '../db/db';
+import { canonicalizeUrl } from './canonical';
 import { VisitRecorder, type VisitChange } from './recorder';
 import type { NavTransitionQualifier, NavTransitionType } from './events';
 import { MemoryStateStore } from './state-store';
@@ -16,9 +17,10 @@ let clock: FakeClock;
 let store: MemoryStateStore;
 let recorder: VisitRecorder;
 
+let nextId = 0; // shared across restarts, like the random ids in production
+
 function createRecorder() {
-  let n = 0;
-  const r = new VisitRecorder({ db, source: browser, store, now: clock.now, newId: () => `v${++n}` });
+  const r = new VisitRecorder({ db, source: browser, store, now: clock.now, newId: () => `v${++nextId}` });
   r.start();
   return r;
 }
@@ -29,6 +31,7 @@ async function visits(): Promise<Visit[]> {
 const byUrl = async (url: string) => (await visits()).find((v) => v.url === url);
 
 beforeEach(async () => {
+  nextId = 0;
   db = openTrailmapDb(`trailmap-test-${crypto.randomUUID()}`);
   browser = new FakeBrowser();
   clock = new FakeClock();
@@ -58,7 +61,7 @@ describe('navigation lineage', () => {
 });
 
 describe('transitions', () => {
-  const cases: [string, NavTransitionType, NavTransitionQualifier[], string][] = [
+  const cases: [string, NavTransitionType, NavTransitionQualifier[], Transition][] = [
     ['typed', 'typed', [], 'typed'],
     ['an omnibox search or keyword', 'generated', [], 'typed'],
     ['a form submission', 'form_submit', [], 'form'],
@@ -208,5 +211,197 @@ describe('what counts as a Visit', () => {
     await browser.commit(TAB, `${LEARN}/private/inbox`, { transitionType: 'typed' });
     await browser.commit(TAB, `${LEARN}/public`, { transitionType: 'typed' });
     expect((await visits()).map((v) => v.url)).toEqual([`${LEARN}/public`]);
+  });
+});
+
+describe('active time', () => {
+  /** Window 1 focused, tab 1 active in it, user not idle. */
+  async function startFocusedOnTab1() {
+    browser.snapshotValue = { activeTabByWindow: { [WINDOW]: 1 }, focusedWindowId: WINDOW, idleState: 'active' };
+    recorder = createRecorder();
+    await recorder.ready;
+  }
+  const activeMs = async (url: string) => (await byUrl(url))?.activeMs;
+
+  beforeEach(startFocusedOnTab1);
+
+  test('counts the time a page is the one the user is looking at', async () => {
+    await browser.commit(1, `${LEARN}/a.html`, { transitionType: 'typed' });
+    clock.advance(5_000);
+    await browser.commit(1, `${LEARN}/b.html`);
+    clock.advance(2_000);
+    await browser.tick();
+    expect(await activeMs(`${LEARN}/a.html`)).toBe(5_000);
+    expect(await activeMs(`${LEARN}/b.html`)).toBe(2_000);
+  });
+
+  test('stops counting when the tab is no longer active, and resumes when it is again', async () => {
+    await browser.commit(1, `${LEARN}/a.html`, { transitionType: 'typed' });
+    clock.advance(2_000);
+    await browser.activateTab(2, WINDOW);
+    clock.advance(10_000);
+    await browser.activateTab(1, WINDOW);
+    clock.advance(1_000);
+    await browser.tick();
+    expect(await activeMs(`${LEARN}/a.html`)).toBe(3_000);
+  });
+
+  test('a page opened in a background tab only counts once its tab is activated', async () => {
+    await browser.commit(1, `${LEARN}/a.html`, { transitionType: 'typed' });
+    await browser.openInNewTab(1, 2, `${LEARN}/b.html`);
+    await browser.commit(2, `${LEARN}/b.html`);
+    clock.advance(4_000);
+    await browser.activateTab(2, WINDOW);
+    clock.advance(1_000);
+    await browser.tick();
+    expect(await activeMs(`${LEARN}/a.html`)).toBe(4_000);
+    expect(await activeMs(`${LEARN}/b.html`)).toBe(1_000);
+  });
+
+  test('stops counting when the browser window loses focus', async () => {
+    await browser.commit(1, `${LEARN}/a.html`, { transitionType: 'typed' });
+    clock.advance(2_000);
+    await browser.blurBrowser();
+    clock.advance(60_000);
+    await browser.focusWindow(WINDOW);
+    clock.advance(1_000);
+    await browser.tick();
+    expect(await activeMs(`${LEARN}/a.html`)).toBe(3_000);
+  });
+
+  test('does not count a tab that is active in a window other than the focused one', async () => {
+    await browser.activateTab(9, 2); // a second window whose active tab is 9
+    await browser.commit(1, `${LEARN}/a.html`, { transitionType: 'typed' });
+    await browser.focusWindow(2);
+    clock.advance(5_000);
+    await browser.tick();
+    expect(await activeMs(`${LEARN}/a.html`)).toBe(0);
+  });
+
+  test.each(['idle', 'locked'] as const)('stops counting while the user is %s', async (state) => {
+    await browser.commit(1, `${LEARN}/a.html`, { transitionType: 'typed' });
+    clock.advance(2_000);
+    await browser.setIdle(state);
+    clock.advance(60_000);
+    await browser.setIdle('active');
+    clock.advance(1_000);
+    await browser.tick();
+    expect(await activeMs(`${LEARN}/a.html`)).toBe(3_000);
+  });
+
+  test('stops counting while the page reports itself hidden', async () => {
+    await browser.commit(1, `${LEARN}/a.html`, { transitionType: 'typed' });
+    clock.advance(2_000);
+    await browser.setPageVisible(1, false);
+    clock.advance(60_000);
+    await browser.setPageVisible(1, true);
+    clock.advance(1_000);
+    await browser.tick();
+    expect(await activeMs(`${LEARN}/a.html`)).toBe(3_000);
+  });
+
+  test('closing a tab settles its time and removes it from the trail', async () => {
+    await browser.commit(1, `${LEARN}/a.html`, { transitionType: 'typed' });
+    clock.advance(3_000);
+    await browser.closeTab(1);
+    expect(await activeMs(`${LEARN}/a.html`)).toBe(3_000);
+    expect(recorder.getCurrentVisit(1)).toBeUndefined();
+  });
+
+  test('closing the focused window stops counting', async () => {
+    await browser.commit(1, `${LEARN}/a.html`, { transitionType: 'typed' });
+    clock.advance(1_000);
+    await browser.closeWindow(WINDOW);
+    clock.advance(30_000);
+    await browser.tick();
+    expect(await activeMs(`${LEARN}/a.html`)).toBe(1_000);
+  });
+
+  test('listeners hear about every change to a Visit', async () => {
+    const changes: VisitChange[] = [];
+    recorder.subscribe((c) => changes.push(c));
+    await browser.commit(1, `${LEARN}/a.html`, { transitionType: 'typed' });
+    clock.advance(1_000);
+    await browser.tick();
+    expect(changes.map((c) => c.type)).toEqual(['created', 'updated']);
+    expect(changes[1]?.visit.activeMs).toBe(1_000);
+  });
+
+  test('a title reported for the current page is stored; a stale one is ignored', async () => {
+    await browser.commit(1, `${LEARN}/a.html`, { transitionType: 'typed' });
+    await browser.setTitle(1, `${LEARN}/a.html`, 'Page A');
+    await browser.setTitle(1, `${LEARN}/old.html`, 'Stale');
+    expect((await byUrl(`${LEARN}/a.html`))?.title).toBe('Page A');
+  });
+});
+
+describe('service worker restarts', () => {
+  /** The service worker dies and a new one starts: new recorder, same storage. */
+  async function restartServiceWorker() {
+    recorder = createRecorder();
+    await recorder.ready;
+  }
+
+  beforeEach(async () => {
+    browser.snapshotValue = { activeTabByWindow: { [WINDOW]: 1 }, focusedWindowId: WINDOW, idleState: 'active' };
+    recorder = createRecorder();
+    await recorder.ready;
+  });
+
+  test('the tab to current-Visit mapping survives, so the next link still has its parent', async () => {
+    await browser.commit(1, `${LEARN}/a.html`, { transitionType: 'typed' });
+    await restartServiceWorker();
+    expect(recorder.getCurrentVisit(1)?.url).toBe(`${LEARN}/a.html`);
+    await browser.commit(1, `${LEARN}/b.html`);
+    const [a, b] = await visits();
+    expect(b?.parentVisitId).toBe(a?.id ?? 'missing');
+  });
+
+  test('a link opened in a new tab just before the restart still branches from its source', async () => {
+    await browser.commit(1, `${LEARN}/a.html`, { transitionType: 'typed' });
+    await browser.openInNewTab(1, 2, `${LEARN}/b.html`);
+    await restartServiceWorker();
+    await browser.commit(2, `${LEARN}/b.html`);
+    const [a, b] = await visits();
+    expect(b).toMatchObject({ transition: 'new-tab', parentVisitId: a?.id });
+  });
+
+  test('active time carries on across the restart without losing or inventing time', async () => {
+    await browser.commit(1, `${LEARN}/a.html`, { transitionType: 'typed' });
+    clock.advance(3_000);
+    await browser.tick();
+    clock.advance(2_000); // the worker is asleep; the tab stays active, window focused, user present
+    await restartServiceWorker();
+    clock.advance(1_000);
+    await browser.tick();
+    expect((await byUrl(`${LEARN}/a.html`))?.activeMs).toBe(6_000);
+  });
+
+  test('focus lost before the restart is still known after it', async () => {
+    await browser.commit(1, `${LEARN}/a.html`, { transitionType: 'typed' });
+    await browser.blurBrowser();
+    await restartServiceWorker();
+    clock.advance(30_000);
+    await browser.tick();
+    expect((await byUrl(`${LEARN}/a.html`))?.activeMs).toBe(0);
+  });
+
+  test('restarting the browser forgets old tab ids and counts no time for the gap', async () => {
+    await browser.commit(1, `${LEARN}/a.html`, { transitionType: 'typed' });
+    clock.advance(3_600_000); // the browser was closed for an hour
+    await browser.startBrowser();
+    await browser.commit(1, `${LEARN}/b.html`, { transitionType: 'link' });
+    const [a, b] = await visits();
+    expect(a?.activeMs).toBe(0);
+    expect(b?.parentVisitId).toBeNull();
+  });
+});
+
+describe('canonicalizeUrl', () => {
+  test('drops the fragment and tracking parameters but keeps real ones', () => {
+    expect(canonicalizeUrl('http://learn.test/a?id=3&utm_source=x&fbclid=1#top')).toBe('http://learn.test/a?id=3');
+  });
+  test('returns something unparseable unchanged', () => {
+    expect(canonicalizeUrl('not a url')).toBe('not a url');
   });
 });
