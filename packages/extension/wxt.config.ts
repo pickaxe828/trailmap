@@ -43,5 +43,11 @@ export default defineConfig({
       extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'",
     },
     action: { default_title: 'Open Trailmap' },
+    commands: {
+      'toggle-recording': {
+        suggested_key: { default: 'Alt+Shift+P' },
+        description: 'Pause or resume Trailmap recording',
+      },
+    },
   },
 });

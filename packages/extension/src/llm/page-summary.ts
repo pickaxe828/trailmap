@@ -13,7 +13,7 @@ export const PageSummaryReply = z.discriminatedUnion('ok', [
   z.object({ ok: z.literal(true), title: z.string(), summary: PageSummary }),
   z.object({
     ok: z.literal(false),
-    code: ErrorCode.or(z.enum(['no_text', 'not_connected', 'timeout'])),
+    code: ErrorCode.or(z.enum(['no_text', 'privacy_filtered', 'not_connected', 'timeout'])),
     message: z.string(),
   }),
 ]);

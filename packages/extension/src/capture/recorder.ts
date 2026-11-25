@@ -1,6 +1,7 @@
 import type { Transition, Visit } from '@trailmap/shared';
 import type { TrailmapDb } from '../db/db';
 import { canonicalizeUrl } from './canonical';
+import { scoreEngagement } from './engagement';
 import { WINDOW_ID_NONE, type BrowserEventHandlers, type BrowserEventSource, type NavigationEvent, type PageContentEvent } from './events';
 import type { PageContentReply } from './page-messages';
 import { newPage } from './pages';
@@ -42,12 +43,24 @@ export type VisitRecorderOptions = {
   now: () => number;
   newId: () => string;
   canonicalize?: typeof canonicalizeUrl;
-  /**
-   * Decides whether a URL becomes a Visit. The default accepts http(s) pages
-   * only; the privacy filters (ticket 08) pass a stricter one.
-   */
+  /** URL policy; production waits for persisted settings before using it. */
   shouldRecord?: (url: string) => boolean;
+  policyReady?: Promise<void>;
+  /** Wait for the active top-level content script to screen the document. */
+  screenDocuments?: boolean;
+  onPasswordStatusChanged?: (tabId: number) => void;
 };
+
+type PendingVisit = {
+  event: Pick<NavigationEvent, 'tabId' | 'url' | 'documentId'>;
+  transition: Transition;
+  parentVisitId: string | null;
+  startedAt: number;
+  activeMs: number;
+  title: string;
+};
+
+const sameUrl = (left: string, right: string) => left.split('#')[0] === right.split('#')[0];
 
 /**
  * Turns browser events into Visits (docs/PLAN.md §4.1).
@@ -62,6 +75,8 @@ export class VisitRecorder {
 
   private state: RecorderState = emptyRecorderState();
   private current = new Map<number, Visit>();
+  // Unscreened URLs (which can be private) never go into session storage or IndexedDB.
+  private pending = new Map<number, PendingVisit>();
   private queue: Promise<void> = Promise.resolve();
   private listeners = new Set<(change: VisitChange) => void>();
   private readonly canonicalize: typeof canonicalizeUrl;
@@ -82,6 +97,24 @@ export class VisitRecorder {
     return visit && { ...visit };
   }
 
+  isPasswordProtected(tabId: number): boolean {
+    return this.state.passwordTabs?.includes(tabId) ?? false;
+  }
+
+  /** Apply a settings edit in order with navigations and content messages. */
+  changeRecordingPolicy(update: () => Promise<void>): Promise<void> {
+    return this.enqueue(async () => {
+      await update();
+      for (const [tabId, visit] of this.current) {
+        if (!this.isRecordable(visit.url) || !this.isRecordable(visit.canonicalUrl)) this.endTrail(tabId);
+      }
+      for (const [tabId, pending] of this.pending) {
+        if (!this.isRecordable(pending.event.url)) this.endTrail(tabId);
+      }
+      this.state.pendingNewTabParent = {};
+    });
+  }
+
   subscribe(listener: (change: VisitChange) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
@@ -89,14 +122,18 @@ export class VisitRecorder {
 
   /** Loads persisted state (a restarted service worker) or, with none, starts from what the browser looks like now. */
   private async restore() {
+    await this.options.policyReady;
     const saved = await this.options.store.load();
     if (!saved) return this.reset();
     this.state = saved;
     this.current.clear();
     for (const [tabId, visitId] of Object.entries(saved.currentVisitByTab)) {
       const visit = await this.options.db.visits.get(visitId);
-      if (visit) this.current.set(Number(tabId), visit);
-      else delete this.state.currentVisitByTab[Number(tabId)];
+      if (visit && !visit.privacyBlocked && this.isRecordable(visit.url) && this.isRecordable(visit.canonicalUrl)) {
+        this.current.set(Number(tabId), visit);
+      } else {
+        this.endTrail(Number(tabId));
+      }
     }
   }
 
@@ -111,6 +148,7 @@ export class VisitRecorder {
       lastSettledAt: this.options.now(),
     };
     this.current.clear();
+    this.pending.clear();
   }
 
   /**
@@ -145,10 +183,18 @@ export class VisitRecorder {
     this.state.lastSettledAt = now;
     if (last === null || now <= last) return;
     const tabId = this.accruingTabId();
-    const visit = tabId === undefined ? undefined : this.current.get(tabId);
-    if (!visit) return;
-    visit.activeMs += now - last;
-    await this.options.db.visits.update(visit.id, { activeMs: visit.activeMs });
+    if (tabId === undefined) return;
+    const visit = this.current.get(tabId);
+    if (visit) await this.updateEngagement(visit, { activeMs: visit.activeMs + now - last });
+    const pending = this.pending.get(tabId);
+    if (pending) pending.activeMs += now - last;
+  }
+
+  private async updateEngagement(visit: Visit, changes: Partial<Pick<Visit, 'activeMs' | 'scrollDepth'>>, interacted = false) {
+    const engagement = scoreEngagement(changes.activeMs ?? visit.activeMs, changes.scrollDepth ?? visit.scrollDepth,
+      interacted || visit.engagement === 'read');
+    await this.options.db.visits.update(visit.id, { ...changes, engagement });
+    Object.assign(visit, changes, { engagement });
     this.emit({ type: 'updated', visit: { ...visit } });
   }
 
@@ -183,25 +229,43 @@ export class VisitRecorder {
 
   /** The tab no longer shows a recorded page, so the next navigation has no parent. */
   private endTrail(tabId: number) {
+    this.pending.delete(tabId);
     this.current.delete(tabId);
     delete this.state.currentVisitByTab[tabId];
     delete this.state.documentIdsByTab?.[tabId];
   }
 
-  private async createVisit(event: Pick<NavigationEvent, 'tabId' | 'url' | 'documentId'>, transition: Transition, parentVisitId: string | null) {
+  private setPasswordStatus(tabId: number, blocked: boolean) {
+    if (this.isPasswordProtected(tabId) === blocked) return;
+    const tabs = this.state.passwordTabs ??= [];
+    if (blocked) tabs.push(tabId);
+    else this.state.passwordTabs = tabs.filter((id) => id !== tabId);
+    this.options.onPasswordStatusChanged?.(tabId);
+  }
+
+  private async beginVisit(event: NavigationEvent, transition: Transition, parentVisitId: string | null) {
+    this.endTrail(event.tabId);
+    this.setPasswordStatus(event.tabId, false);
+    if (!this.isRecordable(event.url)) return;
+    const pending = { event, transition, parentVisitId, startedAt: this.options.now(), activeMs: 0, title: '' };
+    if (this.options.screenDocuments) this.pending.set(event.tabId, pending);
+    else await this.createVisit(pending);
+  }
+
+  private async createVisit({ event, transition, parentVisitId, startedAt, activeMs, title }: PendingVisit) {
     const search = parseSearchQuery(event.url);
     const visit: Visit = {
       id: this.options.newId(),
       url: event.url,
       canonicalUrl: this.canonicalize(event.url),
-      title: '',
+      title,
       tabId: event.tabId,
       parentVisitId: search ? null : parentVisitId,
       transition: search ? 'search' : transition,
-      startedAt: this.options.now(),
-      activeMs: 0,
+      startedAt,
+      activeMs,
       scrollDepth: 0,
-      engagement: 'bounced',
+      engagement: scoreEngagement(activeMs, 0),
       expeditionId: null,
       segmentationPending: 1,
     };
@@ -228,37 +292,62 @@ export class VisitRecorder {
       delete this.state.documentIdsByTab?.[event.tabId];
     }
     this.emit({ type: 'created', visit: { ...visit } });
+    return visit;
   }
 
   private async capturePageContent({ tabId, documentId, url, content }: PageContentEvent): Promise<PageContentReply | undefined> {
-    const visit = this.current.get(tabId);
-    if (!visit || this.state.documentIdsByTab?.[tabId] !== documentId || visit.url.split('#')[0] !== url.split('#')[0]) return;
-
+    if (!this.isRecordable(url)) return;
+    const current = this.current.get(tabId);
+    const visit = current && this.state.documentIdsByTab?.[tabId] === documentId && sameUrl(current.url, url) ? current : undefined;
     const { db } = this.options;
+    if (content.kind === 'screen') {
+      const pending = this.pending.get(tabId);
+      const matches = pending && pending.event.documentId === documentId && sameUrl(pending.event.url, url);
+      if (content.hasPassword) {
+        if (matches || visit) {
+          // If a previously public document inserts a password field, stop
+          // capture and disallow model use of its earlier stored text.
+          this.endTrail(tabId);
+          this.setPasswordStatus(tabId, true);
+          if (visit) await db.visits.update(visit.id, { privacyBlocked: true });
+        }
+        return;
+      }
+      if (matches) {
+        const admitted = await this.createVisit(pending);
+        this.pending.delete(tabId);
+        return { visitId: admitted.id, extract: false };
+      }
+      return visit && { visitId: visit.id, extract: false };
+    }
+    if (!visit || !this.isRecordable(visit.canonicalUrl)) return;
     if (content.kind === 'scroll') {
       if (content.depth <= visit.scrollDepth) return;
-      await db.visits.update(visit.id, { scrollDepth: content.depth });
-      visit.scrollDepth = content.depth;
-      this.emit({ type: 'updated', visit: { ...visit } });
+      await this.updateEngagement(visit, { scrollDepth: content.depth });
+      return;
+    }
+    if (content.kind === 'selection') {
+      if (visit.engagement !== 'read') await this.updateEngagement(visit, {}, true);
       return;
     }
     if (content.kind === 'text') {
       if (content.visitId !== visit.id) return;
       await db.transaction('rw', db.pages, async () => {
         const page = await db.pages.get(visit.canonicalUrl);
+        const sourceUrl = this.canonicalize(visit.url);
         if (page?.textHash !== content.textHash) {
-          await db.pages.put(newPage(visit.canonicalUrl, content.text, content.textHash, content.sourceHash));
-        } else if (page.sourceHash !== content.sourceHash) {
-          await db.pages.update(visit.canonicalUrl, { sourceHash: content.sourceHash });
+          await db.pages.put({ ...newPage(visit.canonicalUrl, content.text, content.textHash, content.sourceHash), sourceUrl });
+        } else if (page.sourceHash !== content.sourceHash || page.sourceUrl !== sourceUrl) {
+          await db.pages.update(visit.canonicalUrl, { sourceHash: content.sourceHash, sourceUrl });
         }
       });
       return;
     }
 
-    const canonicalUrl = content.canonicalLink
-      ? this.canonicalize(visit.url, content.canonicalLink)
-      : visit.canonicalUrl;
+    const candidate = content.canonicalLink && this.canonicalize(visit.url, content.canonicalLink);
+    const canonicalUrl = candidate && this.isRecordable(candidate) ? candidate : visit.canonicalUrl;
     const changed = canonicalUrl !== visit.canonicalUrl;
+    const read = content.kind === 'highlight' && visit.engagement !== 'read';
     const page = await db.transaction('rw', db.visits, db.pages, db.highlights, async () => {
       const page = await db.pages.get(canonicalUrl);
       let needsPage = content.kind === 'highlight';
@@ -268,6 +357,7 @@ export class VisitRecorder {
         needsPage ||= relinked > 0;
       }
       if (needsPage && !page) await db.pages.add(newPage(canonicalUrl));
+      if (read) await db.visits.update(visit.id, { engagement: 'read' });
       if (content.kind === 'highlight') {
         await db.highlights.add({
           id: this.options.newId(),
@@ -280,12 +370,13 @@ export class VisitRecorder {
       }
       return page;
     });
-    if (changed) {
+    if (changed || read) {
       visit.canonicalUrl = canonicalUrl;
+      if (read) visit.engagement = 'read';
       this.emit({ type: 'updated', visit: { ...visit } });
     }
     if (content.kind === 'probe') {
-      return { visitId: visit.id, extract: page?.sourceHash !== content.sourceHash };
+      return { visitId: visit.id, extract: !page?.sourceUrl || page.sourceHash !== content.sourceHash || !this.isRecordable(page.sourceUrl) };
     }
   }
 
@@ -295,23 +386,15 @@ export class VisitRecorder {
         if (event.frameId !== 0) return;
         const pending = this.state.pendingNewTabParent[event.tabId];
         delete this.state.pendingNewTabParent[event.tabId];
-        if (!this.isRecordable(event.url)) {
-          this.endTrail(event.tabId);
-          return;
-        }
-        if (pending !== undefined) {
-          await this.createVisit(event, 'new-tab', pending);
-          return;
-        }
-        const transition = toVisitTransition(event);
-        await this.createVisit(event, transition, this.parentFor(event.tabId, transition));
+        const transition = pending !== undefined ? 'new-tab' : toVisitTransition(event);
+        await this.beginVisit(event, transition, pending !== undefined ? pending : this.parentFor(event.tabId, transition));
       }),
     onHistoryStateUpdated: (event) =>
       this.enqueue(async () => {
-        if (event.frameId !== 0 || !this.isRecordable(event.url)) return;
-        if (this.current.get(event.tabId)?.url === event.url) return;
+        if (event.frameId !== 0) return;
+        if (this.current.get(event.tabId)?.url === event.url || this.pending.get(event.tabId)?.event.url === event.url) return;
         const transition = event.transitionQualifiers.includes('forward_back') ? 'back' : 'link';
-        await this.createVisit(event, transition, this.parentFor(event.tabId, transition));
+        await this.beginVisit(event, transition, this.parentFor(event.tabId, transition));
       }),
     onCreatedNavigationTarget: (event) =>
       this.enqueue(async () => {
@@ -335,9 +418,11 @@ export class VisitRecorder {
         if (!visible) hidden.push(tabId);
         this.state.hiddenTabs = hidden;
       }),
-    onPageContent: (event) => this.enqueue(() => this.capturePageContent(event), { settle: false }),
+    onPageContent: (event) => this.enqueue(() => this.capturePageContent(event), { settle: event.content.kind === 'screen' }),
     onTabTitleChanged: ({ tabId, url, title }) =>
       this.enqueue(async () => {
+        const pending = this.pending.get(tabId);
+        if (pending && sameUrl(pending.event.url, url)) pending.title = title;
         const visit = this.current.get(tabId);
         if (!visit || visit.url !== url || visit.title === title) return;
         const firstTitle = !visit.title.trim() && !!title.trim();
@@ -353,6 +438,7 @@ export class VisitRecorder {
     onTabRemoved: (tabId) =>
       this.enqueue(async () => {
         this.endTrail(tabId);
+        this.setPasswordStatus(tabId, false);
         delete this.state.pendingNewTabParent[tabId];
         this.state.hiddenTabs = this.state.hiddenTabs.filter((id) => id !== tabId);
         for (const [windowId, active] of Object.entries(this.state.activeTabByWindow)) {
