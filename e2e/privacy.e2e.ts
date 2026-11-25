@@ -9,7 +9,8 @@ test('Chromium registers the pause and resume command with its suggested shortcu
   const commands = await worker.evaluate(() => chrome.commands.getAll());
   expect(commands).toContainEqual(expect.objectContaining({ name: 'toggle-recording' }));
   const manifest = await worker.evaluate(() => chrome.runtime.getManifest());
-  expect(manifest.commands?.['toggle-recording']?.suggested_key?.default).toBe('Alt+Shift+P');
+  const suggested = manifest.commands?.['toggle-recording']?.suggested_key;
+  expect(typeof suggested === 'string' ? suggested : suggested?.default).toBe('Alt+Shift+P');
 });
 
 test('default-denied and localhost navigations store nothing and show a skipped badge', async ({
