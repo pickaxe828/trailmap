@@ -16,7 +16,8 @@ import { formatActiveTime } from '../../trail/format';
 import { buildTrail, type TrailNode } from '../../trail/tree';
 import type { useLiveTrail } from '../../trail/useLiveTrail';
 import { WRAP_UP_MESSAGE } from '../../wrapup/messages';
-import { correct, useCurrentVisitId, useSiteSkipped } from './corrections-client';
+import { correct } from '../../corrections/client';
+import { useCurrentVisitId, useSiteSkipped } from './corrections-client';
 
 type Trail = NonNullable<ReturnType<typeof useLiveTrail>>;
 type Open = Trail['open'][number];

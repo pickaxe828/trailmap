@@ -18,7 +18,7 @@ type Deps = {
   };
 };
 
-/** Runs side panel correction requests in the service worker. Replies are `true`/`false`, a Visit id or `null`. */
+/** Runs correction requests in the service worker. Replies are `true`/`false`, a Visit id or `null`. */
 export function createCorrectionService({ db, corrections, recorder, privacy }: Deps) {
   const forget = async (run: () => Promise<{ visitIds: string[] }>) => {
     await recorder.forgetVisits(async () => (await run()).visitIds);
@@ -33,9 +33,10 @@ export function createCorrectionService({ db, corrections, recorder, privacy }: 
       case 'star': await corrections.star(request.visitId, request.starred); return true;
       case 'note': await corrections.note(request.nodeId, request.text); return true;
       case 'split': return (await corrections.split(request.visitId)) !== null;
-      case 'rename': await corrections.rename(request.expeditionId, request.title); return true;
-      case 'merge': await corrections.merge(request.intoId, request.fromId); return true;
-      case 'move': await corrections.move(request.visitId, request.toExpeditionId); return true;
+      case 'rename': return corrections.rename(request.expeditionId, request.title);
+      case 'field-notes': return corrections.editFieldNotes(request.expeditionId, request.text);
+      case 'merge': return corrections.merge(request.intoId, request.fromId);
+      case 'move': return corrections.move(request.visitId, request.toExpeditionId);
       case 'ignore-site': {
         const visit = await db.visits.get(request.visitId);
         const host = siteKey(visit?.url);

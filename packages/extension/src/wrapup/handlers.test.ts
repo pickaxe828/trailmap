@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test';
 import type { Expedition, Page, Visit } from '@trailmap/shared';
 import { CompanionRequestError } from '../companion/client';
+import { createCorrections } from '../corrections/corrections';
 import { openTrailmapDb, type TrailmapDb } from '../db/db';
 import { enqueueJob, JobQueue, JOB_PRIORITY } from '../jobs/queue';
 import { countUnseenNotes, markNotesSeen } from './badge';
@@ -122,6 +123,23 @@ test('a title the user chose and notes the user edited are never overwritten', a
     title: 'My own title', fieldNotes: 'My notes', userEdited: true, drivingQuestion: 'How do CRDTs represent deletes?',
   });
   expect((await db.expeditions.get('expedition:v1'))!.unseenNotes).toBeUndefined();
+});
+
+test('a field-notes edit wins even when regeneration is already in flight', async () => {
+  await seed({ fieldNotes: 'Previously generated notes' });
+  const corrections = createCorrections({ db, now: () => now, newId: () => 'note-edit' });
+  const handlers = wrapUpHandlers(db, () => settings, {
+    now: () => now,
+    request: async (_db, payload, guard) => {
+      expect(await guard.allow()).toBe(true);
+      if (payload.task === 'expedition_wrap_up') return { output: wrapUp };
+      // An empty edit is intentional, not the null marker for never-written notes.
+      await corrections.editFieldNotes('expedition:v1', '');
+      return { output: notes };
+    },
+  });
+  await drain(new JobQueue(db, () => now, { page_enrichment: async () => 'discard', ...handlers }, [db.expeditions]));
+  expect(await db.expeditions.get('expedition:v1')).toMatchObject({ fieldNotes: '', userEdited: true });
 });
 
 test('a renamed Expedition that has no notes yet still gets them', async () => {

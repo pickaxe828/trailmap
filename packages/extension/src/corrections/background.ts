@@ -5,7 +5,7 @@ import { createCorrections } from './corrections';
 import { isCorrectionRequest } from './messages';
 import { createCorrectionService } from './service';
 
-/** Side panel corrections (docs/PLAN.md §5 item 1). Only the side panel page may send them. */
+/** Correct the trail only from the side panel or the Expedition page (PLAN §5). */
 export function startCorrections(
   db: TrailmapDb,
   recorder: VisitRecorder,
@@ -14,7 +14,15 @@ export function startCorrections(
   const options = { db, now: Date.now, newId: () => crypto.randomUUID() };
   const service = createCorrectionService({ db, corrections: createCorrections(options), recorder, privacy });
   chrome.runtime.onMessage.addListener((input: unknown, sender, reply) => {
-    if (sender.url !== chrome.runtime.getURL('/sidepanel.html') || !isCorrectionRequest(input)) return;
+    if (!isCorrectionRequest(input) || !sender.url) return;
+    if (sender.url !== chrome.runtime.getURL('/sidepanel.html')) {
+      const source = URL.parse(sender.url);
+      if (!source) return;
+      source.search = '';
+      source.hash = '';
+      if (source.href !== chrome.runtime.getURL('/expedition.html') ||
+        !['rename', 'merge', 'move', 'field-notes'].includes(input.action)) return;
+    }
     service.handle(input).then(reply, () => reply(false));
     return true;
   });

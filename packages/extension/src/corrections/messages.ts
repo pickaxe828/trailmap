@@ -1,4 +1,5 @@
 export const CORRECTION_MESSAGE = 'trailmap.correction';
+export const FIELD_NOTES_LIMIT = 100_000;
 
 export type CorrectionRequest = { type: typeof CORRECTION_MESSAGE } & (
   | { action: 'current-visit'; tabId: number }
@@ -7,6 +8,7 @@ export type CorrectionRequest = { type: typeof CORRECTION_MESSAGE } & (
   | { action: 'split'; visitId: string }
   | { action: 'ignore-site'; visitId: string }
   | { action: 'rename'; expeditionId: string; title: string }
+  | { action: 'field-notes'; expeditionId: string; text: string }
   | { action: 'merge'; intoId: string; fromId: string }
   | { action: 'move'; visitId: string; toExpeditionId: string }
   | { action: 'forget-page'; canonicalUrl: string }
@@ -26,6 +28,7 @@ export function isCorrectionRequest(value: unknown): value is CorrectionRequest 
     case 'note': return isString(r.nodeId) && typeof r.text === 'string' && r.text.length <= 20_000;
     case 'split': case 'ignore-site': return isString(r.visitId);
     case 'rename': return isString(r.expeditionId) && typeof r.title === 'string';
+    case 'field-notes': return isString(r.expeditionId) && typeof r.text === 'string' && r.text.length <= FIELD_NOTES_LIMIT;
     case 'merge': return isString(r.intoId) && isString(r.fromId);
     case 'move': return isString(r.visitId) && isString(r.toExpeditionId);
     case 'forget-page': return isString(r.canonicalUrl);
