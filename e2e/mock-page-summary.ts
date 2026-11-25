@@ -17,6 +17,11 @@ const mock = startMockOAuth(async (request) => {
   calls.push(body);
   const text = body.input?.[0]?.content ?? '';
   const task = body.text?.format.name;
+  if (task === 'living_note') {
+    const { livingNote, fieldNotes } = JSON.parse(text) as { livingNote: string | null; fieldNotes: string };
+    if (body.model !== 'fixture-model' || !fieldNotes.includes('A tombstone records')) return new Response(null, { status: 400 });
+    return stream(JSON.stringify({ markdown: livingNote ? 'Both sessions support the revised conclusion.' : 'The first session explains tombstones.' }));
+  }
   if (task === 'expedition_wrap_up' || task === 'field_notes') {
     // Wrap-up inputs carry Page notes, never Page text.
     if (body.model !== 'fixture-model') return new Response(null, { status: 400 });
