@@ -1,6 +1,5 @@
 import { defineConfig } from 'wxt';
 import tailwindcss from '@tailwindcss/vite';
-import type { Plugin } from 'vite';
 import { EXTENSION_PUBLIC_KEY } from './extension-key';
 
 /**
@@ -9,11 +8,11 @@ import { EXTENSION_PUBLIC_KEY } from './extension-key';
  * its own pages, so that import resolves to an empty stylesheet and the theme's
  * system-font fallback applies. (Bundling the font files locally is a later option.)
  */
-const noRemoteFonts: Plugin = {
+const noRemoteFonts = {
   name: 'trailmap:no-remote-fonts',
-  enforce: 'pre',
-  resolveId: (id) => (/^@astryxdesign\/theme-[^/]+\/fonts\.css$/.test(id) ? '\0trailmap-no-fonts.css' : null),
-  load: (id) => (id === '\0trailmap-no-fonts.css' ? '/* remote fonts disabled */' : null),
+  enforce: 'pre' as const,
+  resolveId: (id: string) => (/^@astryxdesign\/theme-[^/]+\/fonts\.css$/.test(id) ? '\0trailmap-no-fonts.css' : null),
+  load: (id: string) => (id === '\0trailmap-no-fonts.css' ? '/* remote fonts disabled */' : null),
 };
 
 export default defineConfig({

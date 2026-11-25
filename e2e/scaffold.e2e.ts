@@ -48,3 +48,12 @@ test('fixture pages are served on fake hostnames', async ({ context, fixtureUrl 
   await expect(page).toHaveURL(fixtureUrl(FAKE_HOSTS.learn, '/article.html'));
   await expect(page.getByRole('heading', { name: 'How CRDTs handle deletes' })).toBeVisible();
 });
+
+test('extension pages make no network requests outside the extension', async ({ context, extensionId }) => {
+  const page = await context.newPage();
+  const requested: string[] = [];
+  page.on('request', (req) => requested.push(req.url()));
+  await page.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+  await expect(page.getByText('Recording is on')).toBeVisible();
+  expect(requested.filter((url) => !url.startsWith(`chrome-extension://${extensionId}/`))).toEqual([]);
+});
