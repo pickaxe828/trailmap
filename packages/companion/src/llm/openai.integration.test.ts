@@ -77,6 +77,23 @@ test('returns validated Page JSON from a split UTF-8 stream using a freshly rota
   }]]);
 });
 
+test('does not send audited source text when dispatch permission is withheld', async () => {
+  await signIn();
+  const requests: string[] = [];
+  respond = (request) => {
+    requests.push(new URL(request.url).pathname);
+    return stream(delta('{"summary":"A Page"}'), completed);
+  };
+  const auditId = crypto.randomUUID();
+  ctx.authorizeDispatch = async (id, dispatch) => {
+    expect(id).toBe(auditId);
+    expect(dispatch.input).toEqual([{ role: 'user', content: 'A stored Page about café design.' }]);
+    return false;
+  };
+  expect(await complete({ auditId })).toMatchObject({ type: 'error', code: 'dispatch_cancelled' });
+  expect(requests).toEqual([]);
+});
+
 test('a complete-looking Page summary is not accepted if the stream ends without a complete event', async () => {
   await signIn();
   respond = () => stream(delta('{"summary":"looks finished"}'), completed.trimEnd());

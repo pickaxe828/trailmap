@@ -34,6 +34,15 @@ test('starts connecting, says hello, and is connected once the companion answers
   expect(statuses.map((s) => s.state)).toEqual(['connecting', 'connected']);
 });
 
+test('audited inference never sends Page text to an older companion', async () => {
+  connect();
+  await expect(client.request('llm.complete', {
+    task: 'page_enrichment', auditId: crypto.randomUUID(), input: 'Page text', instructions: 'Summarize.',
+    schema: {}, schemaName: 'page_enrichment',
+  })).rejects.toMatchObject({ code: 'not_connected' });
+  expect(transport.latest.sent).toEqual([{ type: 'companion.hello', id: 'id1' }]);
+});
+
 test('request() sends a typed request and resolves with the matching response', async () => {
   connect();
   const reply = client.request('companion.hello', {});

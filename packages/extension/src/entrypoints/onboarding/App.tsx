@@ -4,6 +4,7 @@ import { Text } from '@astryxdesign/core/Text';
 import { VStack } from '@astryxdesign/core/VStack';
 import { useCompanionStatus } from '../../companion/useCompanionStatus';
 import { ChatGptConnection } from '../../ui/ChatGptConnection';
+import { SentToModelLog } from './SentToModelLog';
 
 /** Onboarding tab, opened on first install. Placeholder: later tickets add the privacy screen. */
 export function App() {
@@ -15,7 +16,6 @@ export function App() {
         Trailmap quietly turns your learning-oriented browsing into trails, field notes and a concept graph.
         Recording starts straight away.
       </Text>
-      <Text type="supporting">Privacy settings will appear here.</Text>
       <VStack gap={2} id="companion">
         <Heading level={2}>Set up the companion</Heading>
         <Text>
@@ -36,6 +36,10 @@ export function App() {
         </Text>
       </VStack>
       {companion.state === 'connected' && <ChatGptConnection />}
+      <VStack gap={3}>
+        <Heading level={2}>Settings</Heading>
+        <SentToModelLog />
+      </VStack>
     </VStack>
   );
 }

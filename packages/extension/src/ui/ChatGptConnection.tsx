@@ -62,6 +62,9 @@ export function ChatGptConnection() {
     <VStack gap={2} hAlign="start">
       {status?.signedIn && <Text role="status">{identity} · plan usage {status.planUsage ? 'on' : 'off'}</Text>}
       {status && !status.planUsage && (
+        <Text type="supporting">Enabling plan usage sends captured text and highlights from read or skimmed Pages to OpenAI for automatic notes.</Text>
+      )}
+      {status && !status.planUsage && (
         <Button
           label="Continue with ChatGPT"
           variant="primary"

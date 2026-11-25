@@ -33,6 +33,7 @@ export function startCompanion(): void {
   });
 
   companion.onEvent((event) => {
+    if (event.name === 'llm.dispatch') return; // Contains Page text; handled only by the dispatch guard.
     void chrome.runtime.sendMessage({ type: COMPANION_EVENT, event }).catch(() => {});
   });
 
@@ -51,7 +52,7 @@ export function startCompanion(): void {
     const request = CompanionRequest.safeParse(
       typeof raw === 'object' && raw !== null ? { ...raw, id: 'relay' } : raw,
     );
-    if (!request.success) {
+    if (!request.success || request.data.type === 'llm.complete' || request.data.type === 'llm.dispatchAck') {
       respond({ ok: false, code: 'invalid_message', message: 'Malformed companion request.' });
       return;
     }

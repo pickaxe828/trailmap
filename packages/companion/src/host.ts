@@ -19,8 +19,25 @@ export async function runHost(
     for (const frame of chunkMessage(message)) write(encodeFrame(frame));
   };
 
+  const dispatches = new Map<string, (allow: boolean) => void>();
   const context: CompanionContext = {
     ...ctx,
+    async authorizeDispatch(auditId, dispatch) {
+      const dispatchId = crypto.randomUUID();
+      const { promise, resolve } = Promise.withResolvers<boolean>();
+      dispatches.set(dispatchId, resolve);
+      const timeout = setTimeout(() => resolve(false), 5_000);
+      try {
+        send({ type: 'event', name: 'llm.dispatch', auditId, id: dispatchId, ...dispatch });
+        return await promise;
+      } finally {
+        clearTimeout(timeout);
+        dispatches.delete(dispatchId);
+      }
+    },
+    acknowledgeDispatch(dispatchId, allow) {
+      dispatches.get(dispatchId)?.(allow);
+    },
     emit(event) {
       try {
         send(event);
@@ -51,6 +68,7 @@ export async function runHost(
     }
     return false;
   } finally {
+    for (const resolve of dispatches.values()) resolve(false);
     disposeChatGptAuth(context);
   }
 }

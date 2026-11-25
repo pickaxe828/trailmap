@@ -1,13 +1,16 @@
 import { Button } from '@astryxdesign/core/Button';
 import { Heading } from '@astryxdesign/core/Heading';
 import { HStack } from '@astryxdesign/core/HStack';
+import { Link } from '@astryxdesign/core/Link';
 import { Text } from '@astryxdesign/core/Text';
 import { TreeList, type TreeListItemData } from '@astryxdesign/core/TreeList';
 import { VStack } from '@astryxdesign/core/VStack';
 import { formatActiveTime } from '../../trail/format';
 import { buildTrail, type TrailNode } from '../../trail/tree';
 import { useLiveTrail } from '../../trail/useLiveTrail';
+import { AiNotesStatus } from './AiNotesStatus';
 import { CompanionStatus } from './CompanionStatus';
+import { PageNotes } from './PageNotes';
 import { RecordingControls } from './RecordingControls';
 
 function hostOf(url: string): string {
@@ -39,7 +42,10 @@ export function App() {
           target="_blank" rel="noopener noreferrer" />
       </HStack>
       <RecordingControls />
+      <AiNotesStatus />
       <CompanionStatus />
+      {trail && <PageNotes pages={trail.pageNotes} />}
+      <Link href={chrome.runtime.getURL('/onboarding.html#sent-to-model')} target="_blank">Sent-to-model log</Link>
       {trail && trail.open.length === 0 && trail.today.length === 0 && (
         <Text type="supporting">Your trail will appear here as you browse.</Text>
       )}

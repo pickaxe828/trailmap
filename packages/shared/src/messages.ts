@@ -11,7 +11,7 @@
  * The protocol carries account status, never ChatGPT credentials.
  */
 import { z } from 'zod';
-import { LlmCompletion, LlmErrorCode, LlmModel, LlmOutput } from './llm';
+import { LlmCompletion, LlmErrorCode, LlmModel, LlmOutput, ModelDispatch } from './llm';
 
 /** The Native Messaging host name, shared by the install manifest and `chrome.runtime.connectNative`. */
 export const NATIVE_HOST_NAME = 'com.trailmap.companion';
@@ -23,6 +23,7 @@ export const CompanionRequest = z.discriminatedUnion('type', [
   z.object({ type: z.literal('auth.signOut'), id: z.string() }),
   LlmCompletion.extend({ type: z.literal('llm.complete'), id: z.string() }),
   z.object({ type: z.literal('llm.models'), id: z.string() }),
+  z.object({ type: z.literal('llm.dispatchAck'), id: z.string(), dispatchId: z.uuid(), allow: z.boolean() }),
 ]);
 export type CompanionRequest = z.infer<typeof CompanionRequest>;
 export type CompanionRequestType = CompanionRequest['type'];
@@ -77,12 +78,13 @@ export const ChatGptStatus = z.object({
 export type ChatGptStatus = z.infer<typeof ChatGptStatus>;
 
 export const CompanionResponse = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('companion.hello'), id: z.string(), version: z.string() }),
+  z.object({ type: z.literal('companion.hello'), id: z.string(), version: z.string(), modelAudit: z.literal(true).optional() }),
   z.object({ type: z.literal('auth.signIn'), id: z.string(), url: z.url() }),
   ChatGptStatus.extend({ type: z.literal('auth.status'), id: z.string() }),
   z.object({ type: z.literal('auth.signOut'), id: z.string(), revocationConfirmed: z.boolean() }),
   z.object({ type: z.literal('llm.complete'), id: z.string(), output: LlmOutput }),
   z.object({ type: z.literal('llm.models'), id: z.string(), models: z.array(LlmModel) }),
+  z.object({ type: z.literal('llm.dispatchAck'), id: z.string() }),
   CompanionError,
 ]);
 export type CompanionResponse = z.infer<typeof CompanionResponse>;
@@ -93,6 +95,7 @@ export const CompanionEvent = z.discriminatedUnion('name', [
   z.object({ type: z.literal('event'), name: z.literal('auth.completed') }),
   z.object({ type: z.literal('event'), name: z.literal('auth.changed') }),
   z.object({ type: z.literal('event'), name: z.literal('auth.failed'), message: z.string() }),
+  ModelDispatch.extend({ type: z.literal('event'), name: z.literal('llm.dispatch'), auditId: z.uuid(), id: z.uuid() }),
   /** Sent just before the companion exits on an error it cannot recover from. */
   z.object({ type: z.literal('event'), name: z.literal('companion.fatal'), message: z.string() }),
 ]);

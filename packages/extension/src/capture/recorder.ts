@@ -1,5 +1,6 @@
 import type { Transition, Visit } from '@trailmap/shared';
 import type { TrailmapDb } from '../db/db';
+import { enqueuePageEnrichment } from '../enrichment/enqueue';
 import { canonicalizeUrl } from './canonical';
 import { scoreEngagement } from './engagement';
 import { WINDOW_ID_NONE, type BrowserEventHandlers, type BrowserEventSource, type NavigationEvent, type PageContentEvent } from './events';
@@ -193,7 +194,15 @@ export class VisitRecorder {
   private async updateEngagement(visit: Visit, changes: Partial<Pick<Visit, 'activeMs' | 'scrollDepth'>>, interacted = false) {
     const engagement = scoreEngagement(changes.activeMs ?? visit.activeMs, changes.scrollDepth ?? visit.scrollDepth,
       interacted || visit.engagement === 'read');
-    await this.options.db.visits.update(visit.id, { ...changes, engagement });
+    const { db, now } = this.options;
+    if (engagement !== visit.engagement) {
+      await db.transaction('rw', db.visits, db.pages, db.jobs, async () => {
+        await db.visits.update(visit.id, { ...changes, engagement });
+        await enqueuePageEnrichment(db, { ...visit, engagement }, now());
+      });
+    } else {
+      await db.visits.update(visit.id, { ...changes, engagement });
+    }
     Object.assign(visit, changes, { engagement });
     this.emit({ type: 'updated', visit: { ...visit } });
   }
@@ -270,9 +279,10 @@ export class VisitRecorder {
       segmentationPending: 1,
     };
     const { db } = this.options;
-    if (search) {
-      await db.transaction('rw', db.visits, db.queries, async () => {
-        await db.visits.put(visit);
+    await db.transaction('rw', db.visits, db.queries, db.pages, db.jobs, async () => {
+      await db.visits.put(visit);
+      await enqueuePageEnrichment(db, visit, startedAt + activeMs);
+      if (search) {
         await db.queries.put({
           ...search,
           id: this.options.newId(),
@@ -280,10 +290,8 @@ export class VisitRecorder {
           at: visit.startedAt,
           expeditionId: null,
         });
-      });
-    } else {
-      await db.visits.put(visit);
-    }
+      }
+    });
     this.current.set(event.tabId, visit);
     this.state.currentVisitByTab[event.tabId] = visit.id;
     if (event.documentId) {
@@ -332,14 +340,17 @@ export class VisitRecorder {
     }
     if (content.kind === 'text') {
       if (content.visitId !== visit.id) return;
-      await db.transaction('rw', db.pages, async () => {
-        const page = await db.pages.get(visit.canonicalUrl);
-        const sourceUrl = this.canonicalize(visit.url);
-        if (page?.textHash !== content.textHash) {
-          await db.pages.put({ ...newPage(visit.canonicalUrl, content.text, content.textHash, content.sourceHash), sourceUrl });
-        } else if (page.sourceHash !== content.sourceHash || page.sourceUrl !== sourceUrl) {
-          await db.pages.update(visit.canonicalUrl, { sourceHash: content.sourceHash, sourceUrl });
-        }
+      await db.transaction('rw', db.pages, db.jobs, async () => {
+        const previous = await db.pages.get(visit.canonicalUrl);
+        const source = { sourceHash: content.sourceHash, sourceUrl: this.canonicalize(visit.url), sourceVisitId: visit.id };
+        const page = previous?.textHash === content.textHash
+          ? { ...previous, ...source }
+          : {
+              ...newPage(visit.canonicalUrl, content.text, content.textHash), ...source,
+              textRevision: (previous?.textRevision ?? 0) + 1,
+            };
+        await db.pages.put(page);
+        await enqueuePageEnrichment(db, visit, this.options.now(), page);
       });
       return;
     }
@@ -348,7 +359,7 @@ export class VisitRecorder {
     const canonicalUrl = candidate && this.isRecordable(candidate) ? candidate : visit.canonicalUrl;
     const changed = canonicalUrl !== visit.canonicalUrl;
     const read = content.kind === 'highlight' && visit.engagement !== 'read';
-    const page = await db.transaction('rw', db.visits, db.pages, db.highlights, async () => {
+    const page = await db.transaction('rw', db.visits, db.pages, db.highlights, db.jobs, async () => {
       const page = await db.pages.get(canonicalUrl);
       let needsPage = content.kind === 'highlight';
       if (changed) {
@@ -367,6 +378,9 @@ export class VisitRecorder {
           at: this.options.now(),
           source: content.source,
         });
+      }
+      if (changed || read) {
+        await enqueuePageEnrichment(db, { ...visit, canonicalUrl, engagement: read ? 'read' : visit.engagement }, this.options.now(), page);
       }
       return page;
     });
