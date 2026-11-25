@@ -24,6 +24,8 @@ export function App() {
             target="_blank" rel="noopener noreferrer" />
           <Button size="sm" variant="secondary" label="Open Trail" href={chrome.runtime.getURL('/trail.html')}
             target="_blank" rel="noopener noreferrer" />
+          <Button size="sm" variant="secondary" label="Open Atlas" href={chrome.runtime.getURL('/atlas.html')}
+            target="_blank" rel="noopener noreferrer" />
         </HStack>
       </HStack>
       <RecordingControls />
