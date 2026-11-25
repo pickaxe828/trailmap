@@ -1,5 +1,7 @@
 import { ChatGptAuthError, getChatGptAuth } from './auth/auth';
 import type { SecretStore } from './secrets';
+import { openAiProvider } from './llm/openai';
+import { LlmFailure } from './llm/provider';
 import { CompanionRequest, type CompanionEvent, type CompanionRequestType, type CompanionResponse, type ErrorCode } from '@trailmap/shared';
 
 export const COMPANION_VERSION = '0.0.0';
@@ -34,6 +36,8 @@ export const defaultHandlers: Handlers = {
   'auth.signOut': async ({ id }, ctx) => ({
     type: 'auth.signOut', id, revocationConfirmed: await getChatGptAuth(ctx).signOut(),
   }),
+  'llm.complete': async ({ id, type, ...request }, ctx) => ({ type, id, output: await openAiProvider(ctx).complete(request) }),
+  'llm.models': async ({ id, type }, ctx) => ({ type, id, models: await openAiProvider(ctx).models() }),
 };
 
 function errorReply(id: string | null, code: ErrorCode, message: string): CompanionResponse {
@@ -63,6 +67,9 @@ export async function handleMessage(raw: unknown, ctx: CompanionContext): Promis
     return await handler(request, ctx);
   } catch (error) {
     if (error instanceof ChatGptAuthError) return errorReply(request.id, error.code, error.message);
+    if (error instanceof LlmFailure) return {
+      type: 'error', id: request.id, code: error.code, message: error.message, ...error.details,
+    };
     // Deliberately drops the error text: handlers touch secrets and page text.
     ctx.log(`handler for ${request.type} failed`);
     return errorReply(request.id, 'internal', 'The companion failed to handle this message');

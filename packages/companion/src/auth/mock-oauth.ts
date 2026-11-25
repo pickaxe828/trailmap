@@ -4,7 +4,7 @@ export const MOCK_EMAIL = 'reader@example.test';
 export const MOCK_CLIENT = 'oaiapp_trailmap_mock';
 export const MOCK_SCOPE = 'openid profile email offline_access resource.invoke chatgpt.tokens.use.direct';
 
-export function startMockOAuth() {
+export function startMockOAuth(otherRoutes = (_request: Request): Response | Promise<Response> => new Response(null, { status: 404 })) {
   const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
   const jwk = { ...publicKey.export({ format: 'jwk' }), kid: 'mock-key', alg: 'RS256', use: 'sig' };
   const codes = new Map<string, URL>();
@@ -92,7 +92,7 @@ export function startMockOAuth() {
           });
         }
         default:
-          return new Response(null, { status: 404 });
+          return otherRoutes(request);
       }
     },
   });
