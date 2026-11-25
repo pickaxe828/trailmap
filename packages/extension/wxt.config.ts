@@ -30,6 +30,7 @@ export default defineConfig({
       'webNavigation',
       'tabs',
       'history',
+      'favicon',
       'idle',
       'storage',
       'unlimitedStorage',

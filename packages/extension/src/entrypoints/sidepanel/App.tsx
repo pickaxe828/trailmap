@@ -1,3 +1,4 @@
+import { Button } from '@astryxdesign/core/Button';
 import { Heading } from '@astryxdesign/core/Heading';
 import { HStack } from '@astryxdesign/core/HStack';
 import { StatusDot } from '@astryxdesign/core/StatusDot';
@@ -32,7 +33,11 @@ export function App() {
   const trail = useLiveTrail();
   return (
     <VStack gap={3} padding={4}>
-      <Heading level={1}>Trailmap</Heading>
+      <HStack align="center" justify="between" wrap="wrap" gap={2}>
+        <Heading level={1}>Trailmap</Heading>
+        <Button size="sm" label="Open Trail" href={chrome.runtime.getURL('/trail.html')}
+          target="_blank" rel="noopener noreferrer" />
+      </HStack>
       <HStack gap={2} align="center">
         <StatusDot variant="success" label="Recording" isPulsing />
         <Text>Recording is on</Text>
