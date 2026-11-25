@@ -307,9 +307,9 @@ export class VisitRecorder {
         if (matches || visit) {
           // If a previously public document inserts a password field, stop
           // capture and disallow model use of its earlier stored text.
-          if (visit) await db.visits.update(visit.id, { privacyBlocked: true });
           this.endTrail(tabId);
           this.setPasswordStatus(tabId, true);
+          if (visit) await db.visits.update(visit.id, { privacyBlocked: true });
         }
         return;
       }

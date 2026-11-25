@@ -38,6 +38,6 @@ export default defineBackground(() => {
   startSegmentation(db, recorder);
   recorder.start();
   privacy.start(recorder);
-  startPageSummary(db, recorder);
+  startPageSummary(db, recorder, privacy.getSettings);
   void ensureTickAlarm();
 });

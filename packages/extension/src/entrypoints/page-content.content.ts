@@ -50,7 +50,7 @@ export default defineContentScript({
     let reportedDepth = 0;
 
     const screen = async (started: number) => {
-      if (passwordDetected || generation !== started) return;
+      if (document.readyState === 'loading' || passwordDetected || generation !== started) return;
       passwordDetected = hasPasswordField(document);
       const reply = await send({ kind: 'screen', hasPassword: passwordDetected });
       if (generation === started && !passwordDetected) admitted = !!reply;
@@ -128,7 +128,13 @@ export default defineContentScript({
     // Catch login forms inserted after the initial screen without observing or
     // reading form values. Also check synchronously before each content capture.
     const observer = new MutationObserver((records) => {
-      if (admitted && records.some((record) => record.type === 'attributes' || record.addedNodes.length > 0)) isPublic();
+      if (!admitted) return;
+      const password = 'input[type="password" i]';
+      const changed = records.some((record) => record.type === 'attributes'
+        ? record.target instanceof Element && record.target.matches(password)
+        : Array.from(record.addedNodes).some((node) => node instanceof Element &&
+          (node.matches(password) || node.querySelector(password))));
+      if (changed) isPublic();
     });
     observer.observe(document, { subtree: true, childList: true, attributes: true, attributeFilter: ['type'] });
     ctx.onInvalidated(() => observer.disconnect());

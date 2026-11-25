@@ -44,7 +44,15 @@ test('summarizes the active Page from captured text in the side panel', async ({
   await expect.poll(async () => (await readCapture('pages')).some(({ text }) => text.includes('Tombstones preserve causal history'))).toBe(true);
   // Headless renders sidepanel.html as a tab; keep the article active as it would be next to a real side panel.
   await article.bringToFront();
-  await panel.getByRole('button', { name: 'Summarize this page' }).evaluate((button) => (button as HTMLButtonElement).click());
+  const summarize = () => panel.getByRole('button', { name: 'Summarize this page' })
+    .evaluate((button) => (button as HTMLButtonElement).click());
+  await summarize();
+  await expect(panel.getByText('This page is not eligible for a model summary.')).toBeVisible();
+
+  await article.locator('#short-copy').selectText();
+  await expect.poll(async () => (await readCapture('visits')).find(({ url }) => url === article.url())?.engagement).toBe('read');
+  expect(await readCapture('highlights')).toEqual([]);
+  await summarize();
   await expect(panel.getByRole('heading', { name: 'Summary: Deleting items in a replicated list' })).toBeVisible();
   await expect(panel.getByText('Tombstones let replicas learn about deletions even when updates arrive out of order.')).toBeVisible();
   await expect(panel.getByText('A deletion marker preserves causal history.')).toBeVisible();

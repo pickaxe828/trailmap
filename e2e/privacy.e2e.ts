@@ -37,8 +37,9 @@ test('default-denied and localhost navigations store nothing and show a skipped 
 
 test('the side panel pauses immediately, resumes on the next navigation and updates the badge', async ({
   context, fixtureUrl, openExtensionPage, readCapture, serviceWorker,
-}) => {
+}, testInfo) => {
   const panel = await openExtensionPage('sidepanel.html');
+  await panel.setViewportSize({ width: 360, height: 640 });
   const page = await context.newPage();
   const first = fixtureUrl('learn.test', '/trail/start.html');
   await page.goto(first);
@@ -55,6 +56,8 @@ test('the side panel pauses immediately, resumes on the next navigation and upda
   await recording.evaluate((input: HTMLInputElement) => input.click());
   await expect(recording).not.toBeChecked();
   await expect.poll(badge).toBe('OFF');
+  await expect(panel.getByText('Recording paused', { exact: true })).toBeVisible();
+  await panel.screenshot({ path: testInfo.outputPath('recording-paused.png') });
   await page.goto(fixtureUrl('learn.test', ARTICLE));
   await page.locator('#highlight').selectText();
   await page.keyboard.press('ControlOrMeta+c');
@@ -73,8 +76,9 @@ test('the side panel pauses immediately, resumes on the next navigation and upda
 
 test('the side panel skips a site across navigations without forgetting earlier Visits', async ({
   context, fixtureUrl, openExtensionPage, readCapture, serviceWorker,
-}) => {
+}, testInfo) => {
   const panel = await openExtensionPage('sidepanel.html');
+  await panel.setViewportSize({ width: 360, height: 640 });
   const page = await context.newPage();
   await page.route('https://www.google.com/search?*', (route) => route.fulfill({
     contentType: 'text/html', body: '<!doctype html><title>Search fixture</title><p>Fixture result</p>',
@@ -87,6 +91,7 @@ test('the side panel skips a site across navigations without forgetting earlier 
   await site.evaluate((input: HTMLInputElement) => input.click());
   await expect(site).not.toBeChecked();
   await expect(panel.getByText('Site is skipped')).toBeVisible();
+  await panel.screenshot({ path: testInfo.outputPath('site-skipped.png') });
   const second = 'https://www.google.com/search?q=private';
   await page.goto(second);
   const worker = await serviceWorker();

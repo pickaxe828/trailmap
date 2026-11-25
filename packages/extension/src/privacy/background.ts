@@ -68,6 +68,7 @@ export function createRecordingPrivacy() {
 
   return {
     ready,
+    getSettings: () => settings,
     shouldRecord: (url: string) => recordingState(url, settings) === 'recording',
     setSiteSkipped,
     onPasswordStatusChanged(tabId: number) {

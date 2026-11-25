@@ -4,12 +4,13 @@ import type { VisitRecorder } from '../capture/recorder';
 import { getCompanionClient } from '../companion/background';
 import { CompanionRequestError } from '../companion/client';
 import type { TrailmapDb } from '../db/db';
+import { maySendToModel, type RecordingSettings } from '../privacy/policy';
 import { PageSummary, SIDE_PANEL_PATH, SUMMARIZE_PAGE, type PageSummaryReply } from './page-summary';
 
 const schema = LlmCompletion.shape.schema.parse(z.toJSONSchema(PageSummary));
 const noText: PageSummaryReply = { ok: false, code: 'no_text', message: 'No captured text is available for this page yet.' };
 
-async function summarize(db: TrailmapDb, recorder: VisitRecorder): Promise<PageSummaryReply> {
+async function summarize(db: TrailmapDb, recorder: VisitRecorder, getSettings: () => RecordingSettings): Promise<PageSummaryReply> {
   await recorder.ready;
   const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
   if (tab?.id === undefined || !tab.url || tab.pendingUrl) return noText;
@@ -18,6 +19,9 @@ async function summarize(db: TrailmapDb, recorder: VisitRecorder): Promise<PageS
   const page = await db.pages.get(visit.canonicalUrl);
   const current = recorder.getCurrentVisit(tab.id);
   if (!page?.text.trim() || current?.id !== visit.id || current.canonicalUrl !== visit.canonicalUrl) return noText;
+  if (!maySendToModel(current, page, getSettings())) {
+    return { ok: false, code: 'privacy_filtered', message: 'This page is not eligible for a model summary.' };
+  }
 
   const { output } = await getCompanionClient().request('llm.complete', {
     task: 'page_summary',
@@ -31,11 +35,11 @@ async function summarize(db: TrailmapDb, recorder: VisitRecorder): Promise<PageS
   return { ok: true, title: visit.title || new URL(visit.url).hostname, summary: summary.data };
 }
 
-export function startPageSummary(db: TrailmapDb, recorder: VisitRecorder): void {
+export function startPageSummary(db: TrailmapDb, recorder: VisitRecorder, getSettings: () => RecordingSettings): void {
   const sidePanel = chrome.runtime.getURL(SIDE_PANEL_PATH);
   chrome.runtime.onMessage.addListener((message: unknown, sender, respond) => {
     if (message !== SUMMARIZE_PAGE || sender.id !== chrome.runtime.id || sender.url !== sidePanel) return;
-    void summarize(db, recorder).then(respond, (error: unknown) => {
+    void summarize(db, recorder, getSettings).then(respond, (error: unknown) => {
       const reply: PageSummaryReply = error instanceof CompanionRequestError
         ? { ok: false, code: error.code, message: error.message }
         : { ok: false, code: 'internal', message: 'Trailmap could not summarize this page.' };
