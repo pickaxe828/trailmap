@@ -9,3 +9,6 @@ export const FAKE_HOSTS = { learn: 'learn.test', blog: 'blog.test' } as const;
 
 /** Where `bun run build` puts the unpacked extension. */
 export const EXTENSION_DIR = join(fileURLToPath(new URL('.', import.meta.url)), '..', 'packages', 'extension', '.output', 'chrome-mv3');
+
+/** The compiled companion (`bun run build:companion`), the same binary users install. */
+export const COMPANION_BIN = join(fileURLToPath(new URL('.', import.meta.url)), '..', 'packages', 'companion', 'dist', 'trailmap-companion');

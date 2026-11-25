@@ -68,6 +68,7 @@ if (command === '--version') {
     secrets: createSecretStore({ platform: process.platform, env: process.env, dataDir }),
     log,
   };
+  log(`host started (v${COMPANION_VERSION})`);
   const ok = await runHost(
     process.stdin as unknown as AsyncIterable<Uint8Array>,
     (frame) => void process.stdout.write(frame),
