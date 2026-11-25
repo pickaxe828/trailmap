@@ -30,6 +30,8 @@ export const Visit = z.object({
   scrollDepth: z.number().min(0).max(1),
   engagement: Engagement,
   expeditionId: z.string().nullable(),
+  segmentationPending: z.literal(1).optional(),
+  expeditionEmbedding: z.instanceof(Int8Array).nullable().optional(),
 });
 export type Visit = z.infer<typeof Visit>;
 
@@ -64,6 +66,8 @@ export type ExpeditionKind = z.infer<typeof ExpeditionKind>;
 
 export const Expedition = z.object({
   id: z.string(),
+  rootVisitId: z.string().optional(),
+  centroid: z.instanceof(Int8Array).nullable().optional(),
   title: z.string(),
   drivingQuestion: z.string().nullable(),
   kind: ExpeditionKind,
