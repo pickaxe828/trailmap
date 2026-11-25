@@ -1,0 +1,45 @@
+import { defineConfig } from 'wxt';
+import tailwindcss from '@tailwindcss/vite';
+import type { Plugin } from 'vite';
+import { EXTENSION_PUBLIC_KEY } from './extension-key';
+
+/**
+ * The generated `src/astryx-themes.ts` imports the theme's fonts.css, which is a
+ * Google Fonts @import. Trailmap is local-first and must not phone home from
+ * its own pages, so that import resolves to an empty stylesheet and the theme's
+ * system-font fallback applies. (Bundling the font files locally is a later option.)
+ */
+const noRemoteFonts: Plugin = {
+  name: 'trailmap:no-remote-fonts',
+  enforce: 'pre',
+  resolveId: (id) => (/^@astryxdesign\/theme-[^/]+\/fonts\.css$/.test(id) ? '\0trailmap-no-fonts.css' : null),
+  load: (id) => (id === '\0trailmap-no-fonts.css' ? '/* remote fonts disabled */' : null),
+};
+
+export default defineConfig({
+  srcDir: 'src',
+  modules: ['@wxt-dev/module-react'],
+  vite: () => ({
+    plugins: [noRemoteFonts, tailwindcss()],
+  }),
+  manifest: {
+    name: 'Trailmap',
+    description: 'Turns learning-oriented browsing into trails, field notes and a concept graph.',
+    key: EXTENSION_PUBLIC_KEY,
+    // docs/PLAN.md §8
+    permissions: [
+      'webNavigation',
+      'tabs',
+      'history',
+      'idle',
+      'storage',
+      'unlimitedStorage',
+      'sidePanel',
+      'offscreen',
+      'alarms',
+      'nativeMessaging',
+    ],
+    host_permissions: ['<all_urls>'],
+    action: { default_title: 'Open Trailmap' },
+  },
+});

@@ -1,0 +1,12 @@
+/* Layer order MUST come first: it ranks the layers before Tailwind names them.
+   See `astryx docs styling-libraries/tailwind`. Import this file before any
+   module that imports Astryx or theme CSS. */
+@layer reset, theme, base, astryx-base, astryx-theme, components, utilities;
+
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/preflight.css" layer(base);
+@import "@astryxdesign/core/reset.css";
+@import "@astryxdesign/core/astryx.css";
+@import "@astryxdesign/theme-neutral/theme.css";
+@import "@astryxdesign/core/tailwind-theme.css";
+@import "tailwindcss/utilities.css" layer(utilities);
