@@ -8,7 +8,7 @@ export default defineConfig({
   workers: 1,
   fullyParallel: false,
   reporter: process.env.CI ? [['github'], ['list']] : 'list',
-  timeout: 30_000,
+  timeout: 60_000, // the first browser launch on a cold profile can take a while
   webServer: {
     command: 'bun fixture-server.ts', // cwd is the config's folder (e2e/),
     port: FIXTURE_PORT,

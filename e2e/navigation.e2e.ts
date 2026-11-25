@@ -74,3 +74,49 @@ test('the side panel lists today\'s Visits indented under their parents and upda
   const [startBox, articleBox] = [await start.locator('.astryx-tree-list-item-label').boundingBox(), await article.locator('.astryx-tree-list-item-label').boundingBox()];
   expect(articleBox!.x).toBeGreaterThan(startBox!.x);
 });
+
+test('active time stops while the tab is in the background', async ({ context, fixtureUrl, readVisits }) => {
+  const startUrl = fixtureUrl(FAKE_HOSTS.learn, START);
+  const otherUrl = fixtureUrl(FAKE_HOSTS.learn, '/trail/other.html');
+  const a = await openStart(context, fixtureUrl);
+  await visitFor(readVisits, startUrl);
+  await a.waitForTimeout(1500);
+
+  const b = await context.newPage(); // takes over as the active tab, so A is hidden
+  await b.goto(otherUrl);
+  await visitFor(readVisits, otherUrl);
+  const whileInFront = (await visitFor(readVisits, startUrl)).activeMs;
+  expect(whileInFront).toBeGreaterThanOrEqual(1000);
+
+  await b.waitForTimeout(2500);
+  await a.bringToFront();
+  await expect.poll(async () => (await visitFor(readVisits, otherUrl)).activeMs).toBeGreaterThanOrEqual(2000);
+  expect((await visitFor(readVisits, startUrl)).activeMs).toBe(whileInFront);
+});
+
+test('the tab-to-Visit mapping survives the service worker being stopped', async ({ context, fixtureUrl, readVisits, extensionId }) => {
+  const startUrl = fixtureUrl(FAKE_HOSTS.learn, START);
+  const page = await openStart(context, fixtureUrl);
+  const start = await visitFor(readVisits, startUrl);
+
+  // Stop the extension's service worker the way Chrome does when it is idle.
+  const onboarding = context.pages().find((p) => p.url().includes(extensionId))!;
+  const cdp = await context.newCDPSession(onboarding);
+  const versions = new Map<string, { versionId: string; runningStatus: string; scriptURL: string }>();
+  cdp.on('ServiceWorker.workerVersionUpdated', ({ versions: updated }) => {
+    for (const v of updated) versions.set(v.versionId, v);
+  });
+  await cdp.send('ServiceWorker.enable');
+  await expect
+    .poll(() => [...versions.values()].some((v) => v.scriptURL.includes(extensionId) && v.runningStatus === 'running'))
+    .toBe(true);
+  for (const v of versions.values()) if (v.scriptURL.includes(extensionId)) await cdp.send('ServiceWorker.stopWorker', { versionId: v.versionId });
+  await expect
+    .poll(() => [...versions.values()].filter((v) => v.scriptURL.includes(extensionId)).every((v) => v.runningStatus !== 'running'))
+    .toBe(true);
+
+  // The next navigation wakes a fresh worker, which must still know the tab's current Visit.
+  await page.locator('#same-tab').click();
+  const article = await visitFor(readVisits, fixtureUrl(FAKE_HOSTS.learn, '/trail/article.html'));
+  expect(article).toMatchObject({ transition: 'link', parentVisitId: start.id });
+});
