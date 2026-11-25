@@ -3,6 +3,7 @@ import { Text } from '@astryxdesign/core/Text';
 import { Link } from '@astryxdesign/core/Link';
 import { HStack } from '@astryxdesign/core/HStack';
 import { VStack } from '@astryxdesign/core/VStack';
+import { ChatGptConnection } from '../../ui/ChatGptConnection';
 import { SETUP_INSTRUCTIONS_PATH } from '../../companion/status';
 import { useCompanionStatus } from '../../companion/useCompanionStatus';
 
@@ -12,10 +13,13 @@ export function CompanionStatus() {
 
   if (status.state === 'connected') {
     return (
-      <HStack gap={2} align="center">
-        <StatusDot variant="success" label="Companion connected" />
-        <Text>Companion connected</Text>
-      </HStack>
+      <VStack gap={2}>
+        <HStack gap={2} align="center">
+          <StatusDot variant="success" label="Companion connected" />
+          <Text>Companion connected</Text>
+        </HStack>
+        <ChatGptConnection />
+      </VStack>
     );
   }
 

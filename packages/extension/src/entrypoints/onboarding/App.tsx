@@ -2,9 +2,12 @@ import { Code } from '@astryxdesign/core/Code';
 import { Heading } from '@astryxdesign/core/Heading';
 import { Text } from '@astryxdesign/core/Text';
 import { VStack } from '@astryxdesign/core/VStack';
+import { useCompanionStatus } from '../../companion/useCompanionStatus';
+import { ChatGptConnection } from '../../ui/ChatGptConnection';
 
 /** Onboarding tab, opened on first install. Placeholder: later tickets add the privacy screen. */
 export function App() {
+  const companion = useCompanionStatus();
   return (
     <VStack gap={3} padding={8} maxWidth={640}>
       <Heading level={1}>Welcome to Trailmap</Heading>
@@ -12,7 +15,7 @@ export function App() {
         Trailmap quietly turns your learning-oriented browsing into trails, field notes and a concept graph.
         Recording starts straight away.
       </Text>
-      <Text type="supporting">Privacy settings and AI notes setup will appear here.</Text>
+      <Text type="supporting">Privacy settings will appear here.</Text>
       <VStack gap={2} id="companion">
         <Heading level={2}>Set up the companion</Heading>
         <Text>
@@ -32,6 +35,7 @@ export function App() {
           <Code>trailmap-companion uninstall</Code> removes the registration again.
         </Text>
       </VStack>
+      {companion.state === 'connected' && <ChatGptConnection />}
     </VStack>
   );
 }

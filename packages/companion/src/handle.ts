@@ -1,5 +1,6 @@
+import { ChatGptAuthError, getChatGptAuth } from './auth/auth';
 import type { SecretStore } from './secrets';
-import { CompanionRequest, type CompanionRequestType, type CompanionResponse, type ErrorCode } from '@trailmap/shared';
+import { CompanionRequest, type CompanionEvent, type CompanionRequestType, type CompanionResponse, type ErrorCode } from '@trailmap/shared';
 
 export const COMPANION_VERSION = '0.0.0';
 
@@ -11,6 +12,9 @@ export interface CompanionContext {
   secrets: SecretStore;
   /** Diagnostics only: never pass tokens, keys or page text. */
   log: (line: string) => void;
+  /** Auth lifecycle notifications sent by the Native Messaging host. */
+  emit?: (event: CompanionEvent) => void;
+  now?: () => number;
   /** Overrides for tests. */
   handlers?: Partial<Handlers>;
 }
@@ -25,6 +29,11 @@ export type Handlers = {
 /** One entry per verb in `CompanionRequest`: adding a verb to the schema fails typecheck until it has a handler. */
 export const defaultHandlers: Handlers = {
   'companion.hello': (request) => ({ type: 'companion.hello', id: request.id, version: COMPANION_VERSION }),
+  'auth.signIn': async ({ id }, ctx) => ({ type: 'auth.signIn', id, url: await getChatGptAuth(ctx).signIn() }),
+  'auth.status': async ({ id }, ctx) => ({ type: 'auth.status', id, ...await getChatGptAuth(ctx).status() }),
+  'auth.signOut': async ({ id }, ctx) => ({
+    type: 'auth.signOut', id, revocationConfirmed: await getChatGptAuth(ctx).signOut(),
+  }),
 };
 
 function errorReply(id: string | null, code: ErrorCode, message: string): CompanionResponse {
@@ -52,7 +61,8 @@ export async function handleMessage(raw: unknown, ctx: CompanionContext): Promis
   ) => Promise<CompanionResponse> | CompanionResponse;
   try {
     return await handler(request, ctx);
-  } catch {
+  } catch (error) {
+    if (error instanceof ChatGptAuthError) return errorReply(request.id, error.code, error.message);
     // Deliberately drops the error text: handlers touch secrets and page text.
     ctx.log(`handler for ${request.type} failed`);
     return errorReply(request.id, 'internal', 'The companion failed to handle this message');
