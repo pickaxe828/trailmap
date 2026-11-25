@@ -6,6 +6,7 @@ import { openTrailmapDb, type TrailmapDb } from '../db/db';
 import { enqueueJob, JobQueue, JOB_PRIORITY } from '../jobs/queue';
 import { countUnseenNotes, markNotesSeen } from './badge';
 import { NotesWrittenHooks } from './hooks';
+import { discardJobs } from '../jobs/testing';
 import { wrapUpHandlers, type ModelRequester } from './handlers';
 import { enqueueWrapUp } from './enqueue';
 
@@ -52,8 +53,7 @@ const notes = { found: 'With tombstones.', key_ideas: [{ idea: 'Deletes are mark
 
 function queueWith(request: ModelRequester, hooks = new NotesWrittenHooks()) {
   const handlers = wrapUpHandlers(db, () => settings, { request, now: () => now, hooks });
-  const discard = async () => 'discard' as const;
-  return new JobQueue(db, () => now, { page_enrichment: discard, concept_resolution: discard, merge_verdict: discard, ...handlers }, [db.expeditions]);
+  return new JobQueue(db, () => now, { ...discardJobs, ...handlers }, [db.expeditions, db.visits]);
 }
 const queue = (outputs: Record<string, unknown>, calls?: Call[], hooks?: NotesWrittenHooks) => queueWith(fake(outputs, calls), hooks);
 const drain = async (q: JobQueue) => { while (await q.runNext()) { /* drain */ } };

@@ -6,19 +6,26 @@ import type { TrailmapDb } from '../db/db';
 import { getEmbedder } from '../embeddings/background';
 import { enrichPage } from '../enrichment/handler';
 import type { RecordingSettings } from '../privacy/policy';
+import { updateLivingNote } from '../threads/living-note';
+import { threadNotesWritten } from '../threads/hooks';
+import { matchThread } from '../threads/match';
 import { wrapUpHandlers } from '../wrapup/handlers';
+import { fieldNotesWritten } from '../wrapup/hooks';
 import { JobQueue } from './queue';
 
 const ALARM = 'trailmap.jobs';
 
 /** Alarms recover due work even if the worker died after capture, claim or backoff. */
 export function startJobs(db: TrailmapDb, ready: Promise<void>, getSettings: () => RecordingSettings): void {
+  fieldNotesWritten.register(threadNotesWritten);
   const queue = new JobQueue(db, Date.now, {
     page_enrichment: enrichPage(db, getSettings),
     ...wrapUpHandlers(db, getSettings),
     concept_resolution: resolveConcepts(db, getEmbedder(), Date.now),
     merge_verdict: decideConceptMerges(db, getSettings, Date.now),
-  }, [db.pages, db.expeditions, db.visits, db.concepts, db.conceptEvidence, db.edges]);
+    thread_match: matchThread(db, getEmbedder(), Date.now),
+    living_note: updateLivingNote(db, getSettings),
+  }, [db.pages, db.expeditions, db.visits, db.concepts, db.conceptEvidence, db.edges, db.threads]);
   const client = getCompanionClient();
   let pumping = false;
   function kick() {

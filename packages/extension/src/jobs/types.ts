@@ -8,6 +8,8 @@ export type JobPayloads = {
   field_notes: { expeditionId: string; endedAt: number; revision: number };
   concept_resolution: { canonicalUrl: string; visitId: string; enrichedAt: number; textHash: string; textRevision?: number };
   merge_verdict: { pairs: { candidateId: string; existingId: string }[] };
+  thread_match: { expeditionId: string; notesWrittenAt?: number };
+  living_note: { threadId: string; revision: number; checkpoint: number };
 };
 
 export type JobKind = keyof JobPayloads;

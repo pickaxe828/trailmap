@@ -8,6 +8,7 @@ import { startPageSummary } from '../llm/background';
 import { startSegmentation } from '../segmentation/background';
 import { startCompanion } from '../companion/background';
 import { createRecordingPrivacy } from '../privacy/background';
+import { startThreadCorrections } from '../threads/background';
 import { watchUnseenNotes } from '../wrapup/badge';
 
 export default defineBackground(() => {
@@ -43,6 +44,7 @@ export default defineBackground(() => {
   recorder.start();
   privacy.start(recorder);
   startCorrections(db, recorder, privacy);
+  startThreadCorrections(db);
   startPageSummary(db, recorder, privacy.getSettings);
   startJobs(db, privacy.ready, privacy.getSettings);
   // The toolbar badge counts field notes nobody has viewed yet. No pop-ups.
