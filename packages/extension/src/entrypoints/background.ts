@@ -1,4 +1,8 @@
+import { startCompanion } from '../companion/background';
+
 export default defineBackground(() => {
+  startCompanion();
+
   // Clicking the toolbar icon opens the side panel.
   void chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
 
