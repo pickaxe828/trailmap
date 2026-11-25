@@ -299,7 +299,7 @@ Keep it as a fallback only, in case OpenAI ever accepts custom schemes and loopb
 
 | Message | What it does |
 |---|---|
-| `auth.status` / `auth.signIn` / `auth.signOut` | ChatGPT sign-in (§7.1). Returns the account email and whether plan usage is on. Never returns tokens. |
+| `auth.signIn` / `auth.status` / `auth.signOut` | Open an authorize URL, read the account status, or end the session (§7.1). The companion pushes `auth.completed` when sign-in succeeds. Tokens stay in the companion. |
 | `keys.set` | Saves an Anthropic API key to the Keychain. The extension never stores the key. |
 | `llm.models` | Lists the models available from each connected provider |
 | `llm.complete` | Runs one model call (prompt, input, JSON schema). Refreshes tokens when needed. Returns validated JSON, or a typed error from the §7.1 table. |
@@ -330,58 +330,55 @@ Assumed volume: about 50 enriched pages a day (about 3k tokens in and 500 out ea
 
 ### 7.1 Sign in with ChatGPT (use your ChatGPT plan instead of an API key)
 
-OpenAI added plan usage to Sign in with ChatGPT at DevDay (2026-09-29).
-- **Who can use it:** eligible **Plus and Pro** users. Each user sets a **weekly cap for each app** they authorize.
-- **Open-source and locally hosted apps** can use it without approval or a client secret. This is the path Trailmap fits.
-- **Paid or hosted apps** must go through OpenAI's interest form.
+- Eligible **Plus and Pro** subscribers set a weekly usage cap for each app. Plus also has a five-hour limit shared across apps. ChatGPT Settings → Usage shows the user's caps and credit settings. [OpenAI accounts and sessions](https://developers.openai.com/siwc/token-sharing-open-source/profiles-and-sessions#tracking-usage)
+- Trailmap uses the public client flow for open-source and locally hosted apps. It uses dynamic registration without a client secret. Paid or hosted integrations use OpenAI's interest form. [OpenAI open-source integration overview](https://developers.openai.com/siwc/token-sharing-open-source)
 
-**Sign-in flow.** The companion (§6.1) does all the OAuth work. The extension only opens a tab.
-1. In onboarding or Settings, the user clicks **Continue with ChatGPT**. OpenAI requires that wording or "Sign in with ChatGPT". The extension sends `auth.signIn` to the companion.
-2. The companion starts a listener on `http://127.0.0.1:1455/auth/callback`, or on another free port if 1455 is busy (the Codex CLI uses it too).
-   - It builds the authorize URL (`https://auth.openai.com/api/accounts/authorize`) and hands it to the extension.
-   - The extension opens it in a normal tab, where you're probably already signed in to ChatGPT.
+**Sign-in flow**
 
-   The authorize URL carries:
-   - PKCE (`S256`) and a fresh `state` and `nonce` for every attempt.
-   - Scopes: `openid profile email offline_access resource.invoke chatgpt.tokens.use.direct`.
-   - `resource=https://api.openai.com/v1`.
-   - On first sign-in only: `client_id=dynamic_agent_client`, plus `agent_name_hint=Trailmap` and a stable `ext_agent_host_id` (a random UUID kept in storage). The callback returns an `oaiapp_…` client ID. Store it and reuse it from then on.
-3. OpenAI redirects the tab to the loopback address. There the companion:
-   - checks `state`, then exchanges the code at `https://auth.openai.com/api/accounts/oauth/token` using the PKCE verifier;
-   - verifies the ID token (issuer, audience, expiry, nonce);
-   - saves the tokens to the Keychain and shows "Signed in. You can close this tab.";
-   - closes the listener and sends `auth.completed` to the extension.
+1. In onboarding or the side panel, the user clicks **Continue with ChatGPT**. The extension sends `auth.signIn` and opens the companion's authorize URL in a normal tab.
+2. The companion starts a loopback listener at `http://127.0.0.1:1455/auth/callback`, with a free port as a fallback. The scheme, IP and path stay fixed from first registration onward. The same complete redirect URI goes into the authorize request and code exchange.
+   - Send `GET https://auth.openai.com/api/accounts/authorize` with `response_type=code`, PKCE `S256`, fresh `state` and `nonce`, and the installation's stable `ext_agent_host_id=urn:uuid:<uuidv4>`.
+   - Request `openid profile email offline_access resource.invoke chatgpt.tokens.use.direct` and `resource=https://api.openai.com/v1`.
+   - The first registration sends `client_id=dynamic_agent_client` and `agent_name_hint=Trailmap`. The callback supplies the issued `oaiapp_…` client ID. Returning sign-ins reuse that registration and can send a verified email as `login_hint`. OpenAI also supports a retained `id_token_hint` to skip account selection. Trailmap uses the documented account-selector flow to keep the ID token out of the extension and browser.
+3. Validate the callback's `state` before processing its result. A state-matched OAuth error ends the attempt. Enforce one exchange per attempt. For a returning sign-in, reject a callback that supplies a different client ID.
+   - POST a form-encoded `authorization_code` grant to `https://auth.openai.com/api/accounts/oauth/token` with the issued client ID, code, verifier, exact redirect URI and resource.
+   - Verify the ID token against the issuer's discovery JWKS and check the issuer, audience, expiry and nonce. Use its verified subject as the account identity. Check that a returning account matches the registration before replacing credentials. Treat email as verified only when the token marks it verified.
+   - Store the validated identity, installed client ID, tokens and expiry in the companion's secret store. Derive account status from the token response's granted scopes. Keep the sign-in with plan usage off if `chatgpt.tokens.use.direct` is absent. An explicit attempt to enable the grant requests consent with the complete scope set.
+   - Close the listener, show "Signed in. You can close this tab.", and emit `auth.completed`. The listener also closes after timeout, cancellation or a failure on the matched callback.
 
-   The listener binds to 127.0.0.1 only, is open only during sign-in, and accepts exactly one request whose `state` matches. This is the redirect OpenAI documents, so the flow doesn't depend on anything undocumented.
-4. **Requests:** the companion calls `POST https://api.openai.com/v1/responses` with `Authorization: Bearer <access_token>`.
-   - You **must** send `store: false` and `stream: true`. Count a call as successful only when `response.completed` arrives.
-   - Fill the model picker from `GET /v1/models`, keeping entries with `visibility == "list"`. Don't hard-code model names.
-5. **Structured output** isn't documented for plan usage.
-   - First try a JSON-schema response format.
-   - If the API returns `subscription_sharing_unsupported_capability` (400), fall back to asking for JSON in the prompt, validating it with the shared Zod schema, and retrying once to repair it.
+[OpenAI registration and sign-in](https://developers.openai.com/siwc/token-sharing-open-source/sign-in) · [OpenAI ID-token validation](https://developers.openai.com/siwc/website#6-verify-the-id-token)
 
-**Token handling** (all inside the companion)
-- The access token lasts 1 h. The refresh token lasts 30 days and is **replaced on every refresh**.
-- Only one refresh may run at a time. If two model calls refreshed at once, the second would trigger `refresh_token_reused` and sign the user out. Because the companion is a single process, a simple in-process lock is enough.
-- On `invalid_grant` or any `refresh_token_*` error, clear the tokens and sign in again with the saved client ID.
-- Tokens live in the macOS Keychain. They are never logged and never sent to the extension. The extension only learns the account email and whether plan usage is on.
+**Token handling**
+
+- Access tokens last one hour. Refresh tokens last 30 days and rotate after each successful refresh. Refresh near expiry with a form-encoded `refresh_token` grant that sends the issued client ID, current refresh token and resource, and omits `scope`. Serialize refreshes and replace the saved credential set together.
+- Clear unusable credentials on `invalid_grant`, `invalid_refresh_token`, `token_expired`, or `refresh_token_*` from refresh. Sign in again with the saved client ID. Preserve credentials on temporary failures and check the configuration on `invalid_client`. A confirmed disconnect also requires a fresh sign-in.
+- On sign-out, discover the issuer's `revocation_endpoint` and POST the refresh token, `token_type_hint=refresh_token` and issued client ID as form fields. Retry temporary failures with bounded backoff. Clear local access, refresh and ID tokens while retaining the account/client mapping and stable host ID. Tell the user when revocation could not be confirmed and point them to ChatGPT Settings.
+- Store tokens in the macOS Keychain or the companion's owner-only file store. The extension receives only the URL to start sign-in, lifecycle notifications and account status. The companion provides fresh access tokens to its inference callers.
+
+[OpenAI session management](https://developers.openai.com/siwc/token-sharing-open-source/profiles-and-sessions) · [OpenAI token reference](https://developers.openai.com/siwc/token-sharing-open-source/token-reference) · [OpenAI refresh errors](https://developers.openai.com/siwc/token-sharing-open-source/errors-and-recovery#refresh-errors)
+
+**Inference and structured output**
+
+- Call `POST https://api.openai.com/v1/responses` with `Authorization: Bearer <access_token>`. Use `store: false`, `stream: true` and an array for `input`. Put instructions in `instructions` or developer messages. The route rejects system-role items and fields such as `max_output_tokens`, `temperature` and `previous_response_id`. Budget prompt size locally and follow OpenAI's supported input and tool lists. [OpenAI preview limitations](https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations)
+- Populate the picker from `GET /v1/models`, keeping entries with `visibility == "list"`. Treat only `response.completed` as success. Handle `response.failed`, `response.incomplete`, explicit errors and interrupted streams. For example, a usage limit can arrive as `response.failed` after streaming starts. [OpenAI models and inference](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference)
+- Try JSON Schema via `text.format`. Plan usage support for this format is unconfirmed. If `subscription_sharing_unsupported_capability` identifies the `text` format in `error.param`, ask for JSON in the prompt, validate with the shared Zod schema and allow one repair attempt.
 
 **Errors the UI must handle**
 
-| Error | Meaning | What Trailmap does |
-|---|---|---|
-| `subscription_sharing_user_not_eligible` (403) | Plan, workspace or admin policy doesn't allow it. Business and Enterprise admins can turn third-party apps off. | Stop and explain. Offer the other providers. **Don't retry and don't loop back through sign-in.** |
-| `subscription_sharing_usage_limit_exceeded` (429) | The weekly per-app cap is used up | Pause the enrichment queue and link to ChatGPT Settings → Usage. Capture keeps running and pages wait in the queue. |
-| `subscription_sharing_usage_unavailable` (503) | Temporary outage | Back off and retry later |
-| `chatgpt.tokens.use.direct` not granted | Signed in, but the user declined plan usage | Keep the sign-in, turn the ChatGPT provider off and offer another one |
+Before the stream opens, the response may carry a `detail` field. Use the HTTP status for recovery and retain the request ID for diagnosis. A 401 calls for checking identity and grants, a 403 for checking serving policy or region, and a 503 for bounded backoff. [OpenAI errors and recovery](https://developers.openai.com/siwc/token-sharing-open-source/errors-and-recovery)
 
-**Budgeting against the weekly cap.** There is no batch discount, and the cap applies to each app. So the queue spends in priority order:
-1. `read` pages.
-2. Field notes.
-3. `skimmed` pages, only if there is room left.
-4. Concept-merge verdicts last.
+| Error | What Trailmap does |
+|---|---|
+| `subscription_sharing_user_not_eligible` (403) | Explain the plan, workspace or policy restriction and offer other providers. |
+| `subscription_sharing_usage_limit_exceeded` (429) | Pause new plan requests and link to ChatGPT Settings → Usage. Preserve the queue and avoid guessing which cap applied or when it resets. |
+| `subscription_sharing_usage_unavailable` or `subscription_sharing_user_unavailable` (503) | Keep credentials and retry later with bounded backoff. |
+| `subscription_sharing_unsupported_capability` (400) | Use `error.param` to remove the unsupported field, tool or feature. |
+| `subscription_sharing_route_not_supported` (403) | Verify the HTTP method and endpoint. |
+| `subscription_sharing_invalid_user` (401) | Keep the request ID and diagnose the credential failure. Ask for sign-in after confirmed revocation or terminal refresh failure. |
+| `chatpass_v2_scope_not_authorized` or `chatpass_v2_invalid_authorization_context` (403) | Check client configuration and grants. |
+| `chatgpt.tokens.use.direct` absent | Show plan usage as off. Offer explicit reauthorization or another provider. |
 
-Show how much of the week's usage Trailmap has spent, but only if the API reports it (not yet confirmed).
+**Budgeting against plan limits.** Run `read` page enrichment first, then field notes, then `skimmed` page enrichment when there's room, and concept-merge verdicts last. Link to ChatGPT Settings → Usage for app usage and credit settings.
 
 ## 8. Privacy and permissions
 
