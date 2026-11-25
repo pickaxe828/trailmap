@@ -53,11 +53,11 @@ export function recordingState(url: string | undefined, settings: RecordingSetti
 
 /** Call at dispatch time with current settings, not just when enqueuing enrichment. */
 export function maySendToModel(
-  visit: Pick<Visit, 'url' | 'canonicalUrl' | 'engagement'>,
-  page: Pick<Page, 'canonicalUrl' | 'text'> | undefined,
+  visit: Pick<Visit, 'url' | 'canonicalUrl' | 'engagement' | 'privacyBlocked'>,
+  page: Pick<Page, 'canonicalUrl' | 'sourceUrl' | 'text'> | undefined,
   settings: RecordingSettings,
 ): boolean {
-  return (visit.engagement === 'skimmed' || visit.engagement === 'read') && !!page?.text.trim() &&
+  return !visit.privacyBlocked && (visit.engagement === 'skimmed' || visit.engagement === 'read') && !!page?.text.trim() &&
     page.canonicalUrl === visit.canonicalUrl && recordingState(visit.url, settings) === 'recording' &&
-    recordingState(page.canonicalUrl, settings) === 'recording';
+    recordingState(page.canonicalUrl, settings) === 'recording' && recordingState(page.sourceUrl, settings) === 'recording';
 }

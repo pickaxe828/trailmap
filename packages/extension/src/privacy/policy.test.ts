@@ -50,7 +50,7 @@ test('pause takes priority and site identity ignores port, scheme and case', () 
 });
 
 test('only sends text belonging to an engaged Visit that is still allowed', () => {
-  const page = { canonicalUrl: 'https://learn.test/article', text: 'Article text' };
+  const page = { canonicalUrl: 'https://learn.test/article', sourceUrl: 'https://learn.test/article', text: 'Article text' };
   const visit = { url: 'https://learn.test/article?utm_source=trail', canonicalUrl: page.canonicalUrl, engagement: 'skimmed' as const };
   expect(maySendToModel(visit, page, settings)).toBe(true);
   expect(maySendToModel({ ...visit, engagement: 'bounced' }, page, settings)).toBe(false);
@@ -59,5 +59,8 @@ test('only sends text belonging to an engaged Visit that is still allowed', () =
   expect(maySendToModel({ ...visit, canonicalUrl: skippedPage.canonicalUrl }, skippedPage, settings)).toBe(false);
   expect(maySendToModel(visit, skippedPage, settings)).toBe(false);
   expect(maySendToModel(visit, { ...page, text: '' }, settings)).toBe(false);
+  expect(maySendToModel(visit, { ...page, sourceUrl: 'https://study.test/article' }, settings)).toBe(false);
+  expect(maySendToModel(visit, { ...page, sourceUrl: undefined }, settings)).toBe(false);
+  expect(maySendToModel({ ...visit, privacyBlocked: true }, page, settings)).toBe(false);
   expect(maySendToModel(visit, page, { ...settings, paused: true })).toBe(false);
 });

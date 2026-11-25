@@ -66,6 +66,27 @@ test('a Visit updates engagement from time, scroll and selection, then stops acc
   expect(await byUrl(second)).toMatchObject({ activeMs: 60_001, engagement: 'read' });
 });
 
+test('pausing ends the active Visit and resuming does not admit its stale content', async () => {
+  let paused = false;
+  recorder = new VisitRecorder({ db, source: browser, store, now: clock.now,
+    newId: () => `v${++nextId}`, shouldRecord: () => !paused });
+  recorder.start();
+  await browser.focusWindow(WINDOW);
+  await browser.activateTab(TAB, WINDOW);
+  const first = `${LEARN}/article`;
+  await browser.commit(TAB, first);
+  clock.advance(10_000);
+  await recorder.changeRecordingPolicy(async () => { paused = true; });
+  clock.advance(60_000);
+  await recorder.changeRecordingPolicy(async () => { paused = false; });
+  await browser.reportPageContent(TAB, first, { kind: 'highlight', source: 'copy', text: 'Do not save' });
+  const next = `${LEARN}/another`;
+  await browser.commit(TAB, next);
+  expect(await byUrl(first)).toMatchObject({ activeMs: 10_000, engagement: 'skimmed' });
+  expect(await byUrl(next)).toMatchObject({ parentVisitId: null });
+  expect(await db.highlights.count()).toBe(0);
+});
+
 describe('navigation lineage', () => {
   test('clicking a link creates a Visit whose parent is the previous page in that tab', async () => {
     await browser.commit(TAB, `${LEARN}/index.html`, { transitionType: 'typed' });

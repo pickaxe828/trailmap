@@ -20,6 +20,7 @@ export const PAGE_TEXT_BYTE_LIMIT = 12_000;
 type PageText = { text: string; textHash: string; sourceHash: string };
 
 export type PageContent =
+  | { kind: 'screen'; hasPassword: boolean }
   | { kind: 'probe'; canonicalLink?: string; sourceHash: string }
   | ({ kind: 'text'; visitId: string } & PageText)
   | { kind: 'scroll'; depth: number }
@@ -35,6 +36,7 @@ export function isPageContentMessage(value: unknown): value is PageContentMessag
   if (typeof value !== 'object' || value === null) return false;
   const message = value as Record<string, unknown>;
   if (message.type !== PAGE_CONTENT_MESSAGE || typeof message.pageUrl !== 'string') return false;
+  if (message.kind === 'screen') return typeof message.hasPassword === 'boolean';
   if (message.kind === 'selection') return true;
   if (message.kind === 'scroll') {
     return typeof message.depth === 'number' && Number.isFinite(message.depth) && message.depth > 0 && message.depth <= 1;

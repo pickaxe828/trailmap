@@ -29,6 +29,7 @@ export const Visit = z.object({
   activeMs: z.number(),
   scrollDepth: z.number().min(0).max(1),
   engagement: Engagement,
+  privacyBlocked: z.literal(true).optional(),
   expeditionId: z.string().nullable(),
   segmentationPending: z.literal(1).optional(),
   expeditionEmbedding: z.instanceof(Int8Array).nullable().optional(),
@@ -43,6 +44,7 @@ export const Page = z.object({
   text: z.string(),
   textHash: z.string(),
   sourceHash: z.string().optional(), // Fingerprint of the input DOM for the last extraction.
+  sourceUrl: z.string().optional(), // Cleaned source URL, which can differ from rel=canonical.
   summary: z.string().nullable(),
   takeaways: z.array(z.string()),
   embedding: z.instanceof(Int8Array).nullable(),

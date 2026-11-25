@@ -40,17 +40,38 @@ export default defineContentScript({
     let extractionTimer: number | undefined;
     let scrollTimer: number | undefined;
     let selectionTimer: number | undefined;
+    let screenTimer: number | undefined;
+    let admitted = false;
+    let passwordDetected = false;
     let generation = 0;
     let url = location.href.split('#')[0];
     let lastSelection = '';
     let maxDepth = 0;
     let reportedDepth = 0;
 
+    const screen = async (started: number) => {
+      if (passwordDetected || generation !== started) return;
+      passwordDetected = hasPasswordField(document);
+      const reply = await send({ kind: 'screen', hasPassword: passwordDetected });
+      if (generation === started && !passwordDetected) admitted = !!reply;
+    };
+
+    const isPublic = () => {
+      if (!passwordDetected && hasPasswordField(document)) {
+        passwordDetected = true;
+        admitted = false;
+        void send({ kind: 'screen', hasPassword: true });
+      }
+      return admitted && !passwordDetected;
+    };
+
     const capture = async (started: number) => {
-      if (!document.body || hasPasswordField(document)) return;
+      if (!document.body) return;
+      if (!admitted) await screen(started);
+      if (generation !== started || !isPublic()) return;
       const sourceHash = hashText(document.documentElement.outerHTML);
       const reply = await send({ kind: 'probe', sourceHash, canonicalLink: canonicalLink() });
-      if (!reply?.extract || generation !== started || hasPasswordField(document)) return;
+      if (!reply?.extract || generation !== started || !isPublic()) return;
 
       // The DOM may have changed while the service worker looked up the Page.
       const latestHash = hashText(document.documentElement.outerHTML);
@@ -63,7 +84,7 @@ export default defineContentScript({
     const reportScroll = () => {
       clearTimeout(scrollTimer);
       scrollTimer = undefined;
-      if (maxDepth <= reportedDepth) return;
+      if (maxDepth <= reportedDepth || !isPublic()) return;
       reportedDepth = maxDepth;
       void send({ kind: 'scroll', depth: maxDepth });
     };
@@ -84,16 +105,33 @@ export default defineContentScript({
       clearTimeout(extractionTimer);
       clearTimeout(scrollTimer);
       clearTimeout(selectionTimer);
+      clearTimeout(screenTimer);
       scrollTimer = undefined;
       maxDepth = reportedDepth = 0;
       lastSelection = '';
+      admitted = passwordDetected = false;
       trackScroll();
       const started = ++generation;
+      // Let the browser report the committed navigation (including pushState)
+      // and the page render before screening. Extraction retries if necessary.
+      screenTimer = ctx.setTimeout(() => {
+        void screen(started).then(() => {
+          if (generation === started) reportScroll();
+        });
+      }, 0);
       extractionTimer = ctx.setTimeout(() => void capture(started).catch(() => undefined), EXTRACTION_DELAY_MS);
     };
 
-    if (document.readyState === 'complete') schedule();
-    else ctx.addEventListener(window, 'load', schedule, { once: true });
+    if (document.readyState !== 'loading') schedule();
+    else ctx.addEventListener(document, 'DOMContentLoaded', schedule, { once: true });
+
+    // Catch login forms inserted after the initial screen without observing or
+    // reading form values. Also check synchronously before each content capture.
+    const observer = new MutationObserver((records) => {
+      if (admitted && records.some((record) => record.type === 'attributes' || record.addedNodes.length > 0)) isPublic();
+    });
+    observer.observe(document, { subtree: true, childList: true, attributes: true, attributeFilter: ['type'] });
+    ctx.onInvalidated(() => observer.disconnect());
     ctx.addEventListener(window, 'pageshow', (event) => {
       if (event.persisted) schedule();
     });
@@ -103,7 +141,7 @@ export default defineContentScript({
     ctx.addEventListener(document, 'selectionchange', () => {
       clearTimeout(selectionTimer);
       selectionTimer = ctx.setTimeout(() => {
-        if (hasPasswordField(document)) return;
+        if (!isPublic()) return;
         const text = selectedText();
         if (text && text !== lastSelection) {
           void send(isHighlight(text)
@@ -114,7 +152,7 @@ export default defineContentScript({
       }, SELECTION_DELAY_MS);
     }, { capture: true });
     ctx.addEventListener(window, 'copy', (event) => {
-      if (!event.isTrusted || hasPasswordField(document)) return;
+      if (!event.isTrusted || !isPublic()) return;
       const text = event.clipboardData?.getData('text/plain').trim() || selectedText();
       if (text) void send({ kind: 'highlight', source: 'copy', text, canonicalLink: canonicalLink() });
     });

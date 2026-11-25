@@ -49,7 +49,7 @@ test('an article stores capped Readability text under its canonical URL and skip
 
   const visits = await readCapture('visits');
   expect(visits.find((visit) => visit.url === url)?.canonicalUrl).toBe(canonicalUrl);
-  expect(visits.find((visit) => visit.url === privateUrl)?.canonicalUrl).toBe(privateUrl);
+  expect(visits.some((visit) => visit.url === privateUrl)).toBe(false);
 });
 
 test('a Visit keeps its maximum scroll depth and links selections and copies to its Page', async ({

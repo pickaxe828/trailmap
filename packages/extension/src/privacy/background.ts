@@ -1,0 +1,108 @@
+import type { VisitRecorder } from '../capture/recorder';
+import { isRecordingRequest, PASSWORD_STATUS_CHANGED, TOGGLE_RECORDING_COMMAND, type RecordingStatus } from './messages';
+import { recordingState, siteKey, type RecordingSettings, type RecordingState } from './policy';
+import { readRecordingSettings, saveRecordingSettings } from './settings';
+
+const badges: Record<RecordingState, { text: string; title: string }> = {
+  recording: { text: 'ON', title: 'Trailmap — Recording is on' },
+  paused: { text: 'OFF', title: 'Trailmap — Recording paused' },
+  skipped: { text: 'SKIP', title: 'Trailmap — Site is skipped' },
+};
+
+export function createRecordingPrivacy() {
+  // Start fail-closed until persisted preferences have loaded.
+  let settings: RecordingSettings = { paused: true, skippedHosts: [] };
+  const ready = readRecordingSettings().then((saved) => { settings = saved; });
+  let recorder: VisitRecorder;
+  let settingsWritten = Promise.resolve();
+
+  function stateFor(tab: chrome.tabs.Tab): RecordingState {
+    const state = recordingState(tab.url, settings);
+    return state === 'recording' && tab.id !== undefined && recorder.isPasswordProtected(tab.id) ? 'skipped' : state;
+  }
+
+  async function refreshBadge(tabId: number) {
+    await recorder.ready;
+    const tab = await chrome.tabs.get(tabId);
+    const { text, title } = badges[stateFor(tab)];
+    await Promise.all([chrome.action.setBadgeText({ tabId, text }), chrome.action.setTitle({ tabId, title })]);
+  }
+
+  async function refreshBadges() {
+    await recorder.ready;
+    await Promise.all((await chrome.tabs.query({ active: true })).map(({ id }) =>
+      id === undefined ? undefined : refreshBadge(id).catch(() => {})));
+  }
+
+  function changeSettings(edit: (current: RecordingSettings) => RecordingSettings) {
+    const written = recorder.changeRecordingPolicy(async () => {
+      const next = edit(settings);
+      await saveRecordingSettings(next);
+      settings = next;
+    });
+    settingsWritten = written.catch(() => {});
+    return written.then(refreshBadges);
+  }
+
+  /** Use the same settings writer for future ignore-site actions. */
+  function setSiteSkipped(host: string, skip: boolean) {
+    return changeSettings((current) => ({
+      ...current,
+      skippedHosts: skip ? [...new Set([...current.skippedHosts, host])] : current.skippedHosts.filter((entry) => entry !== host),
+    }));
+  }
+
+  async function getStatus(tabId: number | undefined): Promise<RecordingStatus> {
+    await recorder.ready;
+    await settingsWritten;
+    const tab = tabId === undefined ? undefined : await chrome.tabs.get(tabId).catch(() => undefined);
+    const host = siteKey(tab?.url);
+    const paused = settings.paused;
+    if (!tab || tabId === undefined || !host) return { paused };
+    const skipped = recorder.isPasswordProtected(tabId) || recordingState(tab.url, { ...settings, paused: false }) === 'skipped';
+    const editable = !recorder.isPasswordProtected(tabId) && recordingState(tab.url, {
+      paused: false, skippedHosts: settings.skippedHosts.filter((entry) => entry !== host),
+    }) === 'recording';
+    return { paused, site: { tabId, host, state: stateFor(tab), skipped, editable } };
+  }
+
+  return {
+    ready,
+    shouldRecord: (url: string) => recordingState(url, settings) === 'recording',
+    setSiteSkipped,
+    onPasswordStatusChanged(tabId: number) {
+      void refreshBadge(tabId).catch(() => {});
+      void chrome.runtime.sendMessage({ type: PASSWORD_STATUS_CHANGED }).catch(() => {});
+    },
+    start(visitRecorder: VisitRecorder) {
+      recorder = visitRecorder;
+      chrome.commands.onCommand.addListener((command) => {
+        if (command === TOGGLE_RECORDING_COMMAND) {
+          void changeSettings((current) => ({ ...current, paused: !current.paused })).catch(() => {});
+        }
+      });
+      chrome.tabs.onActivated.addListener(({ tabId }) => void refreshBadge(tabId).catch(() => {}));
+      chrome.tabs.onUpdated.addListener((tabId, change) => {
+        // Chrome resets per-tab action badges on navigation.
+        if (change.url || change.status) void refreshBadge(tabId).catch(() => {});
+      });
+      chrome.runtime.onMessage.addListener((input: unknown, sender, reply) => {
+        if (sender.url !== chrome.runtime.getURL('/sidepanel.html') || !isRecordingRequest(input)) return;
+        void (async () => {
+          switch (input.action) {
+            case 'status': return getStatus(input.tabId);
+            case 'set-pause': await changeSettings((current) => ({ ...current, paused: input.paused })); return true;
+            case 'set-site': {
+              const { site } = await getStatus(input.tabId);
+              if (!site?.editable || site.host !== input.host) return false;
+              await setSiteSkipped(site.host, input.skip);
+              return true;
+            }
+          }
+        })().then(reply, () => reply(false));
+        return true;
+      });
+      void refreshBadges().catch(() => {});
+    },
+  };
+}
