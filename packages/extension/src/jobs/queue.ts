@@ -11,7 +11,8 @@ const FIRST_LIMIT_PROBE_MS = 30 * 60_000;
 const MAX_LIMIT_PROBE_MS = 6 * 60 * 60_000;
 const TRANSIENT_MAX_MS = 15 * 60_000;
 
-export type JobResult = void | { retryAt: number } | 'discard' | { commit: () => Promise<void> };
+type JobDisposition = void | { retryAt: number } | 'discard';
+export type JobResult = JobDisposition | { commit: () => Promise<JobDisposition> };
 export type JobHandlers = { [K in JobKind]: (job: Job<K>) => Promise<JobResult> };
 
 type JobChange = { job: Partial<Job>; hold?: QueueHold };
@@ -107,13 +108,13 @@ export class JobQueue {
         if (change.hold) await queueHolds.put(change.hold);
         return;
       }
-      const { result } = attempt;
+      const result = attempt.result && typeof attempt.result === 'object' && 'commit' in attempt.result
+        ? await attempt.result.commit() : attempt.result;
       if (result === 'discard') { await jobs.delete(job.id); return; }
       if (result && 'retryAt' in result) {
         await jobs.update(job.id, { status: 'pending', availableAt: result.retryAt, lease: undefined });
         return;
       }
-      if (result) await result.commit();
       await jobs.update(job.id, { status: 'done', lease: undefined });
       if (hold?.reason === 'usage_limit_exceeded') await queueHolds.delete('ai');
     });

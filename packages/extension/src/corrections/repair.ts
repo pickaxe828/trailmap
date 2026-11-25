@@ -17,8 +17,9 @@ export async function repairExpedition(db: TrailmapDb, expeditionId: string, { d
     return;
   }
   const changes: Partial<typeof expedition> = {};
-  if (!members.some(({ id }) => id === expedition.rootVisitId)) {
-    const root = members[0]!;
+  const existingRoot = members.find(({ id }) => id === expedition.rootVisitId);
+  if (!existingRoot || (derivedContentRemoved && (expedition.threadId || expedition.notesSource))) {
+    const root = existingRoot ?? members[0]!;
     changes.rootVisitId = root.id;
     if (!expedition.userEdited) {
       const query = await db.queries.where('visitId').equals(root.id).first();
@@ -27,8 +28,9 @@ export async function repairExpedition(db: TrailmapDb, expeditionId: string, { d
   }
   // Model-written fields were derived from content that is gone. The user's own edits stay.
   if (derivedContentRemoved) {
-    if (!expedition.userEdited) {
+    if (!expedition.userEdited || expedition.notesSource) {
       changes.fieldNotes = null;
+      changes.notesSource = undefined;
       changes.drivingQuestion = null;
     }
     // Wrap-up output (merge suggestions) and notes never survive their source, so the badge can't count them either.

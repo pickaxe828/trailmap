@@ -28,6 +28,8 @@ const queue = (model?: Parameters<typeof decideConceptMerges>[3]) => new JobQueu
   page_enrichment: async () => { throw new Error('Unexpected Page enrichment'); },
   expedition_wrap_up: async () => { throw new Error('Unexpected wrap-up'); },
   field_notes: async () => { throw new Error('Unexpected field notes'); },
+  thread_match: async () => { throw new Error('Unexpected Thread matching'); },
+  living_note: async () => { throw new Error('Unexpected living note'); },
   concept_resolution: resolveConcepts(db, embedder, () => now),
   merge_verdict: decideConceptMerges(db, () => ({ paused: false, skippedHosts: [] }), () => now, model),
 }, [db.visits, db.pages, db.concepts, db.conceptEvidence, db.edges]);

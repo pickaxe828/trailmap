@@ -117,9 +117,16 @@ export const Expedition = z.object({
   fieldNotes: z.string().nullable(),
   userEdited: z.boolean(),
   threadId: z.string().nullable(),
+  threadSuggestion: z.discriminatedUnion('kind', [
+    z.object({ kind: z.literal('thread'), id: z.string() }),
+    z.object({ kind: z.literal('expedition'), id: z.string() }),
+  ]).optional(),
+  threadSignature: z.object({ vector: z.instanceof(Int8Array), conceptIds: z.array(z.string()) }).optional(),
+  threadAutoExcluded: z.boolean().optional(),
   wrappedUpAt: z.number().optional(), // The wrap-up pass (title, question, kind) committed.
   mergeSuggestions: z.array(MergeSuggestion).optional(), // Same-day Expeditions on the same topic.
   notesWrittenAt: z.number().optional(), // Field notes were generated at this time.
+  notesSource: z.object({ visitIds: z.array(z.string()), canonicalUrls: z.array(z.string()) }).optional(),
   unseenNotes: z.literal(1).optional(), // Set with new field notes; cleared once viewed. Indexed for the badge.
 });
 export type Expedition = z.infer<typeof Expedition>;
@@ -142,6 +149,9 @@ export const FieldNotesDraft = z.object({
 });
 export type FieldNotesDraft = z.infer<typeof FieldNotesDraft>;
 
+/** PLAN §4.7. A revision of the note from the prior synthesis and one session. */
+export const LivingNoteDraft = z.object({ markdown: z.string() });
+
 export const ThreadStatus = z.enum(['active', 'dormant', 'done']);
 export type ThreadStatus = z.infer<typeof ThreadStatus>;
 
@@ -152,6 +162,9 @@ export const Thread = z.object({
   status: ThreadStatus,
   lastActiveAt: z.number(),
   livingNote: z.string().nullable(),
+  noteRevision: z.number().optional(),
+  notedExpeditionIds: z.array(z.string()).optional(),
+  userRenamed: z.boolean().optional(),
   centroid: z.instanceof(Int8Array).nullable(),
   conceptIds: z.array(z.string()),
 });

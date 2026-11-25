@@ -136,6 +136,24 @@ test('forgetting an Expedition removes it and its Visits but keeps a Page that o
   expect(await everything()).not.toContain('secret.example');
 });
 
+test('forgetting a session removes its contribution from a surviving thread and its living-note audit', async () => {
+  const threadId = 'thread';
+  const sessions = ['forgotten', 'second', 'third'];
+  await db.expeditions.bulkAdd(sessions.map((id, i) => expedition(id, { threadId, rootVisitId: id, startedAt: i, endedAt: i + 1,
+    ...(i === 0 ? { title: SECRET, fieldNotes: SECRET } : { fieldNotes: 'Other field notes' }),
+  })));
+  await db.visits.bulkAdd(sessions.map((id) => visit(id, 'learn.example', { expeditionId: id })));
+  await db.threads.add({ id: threadId, title: SECRET, question: SECRET, status: 'active', lastActiveAt: 3,
+    livingNote: SECRET, centroid: null, conceptIds: [], notedExpeditionIds: sessions });
+  await db.sentToModel.add({ id: 'living', task: 'living_note', at: 5, provider: 'fixture', model: 'fixture', instructions: 'Update',
+    input: [{ role: 'user', content: SECRET }], expeditionId: 'third', visitIds: sessions });
+
+  await corrections().forgetExpedition('forgotten');
+  expect(await everything()).not.toContain(SECRET);
+  expect(await db.threads.get(threadId)).toMatchObject({ title: 'Expedition second', livingNote: null, notedExpeditionIds: [] });
+  expect((await db.jobs.toArray()).map(({ kind }) => kind)).toEqual(['living_note']);
+});
+
 test('forgetting a site removes every Visit and Page on that host and its subdomains', async () => {
   await seed();
   await db.pages.put(page('https://docs.secret.example/only-highlight', { sourceUrl: 'https://docs.secret.example/only-highlight' }));
