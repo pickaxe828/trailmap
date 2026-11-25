@@ -28,10 +28,14 @@ export function startSegmentation(db: TrailmapDb, recorder: VisitRecorder) {
       transition.deadline = transition.closeAt = at;
     }
 
-    if (transition.closeAt !== null) await expeditions.close(transition.closeAt);
-
-    if (transition.deadline !== previous) {
+    // Save a newly discovered deadline before draining Visits, and retain
+    // an overdue one until its closure commits. Either can outlive this worker.
+    if (transition.deadline !== null && transition.deadline !== previous) {
       await chrome.storage.session.set({ [IDLE_KEY]: transition.deadline });
+    }
+    if (transition.closeAt !== null) await expeditions.close(transition.closeAt);
+    if (transition.deadline === null && previous !== null) {
+      await chrome.storage.session.remove(IDLE_KEY);
     }
     if (transition.deadline !== null && transition.deadline > at) {
       if (!(await chrome.alarms.get(CLOSE_ALARM))) {
