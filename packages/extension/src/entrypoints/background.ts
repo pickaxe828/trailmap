@@ -4,6 +4,13 @@ import { ChromeSessionStateStore } from '../capture/state-store';
 import { openTrailmapDb } from '../db/db';
 import { startCompanion } from '../companion/background';
 
+function shouldRecord(url: string): boolean {
+  const { hostname, pathname } = new URL(url);
+  if (hostname === 'auth.openai.com') return false;
+  // OAuth callback URLs carry a one-time code. Keep them out of Visits and downstream page capture.
+  return hostname !== '127.0.0.1' || !['/auth/callback', '/api/accounts/authorize'].includes(pathname);
+}
+
 export default defineBackground(() => {
   startCompanion();
 
@@ -24,6 +31,7 @@ export default defineBackground(() => {
     source: new ChromeEventSource(),
     store: new ChromeSessionStateStore(),
     now: Date.now,
+    shouldRecord,
     newId: () => crypto.randomUUID(),
   });
   recorder.start();
