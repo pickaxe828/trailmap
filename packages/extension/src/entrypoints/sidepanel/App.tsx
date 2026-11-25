@@ -6,7 +6,7 @@ import { TreeList, type TreeListItemData } from '@astryxdesign/core/TreeList';
 import { VStack } from '@astryxdesign/core/VStack';
 import { formatActiveTime } from '../../trail/format';
 import { buildTrail, type TrailNode } from '../../trail/tree';
-import { useTodaysVisits } from '../../trail/useTodaysVisits';
+import { useLiveTrail } from '../../trail/useLiveTrail';
 import { CompanionStatus } from './CompanionStatus';
 
 function hostOf(url: string): string {
@@ -27,9 +27,9 @@ function toItem({ visit, children }: TrailNode): TreeListItemData {
   };
 }
 
-/** Side panel ("Live trail"): today's Visits, each under the Visit it came from. */
+/** Live open expeditions and the remaining Visits from today. */
 export function App() {
-  const visits = useTodaysVisits();
+  const trail = useLiveTrail();
   return (
     <VStack gap={3} padding={4}>
       <Heading level={1}>Trailmap</Heading>
@@ -38,10 +38,22 @@ export function App() {
         <Text>Recording is on</Text>
       </HStack>
       <CompanionStatus />
-      {visits === undefined ? null : visits.length === 0 ? (
+      {trail && trail.open.length === 0 && trail.today.length === 0 && (
         <Text type="supporting">Your trail will appear here as you browse.</Text>
-      ) : (
-        <TreeList header={<Heading level={2}>Today</Heading>} items={buildTrail(visits).map(toItem)} />
+      )}
+      {trail && trail.open.length > 0 && (
+        <VStack gap={2}>
+          <Heading level={2}>Open expeditions</Heading>
+          {trail.open.map(({ expedition, visits }) => (
+            <TreeList key={expedition.id}
+              header={<Heading level={3}>{expedition.title}</Heading>}
+              items={buildTrail(visits).map(toItem)}
+            />
+          ))}
+        </VStack>
+      )}
+      {trail && trail.today.length > 0 && (
+        <TreeList header={<Heading level={2}>Today</Heading>} items={buildTrail(trail.today).map(toItem)} />
       )}
     </VStack>
   );

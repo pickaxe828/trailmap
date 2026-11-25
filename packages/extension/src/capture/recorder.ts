@@ -7,7 +7,9 @@ import { newPage } from './pages';
 import { parseSearchQuery } from './search';
 import { emptyRecorderState, type RecorderState, type RecorderStateStore } from './state-store';
 
-export type VisitChange = { type: 'created'; visit: Visit } | { type: 'updated'; visit: Visit };
+export type VisitChange =
+  | { type: 'created'; visit: Visit }
+  | { type: 'updated'; visit: Visit; titleChanged?: true };
 
 /** Maps `webNavigation`'s transition type and qualifiers to a Visit transition. */
 export function toVisitTransition(event: Pick<NavigationEvent, 'transitionType' | 'transitionQualifiers'>): Transition {
@@ -201,6 +203,7 @@ export class VisitRecorder {
       scrollDepth: 0,
       engagement: 'bounced',
       expeditionId: null,
+      segmentationPending: 1,
     };
     const { db } = this.options;
     if (search) {
@@ -337,9 +340,15 @@ export class VisitRecorder {
       this.enqueue(async () => {
         const visit = this.current.get(tabId);
         if (!visit || visit.url !== url || visit.title === title) return;
+        const firstTitle = !visit.title.trim() && !!title.trim();
         visit.title = title;
-        await this.options.db.visits.update(visit.id, { title });
-        this.emit({ type: 'updated', visit: { ...visit } });
+        await this.options.db.visits.where('id').equals(visit.id).modify((stored) => {
+          stored.title = title;
+          if (firstTitle && stored.expeditionId && stored.expeditionEmbedding === undefined) {
+            stored.segmentationPending = 1;
+          }
+        });
+        this.emit({ type: 'updated', visit: { ...visit }, titleChanged: true });
       }),
     onTabRemoved: (tabId) =>
       this.enqueue(async () => {

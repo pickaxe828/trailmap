@@ -19,7 +19,7 @@ export const TICK_ALARM = 'trailmap.capture-tick';
 /** MV3 alarms can fire at most every 30 seconds. */
 const TICK_PERIOD_MINUTES = 0.5;
 /** Idle detection threshold, in seconds (also Chrome's default). */
-const IDLE_SECONDS = 60;
+export const IDLE_SECONDS = 60;
 
 type CommittedDetails = {
   tabId: number;

@@ -63,7 +63,7 @@ test('the side panel lists today\'s Visits indented under their parents and upda
   await expect(panel.getByText('Your trail will appear here as you browse.')).toBeVisible();
 
   const page = await openStart(context, fixtureUrl);
-  await expect(panel.getByText('Trail start')).toBeVisible();
+  await expect(panel.locator('.astryx-tree-list-item-label', { hasText: 'Trail start' })).toBeVisible();
 
   await page.locator('#same-tab').click();
   await visitFor(readVisits, fixtureUrl(FAKE_HOSTS.learn, '/trail/article.html'));
