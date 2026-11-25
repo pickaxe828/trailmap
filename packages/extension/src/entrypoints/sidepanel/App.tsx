@@ -5,11 +5,13 @@ import { Link } from '@astryxdesign/core/Link';
 import { Text } from '@astryxdesign/core/Text';
 import { TreeList, type TreeListItemData } from '@astryxdesign/core/TreeList';
 import { VStack } from '@astryxdesign/core/VStack';
+import { WRAP_UP_MESSAGE } from '../../wrapup/messages';
 import { formatActiveTime } from '../../trail/format';
 import { buildTrail, type TrailNode } from '../../trail/tree';
 import { useLiveTrail } from '../../trail/useLiveTrail';
 import { AiNotesStatus } from './AiNotesStatus';
 import { CompanionStatus } from './CompanionStatus';
+import { FieldNotes } from './FieldNotes';
 import { PageNotes } from './PageNotes';
 import { RecordingControls } from './RecordingControls';
 
@@ -44,6 +46,7 @@ export function App() {
       <RecordingControls />
       <AiNotesStatus />
       <CompanionStatus />
+      {trail && <FieldNotes expeditions={trail.finished} />}
       {trail && <PageNotes pages={trail.pageNotes} />}
       <Link href={chrome.runtime.getURL('/onboarding.html#sent-to-model')} target="_blank">Sent-to-model log</Link>
       {trail && trail.open.length === 0 && trail.today.length === 0 && (
@@ -54,7 +57,13 @@ export function App() {
           <Heading level={2}>Open expeditions</Heading>
           {trail.open.map(({ expedition, visits }) => (
             <TreeList key={expedition.id}
-              header={<Heading level={3}>{expedition.title}</Heading>}
+              header={(
+                <HStack align="center" justify="between" gap={2}>
+                  <Heading level={3}>{expedition.title}</Heading>
+                  <Button size="sm" label="Wrap up" aria-label={`Wrap up expedition ${expedition.title}`}
+                    clickAction={async () => { await chrome.runtime.sendMessage({ type: WRAP_UP_MESSAGE, expeditionId: expedition.id }).catch(() => {}); }} />
+                </HStack>
+              )}
               items={buildTrail(visits).map(toItem)}
             />
           ))}

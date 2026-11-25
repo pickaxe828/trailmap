@@ -15,10 +15,10 @@ import { cpSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
-import type { Highlight, Page as CapturedPage, Query, Visit } from '../packages/shared/src/domain';
+import type { Expedition, Highlight, Page as CapturedPage, Query, Visit } from '../packages/shared/src/domain';
 import { COMPANION_BIN, EXTENSION_DIR, FIXTURE_PORT } from './constants';
 
-type CaptureTables = { visits: Visit; pages: CapturedPage; queries: Query; highlights: Highlight };
+type CaptureTables = { visits: Visit; pages: CapturedPage; queries: Query; highlights: Highlight; expeditions: Expedition };
 
 type Fixtures = {
   readCapture: <T extends keyof CaptureTables>(table: T) => Promise<CaptureTables[T][]>;

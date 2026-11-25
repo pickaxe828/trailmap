@@ -9,7 +9,8 @@ const badges: Record<RecordingState, { text: string; title: string }> = {
   skipped: { text: 'SKIP', title: 'Trailmap — Site is skipped' },
 };
 
-export function createRecordingPrivacy() {
+/** `unseenNotes` is the toolbar count of field notes nobody has looked at yet; it takes the badge over from the recording state. */
+export function createRecordingPrivacy(unseenNotes: () => number = () => 0) {
   // Start fail-closed until persisted preferences have loaded.
   let settings: RecordingSettings = { paused: true, skippedHosts: [] };
   const ready = readRecordingSettings().then((saved) => { settings = saved; });
@@ -24,7 +25,10 @@ export function createRecordingPrivacy() {
   async function refreshBadge(tabId: number) {
     await recorder.ready;
     const tab = await chrome.tabs.get(tabId);
-    const { text, title } = badges[stateFor(tab)];
+    const state = badges[stateFor(tab)];
+    const unseen = unseenNotes();
+    const text = unseen > 0 ? (unseen > 99 ? '99+' : String(unseen)) : state.text;
+    const title = unseen > 0 ? `${state.title} · ${unseen} new field note${unseen === 1 ? '' : 's'}` : state.title;
     await Promise.all([chrome.action.setBadgeText({ tabId, text }), chrome.action.setTitle({ tabId, title })]);
   }
 
@@ -68,6 +72,7 @@ export function createRecordingPrivacy() {
 
   return {
     ready,
+    refreshBadges,
     getSettings: () => settings,
     shouldRecord: (url: string) => recordingState(url, settings) === 'recording',
     setSiteSkipped,

@@ -3,6 +3,9 @@ export type JobPriority = (typeof JOB_PRIORITY)[keyof typeof JOB_PRIORITY];
 
 export type JobPayloads = {
   page_enrichment: { canonicalUrl: string; textHash: string; visitId: string; textRevision?: number };
+  /** `endedAt` identifies the closure this job belongs to; `revision` lets a later ticket request a new pass. */
+  expedition_wrap_up: { expeditionId: string; endedAt: number; revision: number };
+  field_notes: { expeditionId: string; endedAt: number; revision: number };
 };
 
 export type JobKind = keyof JobPayloads;

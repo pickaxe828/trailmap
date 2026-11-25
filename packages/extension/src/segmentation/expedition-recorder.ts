@@ -3,6 +3,7 @@ import type { Expedition, Visit } from '@trailmap/shared';
 import type { TrailmapDb } from '../db/db';
 import { type Embedder, quantize } from '../embeddings/embedder';
 import { EXPEDITION_WINDOW_MS, VISIT_TITLE_GRACE_MS } from './config';
+import { enqueueWrapUp } from '../wrapup/enqueue';
 import { segmentVisit } from './segmenter';
 
 /** Rebuild after changing Visit membership. Call within the same transaction as the move. */
@@ -36,16 +37,22 @@ export class ExpeditionRecorder {
     return this.enqueue(() => this.drain(through, true));
   }
 
-  close(at: number) {
+  /**
+   * Closes every open Expedition (idle), or just `only` (the Wrap up button).
+   * The wrap-up job is queued in the closure transaction, so a closed
+   * Expedition always has one, even if the worker stops right after the commit.
+   */
+  close(at: number, only?: string) {
     return this.enqueue(async () => {
       await this.drain(at, false);
-      const { db, onClosed } = this.options;
-      const closed = await db.transaction('rw', db.expeditions, async () => {
+      const { db, onClosed, now } = this.options;
+      const closed = await db.transaction('rw', db.expeditions, db.jobs, async () => {
         const open = await db.expeditions.filter((expedition) =>
-          expedition.endedAt === null && expedition.startedAt <= at,
+          expedition.endedAt === null && expedition.startedAt <= at && (only === undefined || expedition.id === only),
         ).toArray();
         const ended = open.map((expedition) => ({ ...expedition, endedAt: at }));
         await db.expeditions.bulkPut(ended);
+        for (const expedition of ended) await enqueueWrapUp(db, expedition, now());
         return ended;
       });
       if (closed.length) onClosed?.(closed);

@@ -94,6 +94,9 @@ export type Query = z.infer<typeof Query>;
 export const ExpeditionKind = z.enum(['learning', 'errand']);
 export type ExpeditionKind = z.infer<typeof ExpeditionKind>;
 
+export const MergeSuggestion = z.object({ expeditionId: z.string(), reason: z.string() });
+export type MergeSuggestion = z.infer<typeof MergeSuggestion>;
+
 export const Expedition = z.object({
   id: z.string(),
   rootVisitId: z.string().optional(),
@@ -106,8 +109,30 @@ export const Expedition = z.object({
   fieldNotes: z.string().nullable(),
   userEdited: z.boolean(),
   threadId: z.string().nullable(),
+  wrappedUpAt: z.number().optional(), // The wrap-up pass (title, question, kind) committed.
+  mergeSuggestions: z.array(MergeSuggestion).optional(), // Same-day Expeditions on the same topic.
+  notesWrittenAt: z.number().optional(), // Field notes were generated at this time.
+  unseenNotes: z.literal(1).optional(), // Set with new field notes; cleared once viewed. Indexed for the badge.
 });
 export type Expedition = z.infer<typeof Expedition>;
+
+/** PLAN §4.3 rule 4. Same-day candidates are offered to the model under short ids (e1, e2, ...). */
+export const ExpeditionWrapUp = z.object({
+  title: z.string(),
+  driving_question: z.string(),
+  kind: ExpeditionKind,
+  merge_with: z.array(z.object({ id: z.string(), reason: z.string() })),
+});
+export type ExpeditionWrapUp = z.infer<typeof ExpeditionWrapUp>;
+
+/** PLAN §4.6. Each idea cites a Page by the short ref (p1, p2, ...) it was given; code renders the Markdown. */
+export const FieldNotesDraft = z.object({
+  found: z.string(),
+  key_ideas: z.array(z.object({ idea: z.string(), page: z.string() })).min(1),
+  trail: z.string(),
+  loose_ends: z.array(z.string()),
+});
+export type FieldNotesDraft = z.infer<typeof FieldNotesDraft>;
 
 export const ThreadStatus = z.enum(['active', 'dormant', 'done']);
 export type ThreadStatus = z.infer<typeof ThreadStatus>;

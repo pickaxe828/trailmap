@@ -35,7 +35,7 @@ export type TrailmapDb = Dexie & {
   sentToModel: EntityTable<SentToModel, 'id'>;
 };
 
-export type SentToModel = ModelDispatch & { id: string; at: number; task: string; canonicalUrl?: string };
+export type SentToModel = ModelDispatch & { id: string; at: number; task: string; canonicalUrl?: string; expeditionId?: string; canonicalUrls?: string[] };
 
 export const DB_NAME = 'trailmap';
 
@@ -79,6 +79,20 @@ export function openTrailmapDb(name: string = DB_NAME): TrailmapDb {
     pages: 'canonicalUrl, textHash, enrichedAt',
     queries: 'id, expeditionId, at, visitId',
     expeditions: 'id, startedAt, endedAt, threadId, kind',
+    threads: 'id, lastActiveAt, status',
+    concepts: 'id, name, *aliases, firstSeen',
+    edges: 'id, from, to, type, [from+type], [to+type]',
+    highlights: 'id, visitId, at, canonicalUrl',
+    notes: 'id, nodeId, at',
+    jobs: 'id, status, [status+priority+createdAt]',
+    queueHolds: 'id',
+    sentToModel: 'id, at, canonicalUrl',
+  });
+  db.version(5).stores({
+    visits: 'id, canonicalUrl, tabId, parentVisitId, startedAt, expeditionId, [segmentationPending+startedAt]',
+    pages: 'canonicalUrl, textHash, enrichedAt',
+    queries: 'id, expeditionId, at, visitId',
+    expeditions: 'id, startedAt, endedAt, threadId, kind, unseenNotes',
     threads: 'id, lastActiveAt, status',
     concepts: 'id, name, *aliases, firstSeen',
     edges: 'id, from, to, type, [from+type], [to+type]',

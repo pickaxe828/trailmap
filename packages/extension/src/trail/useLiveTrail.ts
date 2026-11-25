@@ -10,6 +10,8 @@ type LiveTrail = {
   open: { expedition: Expedition; visits: Visit[] }[];
   today: Visit[];
   pageNotes: TrailPageNotes[];
+  /** Wrapped-up Expeditions, newest first. */
+  finished: Expedition[];
 };
 
 let db: ReturnType<typeof openTrailmapDb> | undefined;
@@ -42,7 +44,9 @@ export function useLiveTrail(): LiveTrail | undefined {
             canonicalUrl: page.canonicalUrl, title: titles.get(page.canonicalUrl) || new URL(page.canonicalUrl).hostname,
             summary: page.summary, takeaways: page.takeaways,
           }] : []);
-        return { open, today, pageNotes };
+        const finished = await database.expeditions.orderBy('endedAt').reverse()
+          .filter((expedition) => expedition.endedAt !== null && expedition.wrappedUpAt !== undefined).limit(10).toArray();
+        return { open, today, pageNotes, finished };
       }),
     ).subscribe({ next: setTrail });
     return () => subscription.unsubscribe();

@@ -7,6 +7,7 @@ import { startPageSummary } from '../llm/background';
 import { startSegmentation } from '../segmentation/background';
 import { startCompanion } from '../companion/background';
 import { createRecordingPrivacy } from '../privacy/background';
+import { watchUnseenNotes } from '../wrapup/badge';
 
 export default defineBackground(() => {
   startCompanion();
@@ -24,7 +25,8 @@ export default defineBackground(() => {
   // Capture (docs/PLAN.md §4.1). Listeners must be registered synchronously here;
   // the recorder restores its state from `chrome.storage.session` before handling any of them.
   const db = openTrailmapDb();
-  const privacy = createRecordingPrivacy();
+  let unseenNotes = 0;
+  const privacy = createRecordingPrivacy(() => unseenNotes);
   const recorder = new VisitRecorder({
     db,
     source: new ChromeEventSource(),
@@ -41,5 +43,10 @@ export default defineBackground(() => {
   privacy.start(recorder);
   startPageSummary(db, recorder, privacy.getSettings);
   startJobs(db, privacy.ready, privacy.getSettings);
+  // The toolbar badge counts field notes nobody has viewed yet. No pop-ups.
+  watchUnseenNotes(db, (count) => {
+    unseenNotes = count;
+    void privacy.refreshBadges().catch(() => {});
+  });
   void ensureTickAlarm();
 });
