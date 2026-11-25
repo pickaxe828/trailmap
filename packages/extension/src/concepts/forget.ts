@@ -13,7 +13,8 @@ export async function forgetConceptEvidence(db: TrailmapDb, gone: Set<string>, o
   ])).flat().map((row) => [row.id, row]));
   await db.conceptEvidence.bulkDelete([...rows.keys()]);
   const removedConceptIds: string[] = [];
-  for (const id of new Set([...rows.values()].map((row) => row.conceptId))) {
+  const changedConceptIds = new Set([...rows.values()].map((row) => row.conceptId));
+  for (const id of changedConceptIds) {
     if (!await refreshConcept(db, id)) removedConceptIds.push(id);
   }
   let removedJobs = 0;
@@ -29,7 +30,7 @@ export async function forgetConceptEvidence(db: TrailmapDb, gone: Set<string>, o
     }
   }
   return {
-    removedConceptIds, removedJobs,
+    removedConceptIds, changedConceptIds, removedJobs,
     evidenceVisits: new Set([...gone, ...[...rows.values()].map((row) => row.visitId)]),
   };
 }

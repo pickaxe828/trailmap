@@ -7,13 +7,15 @@ import { jobId, enqueueJob, JOB_PRIORITY, type JobHandlers, type JobResult } fro
 import { requestModel } from '../llm/dispatch';
 import { maySendToModel, type RecordingSettings } from '../privacy/policy';
 import { startOfLocalDay } from '../trail/tree';
+import { refreshThread } from '../threads/model';
+import { notesProvenance } from '../threads/provenance';
 import { fieldNotesWritten, type NotesWrittenHooks } from './hooks';
 import { buildFieldNotesInput, buildWrapUpInput, collectTrail, renderFieldNotes, type SameDay, type TrailSources } from './trail';
 
 export type ModelRequester = (
   db: TrailmapDb,
   payload: Omit<LlmCompletion, 'auditId'>,
-  guard: { canonicalUrl?: string; expeditionId?: string; canonicalUrls?: string[]; tables: Table[]; allow: () => Promise<boolean> },
+  guard: { canonicalUrl?: string; expeditionId?: string; canonicalUrls?: string[]; visitIds?: string[]; tables: Table[]; allow: () => Promise<boolean> },
 ) => Promise<{ output: unknown }>;
 
 type Options = { request?: ModelRequester; now?: () => number; hooks?: NotesWrittenHooks };
@@ -85,7 +87,7 @@ export function wrapUpHandlers(
     instructions: string,
     schemaName: string,
     schema: Record<string, import('@trailmap/shared').LlmOutput>,
-    prepare: () => Promise<'waiting' | { text: string; urls: string[]; value: T } | undefined>,
+    prepare: () => Promise<'waiting' | { text: string; urls: string[]; visitIds?: string[]; value: T } | undefined>,
     expeditionId: string,
   ): Promise<{ early: JobResult } | { early?: undefined; output: unknown; prepared: { text: string; urls: string[]; value: T } }> {
     const prepared = await db.transaction('r', [...sources, db.jobs], prepare);
@@ -94,12 +96,13 @@ export function wrapUpHandlers(
     let output: unknown;
     try {
       ({ output } = await request(db, { task, instructions, input: prepared.text, schema, schemaName }, {
-        expeditionId, canonicalUrls: prepared.urls, tables: [...sources, db.jobs],
+        expeditionId, canonicalUrls: prepared.urls, visitIds: prepared.visitIds, tables: [...sources, db.jobs],
         allow: async () => {
           const current = await db.jobs.get(job.id);
           if (!current?.lease || current.lease.token !== job.lease?.token || current.lease.until <= now()) return false;
           const again = await prepare();
-          return typeof again === 'object' && again.text === prepared.text;
+          return typeof again === 'object' && again.text === prepared.text &&
+            JSON.stringify([again.urls, again.visitIds]) === JSON.stringify([prepared.urls, prepared.visitIds]);
         },
       }));
     } catch (error) {
@@ -147,7 +150,9 @@ export function wrapUpHandlers(
           drivingQuestion: question || current.drivingQuestion,
         };
         if (!current.userEdited && title) patch.title = title; // A renamed Expedition keeps the user's title.
+        if (wrapUp.kind === 'errand') Object.assign(patch, { threadId: null, threadSignature: undefined, threadSuggestion: undefined });
         await db.expeditions.update(expeditionId, patch);
+        if (wrapUp.kind === 'errand' && current.threadId) await refreshThread(db, current.threadId, now(), true);
         if (wrapUp.kind === 'learning') {
           await enqueueJob(db, {
             kind: 'field_notes', key: JSON.stringify([expeditionId, endedAt, job.payload.revision]),
@@ -167,12 +172,16 @@ export function wrapUpHandlers(
           (expedition.fieldNotes !== null && expedition.userEdited)) return;
         if (settings.paused || await waitingOnPages(s, settings)) return 'waiting' as const;
         const built = buildFieldNotesInput(s, settings);
-        return built && { text: JSON.stringify(built.input), urls: urlsOf(s, settings), value: built };
+        if (!built) return;
+        const urls = urlsOf(s, settings);
+        const notesSource = notesProvenance(s.visits,
+          s.pages.filter(({ canonicalUrl }) => urls.includes(canonicalUrl)));
+        return { text: JSON.stringify(built.input), urls: notesSource.canonicalUrls, visitIds: notesSource.visitIds, value: { built, notesSource } };
       };
       const result = await run(job, 'field_notes', notesInstructions, 'field_notes', notesSchema, prepare, expeditionId);
       if ('early' in result) return result.early;
       const parsed = FieldNotesDraft.safeParse(result.output);
-      const built = result.prepared.value;
+      const { built, notesSource } = result.prepared.value;
       const cited = parsed.success && parsed.data.key_ideas.some(({ idea, page }) => oneLine(idea) && built.links.has(page.trim()));
       if (!parsed.success || !cited) throw new CompanionRequestError('invalid_output', 'Invalid field notes.');
       const markdown = renderFieldNotes(parsed.data, built);
@@ -180,8 +189,9 @@ export function wrapUpHandlers(
         const current = await db.expeditions.get(expeditionId);
         if (!current || current.endedAt !== endedAt || current.kind !== 'learning') return;
         if (current.fieldNotes !== null && current.userEdited) return; // Regenerating never overwrites user edits.
+        if ((await db.visits.bulkGet(notesSource.visitIds)).some((visit) => !visit)) return 'discard';
         const at = now();
-        await db.expeditions.update(expeditionId, { fieldNotes: markdown, notesWrittenAt: at, unseenNotes: 1 });
+        await db.expeditions.update(expeditionId, { fieldNotes: markdown, notesWrittenAt: at, unseenNotes: 1, notesSource });
         await hooks.run({ db, expeditionId, at });
       } };
     },

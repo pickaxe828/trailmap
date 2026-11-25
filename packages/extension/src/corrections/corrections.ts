@@ -2,6 +2,9 @@ import type { Visit } from '@trailmap/shared';
 import type { TrailmapDb } from '../db/db';
 import { forgetCascade, hostMatches, type ForgetResult } from './forget';
 import { repairExpedition } from './repair';
+import { refreshEditedSessions } from '../threads/corrections';
+import { refreshThread } from '../threads/model';
+import { preserveLegacyNotesSources } from '../threads/provenance';
 import { refreshExpeditionCentroid } from '../segmentation/expedition-recorder';
 
 export type CorrectionsOptions = { db: TrailmapDb; now: () => number; newId: () => string };
@@ -53,21 +56,23 @@ export function createCorrections({ db, now, newId }: CorrectionsOptions) {
     async rename(expeditionId: string, title: string) {
       const next = title.trim();
       if (!next) return false;
-      return db.transaction('rw', db.expeditions, db.corrections, async () => {
+      return db.transaction('rw', [db.expeditions, db.corrections, db.threads, db.jobs], async () => {
         const expedition = await db.expeditions.get(expeditionId);
         if (!expedition) return false;
         await db.expeditions.update(expeditionId, { title: next, userEdited: true });
+        if (expedition.threadId) await refreshThread(db, expedition.threadId, now());
         await logEntry('rename', [expeditionId], { title: expedition.title }, { title: next });
         return true;
       });
     },
 
     async editFieldNotes(expeditionId: string, text: string): Promise<boolean> {
-      return db.transaction('rw', db.expeditions, db.corrections, async () => {
+      return db.transaction('rw', [db.expeditions, db.corrections, db.threads, db.jobs], async () => {
         const expedition = await db.expeditions.get(expeditionId);
         if (!expedition) return false;
         const at = now();
         await db.expeditions.update(expeditionId, { fieldNotes: text, userEdited: true, notesWrittenAt: at, unseenNotes: undefined });
+        await refreshEditedSessions(db, [expedition], at);
         // Unlike a manual Note, generated field notes can quote many Visits. Avoid
         // duplicating their content in the correction log when those Visits are forgotten.
         await logEntry('field-notes', [expeditionId],
@@ -79,10 +84,11 @@ export function createCorrections({ db, now, newId }: CorrectionsOptions) {
 
     /** Moves a Visit and everything reached from it into a new Expedition. Returns its id, or null if nothing changed. */
     async split(visitId: string): Promise<string | null> {
-      return db.transaction('rw', db.visits, db.queries, db.expeditions, db.corrections, async () => {
+      return db.transaction('rw', [db.visits, db.queries, db.expeditions, db.corrections, db.pages], async () => {
         const root = await db.visits.get(visitId);
         const source = root?.expeditionId ? await db.expeditions.get(root.expeditionId) : undefined;
         if (!root || !source || source.rootVisitId === visitId) return null;
+        await preserveLegacyNotesSources(db, [source]);
         const members = await db.visits.where('expeditionId').equals(source.id).toArray();
         const moved = new Set([visitId]);
         for (let grew = true; grew;) {
@@ -114,14 +120,17 @@ export function createCorrections({ db, now, newId }: CorrectionsOptions) {
 
     /** Moves one Visit (and its Query) into another Expedition. */
     async move(visitId: string, toExpeditionId: string) {
-      return db.transaction('rw', db.visits, db.queries, db.expeditions, db.notes, db.corrections, async () => {
+      return db.transaction('rw', [db.visits, db.queries, db.expeditions, db.notes, db.corrections, db.threads, db.jobs, db.pages], async () => {
         const visit = await db.visits.get(visitId);
         const target = await db.expeditions.get(toExpeditionId);
         if (!visit || !target || visit.expeditionId === toExpeditionId) return false;
         const fromId = visit.expeditionId;
+        const source = fromId ? await db.expeditions.get(fromId) : undefined;
+        await preserveLegacyNotesSources(db, [source, target]);
         await assign([visitId], toExpeditionId);
         if (fromId) await repairExpedition(db, fromId);
         await repairExpedition(db, toExpeditionId);
+        await refreshEditedSessions(db, [source, target], now());
         await logEntry('move', [visitId, toExpeditionId, ...(fromId ? [fromId] : [])],
           { visits: { [visitId]: fromId } }, { visits: { [visitId]: toExpeditionId } });
         return true;
@@ -131,10 +140,11 @@ export function createCorrections({ db, now, newId }: CorrectionsOptions) {
     /** Folds `fromId` into `intoId`. The target keeps its title and notes. */
     async merge(intoId: string, fromId: string) {
       if (intoId === fromId) return false;
-      return db.transaction('rw', db.visits, db.queries, db.expeditions, db.notes, db.corrections, async () => {
+      return db.transaction('rw', [db.visits, db.queries, db.expeditions, db.notes, db.corrections, db.threads, db.jobs, db.pages], async () => {
         const into = await db.expeditions.get(intoId);
         const from = await db.expeditions.get(fromId);
         if (!into || !from) return false;
+        await preserveLegacyNotesSources(db, [into]);
         const ids = (await db.visits.where('expeditionId').equals(fromId).primaryKeys()) as string[];
         const before = await membership(ids);
         await assign(ids, intoId);
@@ -147,6 +157,9 @@ export function createCorrections({ db, now, newId }: CorrectionsOptions) {
         });
         await db.expeditions.delete(fromId);
         await repairExpedition(db, intoId);
+        const merged = await db.expeditions.get(intoId);
+        if (merged?.threadId && merged.endedAt === null) await db.expeditions.update(intoId, { threadId: null });
+        await refreshEditedSessions(db, [into, from], now());
         await logEntry('merge', [intoId, fromId, ...ids],
           { visits: before, intoId, fromId, fromTitle: from.title }, { visits: await membership(ids) });
         return true;

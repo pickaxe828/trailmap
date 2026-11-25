@@ -2,6 +2,8 @@ import { forgetConceptEvidence, forgetEdgeEvidence } from '../concepts/forget';
 import type { TrailmapDb } from '../db/db';
 import { enqueuePageEnrichment } from '../enrichment/enqueue';
 import { siteKey } from '../privacy/policy';
+import { enqueueThreadMatch } from '../threads/match';
+import { refreshThread } from '../threads/model';
 import { repairExpedition } from './repair';
 
 type ForgetInput = {
@@ -35,7 +37,7 @@ export const hostMatches = (url: string | undefined, host: string) => {
 export async function forgetCascade(db: TrailmapDb, input: ForgetInput): Promise<ForgetResult> {
   const { kind, now, newId } = input;
   const tables = [db.visits, db.queries, db.pages, db.highlights, db.notes, db.edges, db.jobs, db.sentToModel,
-    db.expeditions, db.corrections, db.concepts, db.conceptEvidence];
+    db.expeditions, db.corrections, db.concepts, db.conceptEvidence, db.threads];
   return db.transaction('rw', tables, async () => {
     const visits = (await db.visits.bulkGet(input.visitIds)).filter((v) => v !== undefined);
     const visitIds = visits.map(({ id }) => id);
@@ -72,9 +74,15 @@ export async function forgetCascade(db: TrailmapDb, input: ForgetInput): Promise
     ])];
     await db.sentToModel.bulkDelete(audit);
 
-    const jobs = await db.jobs.filter(({ payload }) => 'canonicalUrl' in payload
+    const affected = new Set([...forgottenExpeditions, ...visits.flatMap(({ expeditionId }) => expeditionId ? [expeditionId] : [])]);
+    const affectedSessions = await db.expeditions.filter(({ id, notesSource }) => affected.has(id) ||
+      !!notesSource?.visitIds.some((id) => gone.has(id)) || !!notesSource?.canonicalUrls.some((url) => orphans.has(url))).toArray();
+    for (const { id } of affectedSessions) affected.add(id);
+    const threadIds = new Set(affectedSessions.flatMap(({ threadId }) => threadId ? [threadId] : []));
+    const jobs = await db.jobs.filter(({ kind, payload }) => 'canonicalUrl' in payload
       ? orphans.has(payload.canonicalUrl) || gone.has(payload.visitId)
-      : 'expeditionId' in payload && forgottenExpeditions.includes(payload.expeditionId)).primaryKeys();
+      : 'expeditionId' in payload && (forgottenExpeditions.includes(payload.expeditionId) ||
+        (kind === 'thread_match' && affected.has(payload.expeditionId)))).primaryKeys();
     await db.jobs.bulkDelete(jobs);
     let replacedJobs = 0;
     for (const url of survivors) {
@@ -103,7 +111,7 @@ export async function forgetCascade(db: TrailmapDb, input: ForgetInput): Promise
       if (engaged) await enqueuePageEnrichment(db, engaged, now(), { ...page, ...changes });
     }
 
-    const { removedConceptIds, removedJobs, evidenceVisits } = await forgetConceptEvidence(db, gone, urls, now());
+    const { removedConceptIds, changedConceptIds, removedJobs, evidenceVisits } = await forgetConceptEvidence(db, gone, urls, now());
     const nodeIds = new Set([...visitIds, ...queryIds, ...forgottenExpeditions, ...urls, ...removedConceptIds]);
     const notes = await db.notes.where('nodeId').anyOf([...nodeIds]).primaryKeys();
     await db.notes.bulkDelete(notes);
@@ -120,11 +128,31 @@ export async function forgetCascade(db: TrailmapDb, input: ForgetInput): Promise
         !!mergeSuggestions?.some(({ expeditionId }) => forgottenExpeditions.includes(expeditionId)))
         .modify((expedition) => { delete expedition.mergeSuggestions; });
     }
-    for (const id of new Set(visits.flatMap((v) => v.expeditionId && !forgottenExpeditions.includes(v.expeditionId) ? [v.expeditionId] : []))) {
-      await repairExpedition(db, id, { derivedContentRemoved: true });
+    for (const id of affected) {
+      if (!forgottenExpeditions.includes(id)) await repairExpedition(db, id, { derivedContentRemoved: true });
     }
+    const invalidSignatures = await db.expeditions.filter(({ id, threadSignature }) => affected.has(id) ||
+      !!threadSignature?.conceptIds.some((conceptId) => changedConceptIds.has(conceptId))).toArray();
+    for (const session of invalidSignatures) {
+      const { id, threadId } = session;
+      await db.expeditions.update(id, { threadSignature: undefined, threadSuggestion: undefined });
+      if (threadId) threadIds.add(threadId);
+    }
+    for (const id of threadIds) {
+      await refreshThread(db, id, now(), true);
+      if (!await db.threads.get(id)) await db.notes.where('nodeId').equals(id).delete();
+    }
+    for (const session of invalidSignatures) {
+      if (!session.fieldNotes || !session.threadId || !await db.threads.get(session.threadId)) continue;
+      replacedJobs += await db.jobs.filter(({ kind, payload }) => kind === 'thread_match' && 'expeditionId' in payload &&
+        payload.expeditionId === session.id).delete();
+      await enqueueThreadMatch(db, session, now());
+    }
+    await db.expeditions.filter(({ threadSuggestion: suggestion }) => !!suggestion &&
+      (suggestion.kind === 'thread' ? threadIds.has(suggestion.id) : affected.has(suggestion.id)))
+      .modify({ threadSuggestion: undefined });
 
-    const logIds = [...new Set([...nodeIds, ...(input.targetIds ?? [])])];
+    const logIds = [...new Set([...nodeIds, ...threadIds, ...(input.targetIds ?? [])])];
     const logged = await db.corrections.where('targetIds').anyOf(logIds).primaryKeys();
     await db.corrections.bulkDelete([...new Set(logged)]);
 
