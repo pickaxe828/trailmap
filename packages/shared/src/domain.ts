@@ -6,7 +6,13 @@
  */
 import { z } from 'zod';
 
-export const Transition = z.enum(['link', 'typed', 'search', 'new-tab', 'back']);
+/**
+ * How the user arrived at a Visit. PLAN §3 lists link / typed / search / new-tab / back;
+ * `form`, `reload`, `bookmark` and `auto` were added for the other `webNavigation`
+ * transition types. `back` covers forward as well. `search` is not assigned by the
+ * navigation recorder: the search-query capture (ticket 03) sets it.
+ */
+export const Transition = z.enum(['link', 'typed', 'search', 'new-tab', 'back', 'form', 'reload', 'bookmark', 'auto']);
 export type Transition = z.infer<typeof Transition>;
 
 export const Engagement = z.enum(['bounced', 'skimmed', 'read']);
