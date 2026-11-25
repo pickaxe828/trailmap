@@ -3,25 +3,39 @@ import type { TrailmapDb } from '../db/db';
 import type { ConceptEvidencePage } from './evidence';
 
 /** Where did I learn this? One result per canonical Page, preserving the evidence Visits and their roles. */
-export function readConceptEvidence(db: TrailmapDb, conceptId: string): Promise<ConceptEvidencePage[]> {
+export async function readConceptEvidence(db: TrailmapDb, conceptId: string): Promise<ConceptEvidencePage[]> {
+  return (await readConceptEvidenceBatch(db, [conceptId])).get(conceptId) ?? [];
+}
+
+/** Fetch evidence in batches when projecting more than one Concept, without a query per note. */
+export function readConceptEvidenceBatch(db: TrailmapDb, conceptIds: string[]): Promise<Map<string, ConceptEvidencePage[]>> {
   return db.transaction('r', db.conceptEvidence, db.pages, db.visits, async () => {
-    const rows = await db.conceptEvidence.where('conceptId').equals(conceptId).sortBy('startedAt');
+    const rows = await db.conceptEvidence.where('conceptId').anyOf(conceptIds).sortBy('startedAt');
     const urls = [...new Set(rows.map((row) => row.canonicalUrl))];
     const ids = [...new Set(rows.map((row) => row.visitId))];
     const [pages, visits] = await Promise.all([db.pages.bulkGet(urls), db.visits.bulkGet(ids)]);
+    const byUrl = new Map(pages.flatMap((page) => page ? [[page.canonicalUrl, page] as const] : []));
     const byVisit = new Map(visits.flatMap((visit) => visit ? [[visit.id, visit] as const] : []));
-    return pages.flatMap((page) => {
-      if (!page) return [];
-      const grouped = new Map<string, ConceptEvidencePage['visits'][number]>();
-      for (const row of rows) {
-        const visit = byVisit.get(row.visitId);
-        if (!visit || row.canonicalUrl !== page.canonicalUrl) continue;
-        const entry = grouped.get(visit.id) ?? { visit, roles: [] };
-        if (!entry.roles.includes(row.role)) entry.roles.push(row.role);
-        grouped.set(visit.id, entry);
-      }
-      return grouped.size ? [{ page, visits: [...grouped.values()] }] : [];
-    });
+    type EvidenceVisits = Map<string, ConceptEvidencePage['visits'][number]>;
+    const grouped = new Map<string, Map<string, EvidenceVisits>>();
+    const getOrCreate = <K, V>(map: Map<K, V>, key: K, create: () => V): V => {
+      const existing = map.get(key);
+      if (existing !== undefined) return existing;
+      const value = create();
+      map.set(key, value);
+      return value;
+    };
+    for (const { conceptId, canonicalUrl, visitId, role } of rows) {
+      const visit = byVisit.get(visitId);
+      if (!visit || !byUrl.has(canonicalUrl)) continue;
+      const pages = getOrCreate(grouped, conceptId, () => new Map());
+      const visits = getOrCreate(pages, canonicalUrl, () => new Map());
+      const entry = getOrCreate(visits, visitId, (): ConceptEvidencePage['visits'][number] => ({ visit, roles: [] }));
+      if (!entry.roles.includes(role)) entry.roles.push(role);
+    }
+    return new Map([...grouped].map(([id, pages]) => [id, [...pages].map(([url, visits]) => ({
+      page: byUrl.get(url)!, visits: [...visits.values()],
+    }))]));
   });
 }
 

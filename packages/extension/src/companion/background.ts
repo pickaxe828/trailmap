@@ -10,6 +10,7 @@ import { CompanionClient, CompanionRequestError } from './client';
 import { chromeTransport } from './chrome-transport';
 import { COMPANION_EVENT, COMPANION_RELAY } from './relay';
 import { COMPANION_RECONNECT_MESSAGE, COMPANION_STATUS_KEY } from './status';
+import { VAULT_FOLDER_KEY } from '../vault/settings';
 
 const KEEPALIVE_ALARM = 'trailmap.companion.retry';
 
@@ -37,7 +38,9 @@ export function startCompanion(): void {
     void chrome.runtime.sendMessage({ type: COMPANION_EVENT, event }).catch(() => {});
   });
 
-  const relayPages = new Set(['/sidepanel.html', '/onboarding.html'].map((path) => chrome.runtime.getURL(path)));
+  const vaultPages = new Set(['/onboarding.html', '/settings.html'].map((path) => chrome.runtime.getURL(path)));
+  const relayPages = new Set([...vaultPages, chrome.runtime.getURL('/sidepanel.html')]);
+  let selectingVault = false;
   chrome.runtime.onMessage.addListener((message: unknown, sender, respond) => {
     if (typeof message !== 'object' || message === null || !('type' in message)) return;
     if (message.type === COMPANION_RECONNECT_MESSAGE) {
@@ -52,12 +55,29 @@ export function startCompanion(): void {
     const request = CompanionRequest.safeParse(
       typeof raw === 'object' && raw !== null ? { ...raw, id: 'relay' } : raw,
     );
-    if (!request.success || request.data.type === 'llm.complete' || request.data.type === 'llm.dispatchAck') {
+    if (!request.success || request.data.type === 'llm.complete' || request.data.type === 'llm.dispatchAck' ||
+      request.data.type === 'vault.write' || request.data.type === 'vault.remove' ||
+      (request.data.type === 'vault.setFolder' && !vaultPages.has(page))) {
       respond({ ok: false, code: 'invalid_message', message: 'Malformed companion request.' });
       return;
     }
     const { type, id: _id, ...payload } = request.data;
-    void companion.request(type, payload).then(
+    if (type === 'vault.setFolder' && selectingVault) {
+      respond({ ok: false, code: 'vault_unavailable', message: 'Finish choosing the vault folder in the other tab.' });
+      return;
+    }
+    async function requestAndSaveFolder() {
+      selectingVault = true;
+      try {
+        const response = await companion.request('vault.setFolder', payload);
+        if (!response.cancelled) await chrome.storage.local.set({ [VAULT_FOLDER_KEY]: response.folder });
+        return response;
+      } finally {
+        selectingVault = false;
+      }
+    }
+    const operation = type === 'vault.setFolder' ? requestAndSaveFolder() : companion.request(type, payload);
+    void operation.then(
       (response) => respond({ ok: true, response }),
       (error: unknown) => respond({
         ok: false,

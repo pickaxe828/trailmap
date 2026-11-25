@@ -13,6 +13,7 @@ import {
   CompanionResponse,
   ErrorDetails,
   LLM_REQUEST_TIMEOUT_MS,
+  VAULT_PICKER_TIMEOUT_MS,
   type CompanionRequest,
   type CompanionRequestType,
   type ErrorCode,
@@ -242,7 +243,8 @@ export class CompanionClient {
 
   private send(request: Omit<CompanionRequest, 'id'>): Promise<CompanionResponse> {
     const timeout = request.type === 'llm.complete' || request.type === 'llm.models'
-      ? LLM_REQUEST_TIMEOUT_MS : REQUEST_TIMEOUT_MS;
+      ? LLM_REQUEST_TIMEOUT_MS : request.type === 'vault.setFolder' && !('path' in request)
+        ? VAULT_PICKER_TIMEOUT_MS : REQUEST_TIMEOUT_MS;
     return new Promise((resolve, reject) =>
       this.sendWith(request, timeout, (result) =>
         result instanceof CompanionRequestError ? reject(result) : resolve(result),
