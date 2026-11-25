@@ -11,8 +11,9 @@
  */
 import { chromium, test as base, expect, type BrowserContext, type Page, type Worker } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { cpSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import type { Highlight, Page as CapturedPage, Query, Visit } from '../packages/shared/src/domain';
 import { COMPANION_BIN, EXTENSION_DIR, FIXTURE_PORT } from './constants';
@@ -50,11 +51,31 @@ type Fixtures = {
 };
 
 type Options = {
+  realEmbedder: boolean;
   /** `test.use({ companionInstalled: true })` installs the real companion into the profile before the browser starts. */
   companionInstalled: boolean;
 };
 
-export const test = base.extend<Fixtures & Options>({
+type WorkerFixtures = { fakeEmbeddingExtension: string };
+
+export const test = base.extend<Fixtures & Options, WorkerFixtures>({
+  realEmbedder: [false, { option: true }],
+
+  // Swap only the Embedder behind the production offscreen message handler.
+  // The normal bundle has no test configuration and retains its manifest key.
+  fakeEmbeddingExtension: [async ({}, use) => {
+    const dir = mkdtempSync(join(tmpdir(), 'trailmap-e2e-extension-'));
+    try {
+      cpSync(EXTENSION_DIR, dir, { recursive: true });
+      execFileSync('bun', ['build', fileURLToPath(new URL('./fake-embedder.ts', import.meta.url)),
+        '--outfile', join(dir, 'fake-embedder.js')], { stdio: 'pipe' });
+      writeFileSync(join(dir, 'offscreen.html'), '<script type="module" src="./fake-embedder.js"></script>');
+      await use(dir);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, { scope: 'worker' }],
+
   companionInstalled: [false, { option: true }],
 
   // eslint-disable-next-line no-empty-pattern
@@ -81,15 +102,16 @@ export const test = base.extend<Fixtures & Options>({
     });
   },
 
-  context: async ({ userDataDir, companionEnv, companionInstalled, installCompanion }, use) => {
+  context: async ({ userDataDir, companionEnv, companionInstalled, installCompanion, fakeEmbeddingExtension, realEmbedder }, use) => {
+    const extensionDir = realEmbedder ? EXTENSION_DIR : fakeEmbeddingExtension;
     if (companionInstalled) installCompanion();
     const context = await chromium.launchPersistentContext(userDataDir, {
       env: { ...process.env, ...companionEnv } as Record<string, string>,
       channel: 'chromium', // full Chromium in new headless mode; the old headless shell can't load extensions
       headless: true,
       args: [
-        `--disable-extensions-except=${EXTENSION_DIR}`,
-        `--load-extension=${EXTENSION_DIR}`,
+        `--disable-extensions-except=${extensionDir}`,
+        `--load-extension=${extensionDir}`,
         '--host-resolver-rules=MAP *.test 127.0.0.1',
       ],
     });
