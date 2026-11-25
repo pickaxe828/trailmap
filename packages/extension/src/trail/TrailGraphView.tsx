@@ -10,17 +10,19 @@ import {
   type Edge, type Node, type NodeProps,
 } from '@xyflow/react';
 import '@xyflow/react/dist/base.css';
-import { memo, useMemo } from 'react';
+import type { Visit } from '@trailmap/shared';
+import { memo, useMemo, type DragEvent } from 'react';
+import { webUrl } from '../ui/web-url';
 import { formatActiveTime } from './format';
 import type { TrailGraph, TrailGraphEdge, TrailGraphNode } from './graph';
 import { TRAIL_CARD, useTrailLayout } from './useTrailLayout';
 
-type CardNode = Node<{ stop: TrailGraphNode }, 'trailCard'>;
-
-function webUrl(input: string): URL | null {
-  const url = URL.parse(input);
-  return url?.protocol === 'https:' || url?.protocol === 'http:' ? url : null;
-}
+type ReviewActions = {
+  summaries: ReadonlyMap<string, string | null>;
+  onSelect: (id: string) => void;
+  onDragVisit?: (event: DragEvent, visit: Visit) => void;
+};
+type CardNode = Node<{ stop: TrailGraphNode; review?: ReviewActions }, 'trailCard'>;
 
 /** Chrome's local favicon cache; it doesn't contact the site or a third party. */
 function faviconUrl(pageUrl: string): string {
@@ -30,35 +32,47 @@ function faviconUrl(pageUrl: string): string {
   return url.href;
 }
 
-const TrailCard = memo(function TrailCard({ data: { stop } }: NodeProps<CardNode>) {
-  const url = stop.visit && webUrl(stop.visit.url);
-  const title = stop.kind === 'question' ? stop.query.q : stop.visit.title || url?.hostname || 'Untitled Visit';
-  const caption = stop.kind === 'question' ? 'Search question' : url?.hostname ?? 'Page';
+const interactive = 'pointer-events-auto block size-full rounded-lg text-start hover:outline focus-visible:outline outline-accent';
+
+const TrailCard = memo(function TrailCard({ data: { stop, review } }: NodeProps<CardNode>) {
+  const visit = stop.kind === 'skipped' ? null : stop.visit;
+  const url = visit && webUrl(visit.url);
+  const title = stop.kind === 'question' ? stop.query.q : stop.kind === 'skipped' ? `+${stop.visits.length} skipped`
+    : stop.visit.title || url?.hostname || 'Untitled Visit';
+  const summary = visit && review?.summaries.get(visit.canonicalUrl);
+  const caption = stop.kind === 'question' ? 'Search question' : stop.kind === 'skipped' ? 'Pages you didn’t read'
+    : summary || url?.hostname || 'Page';
   const content = (
-    <Card height="100%" padding={3} variant={stop.kind === 'question' ? 'blue' : 'default'} elevation="low">
-      <VStack height="100%" gap={1} vAlign="center">
-        <HStack gap={2} align="center">
-          {stop.kind === 'question' ? <Icon icon="search" size="sm" /> : url && (
-            <img src={faviconUrl(url.href)} alt="" draggable={false} className="size-4 shrink-0" />
-          )}
-          <Text type="label" maxLines={1} hasTruncateTooltip={false}>{title}</Text>
-        </HStack>
-        <HStack gap={2} justify="between" align="center">
-          <Text type="supporting" maxLines={1} hasTruncateTooltip={false}>{caption}</Text>
-          {stop.visit && <Text type="supporting" hasTabularNumbers>{formatActiveTime(stop.visit.activeMs)}</Text>}
-        </HStack>
-      </VStack>
-    </Card>
+    <VStack as="span" height="100%" padding={3} gap={1} vAlign="center">
+      <HStack as="span" gap={2} align="center">
+        {stop.kind === 'question' ? <Icon icon="search" size="sm" /> : url && (
+          <img src={faviconUrl(url.href)} alt="" draggable={false} className="size-4 shrink-0" />
+        )}
+        <Text type="label" maxLines={1} hasTruncateTooltip={false}>{title}</Text>
+      </HStack>
+      <HStack as="span" gap={2} justify="between" align="center">
+        <Text type="supporting" maxLines={1} hasTruncateTooltip={false}>{caption}</Text>
+        {visit && !summary && <Text type="supporting" hasTabularNumbers>{formatActiveTime(visit.activeMs)}</Text>}
+      </HStack>
+    </VStack>
   );
+  const drag = visit && review?.onDragVisit;
   return (
     <>
       <Handle type="target" position={Position.Left} isConnectable={false} className="opacity-0" />
-      {url ? (
-        <a href={url.href} target="_blank" rel="noopener noreferrer" title={title}
-          className="pointer-events-auto block size-full rounded-lg hover:outline focus-visible:outline outline-accent">
-          {content}
-        </a>
-      ) : content}
+      <VStack height="100%" className={stop.emphasis === 'muted' ? 'opacity-75 hover:opacity-100 focus-within:opacity-100' : undefined}>
+        <Card height="100%" padding={0} variant={stop.kind === 'question' ? 'blue' : 'default'} elevation="low">
+          {review ? (
+            <button type="button" title={title} aria-label={title} className={`${interactive} nopan`}
+              onClick={() => review.onSelect(stop.id)} draggable={!!drag}
+              onDragStart={drag ? (event) => drag(event, visit) : undefined}>
+              {content}
+            </button>
+          ) : url ? (
+            <a href={url.href} target="_blank" rel="noopener noreferrer" title={title} className={interactive}>{content}</a>
+          ) : content}
+        </Card>
+      </VStack>
       <Handle type="source" position={Position.Right} isConnectable={false} className="opacity-0" />
     </>
   );
@@ -82,19 +96,20 @@ function GraphControls() {
   );
 }
 
-/** Read-only graph canvas shared by the raw Trail and Expedition views. */
-export function TrailGraphView({ graph }: { graph: TrailGraph }) {
+/** Shared canvas; raw Trail cards open URLs, Expedition cards select a stop for review. */
+export function TrailGraphView({ graph, review }: { graph: TrailGraph; review?: ReviewActions }) {
   const layout = useTrailLayout(graph);
   const nodes = useMemo(() => graph.nodes.flatMap((stop): CardNode[] => {
     const position = layout && 'positions' in layout ? layout.positions.get(stop.id) : undefined;
-    return position ? [{ id: stop.id, type: 'trailCard', position, data: { stop }, ...TRAIL_CARD }] : [];
-  }), [graph.nodes, layout]);
+    return position ? [{ id: stop.id, type: 'trailCard', position, data: { stop, review }, ...TRAIL_CARD }] : [];
+  }), [graph.nodes, layout, review]);
   const edges = useMemo(() => graph.edges.map((edge): Edge<{ lineage: TrailGraphEdge }> => ({
     id: edge.id,
     source: edge.source,
     target: edge.target,
     data: { lineage: edge },
     type: 'smoothstep',
+    className: edge.dashed ? '[stroke-dasharray:6_4]' : undefined,
     markerEnd: { type: MarkerType.ArrowClosed },
   })), [graph.edges]);
 
