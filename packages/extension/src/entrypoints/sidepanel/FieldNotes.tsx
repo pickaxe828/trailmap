@@ -1,13 +1,13 @@
 import { Collapsible } from '@astryxdesign/core/Collapsible';
 import { Heading } from '@astryxdesign/core/Heading';
 import { HStack } from '@astryxdesign/core/HStack';
-import { Markdown } from '@astryxdesign/core/Markdown';
 import { Text } from '@astryxdesign/core/Text';
 import { VStack } from '@astryxdesign/core/VStack';
 import type { Expedition } from '@trailmap/shared';
 import { useState } from 'react';
 import { openTrailmapDb } from '../../db/db';
 import { markNotesSeen } from '../../wrapup/badge';
+import { FieldNotesMarkdown } from '../../wrapup/FieldNotesMarkdown';
 
 let db: ReturnType<typeof openTrailmapDb> | undefined;
 
@@ -38,10 +38,7 @@ export function FieldNotes({ expeditions }: { expeditions: Expedition[] }) {
         return (
           <Collapsible key={id} isOpen={open === id} onOpenChange={(isOpen) => toggle(expedition, isOpen)}
             trigger={<HStack gap={2} align="center">{heading}</HStack>}>
-            <Markdown headingLevelStart={3} density="compact"
-              onLinkClick={(href, event) => { event.preventDefault(); window.open(href, '_blank', 'noopener,noreferrer'); return false; }}>
-              {fieldNotes}
-            </Markdown>
+            <FieldNotesMarkdown>{fieldNotes}</FieldNotesMarkdown>
           </Collapsible>
         );
       })}

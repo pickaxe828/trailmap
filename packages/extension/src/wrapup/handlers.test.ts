@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test';
 import type { Expedition, Page, Visit } from '@trailmap/shared';
 import { CompanionRequestError } from '../companion/client';
+import { createCorrections } from '../corrections/corrections';
 import { openTrailmapDb, type TrailmapDb } from '../db/db';
 import { enqueueJob, JobQueue, JOB_PRIORITY } from '../jobs/queue';
 import { countUnseenNotes, markNotesSeen } from './badge';
@@ -49,11 +50,12 @@ function fake(outputs: Record<string, unknown>, calls: Call[] = []): ModelReques
 const wrapUp = { title: 'How CRDTs delete', driving_question: 'How do CRDTs represent deletes?', kind: 'learning', merge_with: [] };
 const notes = { found: 'With tombstones.', key_ideas: [{ idea: 'Deletes are markers', page: 'p1' }], trail: 'One page.', loose_ends: [] };
 
-function queue(outputs: Record<string, unknown>, calls: Call[] = [], hooks = new NotesWrittenHooks()) {
-  const handlers = wrapUpHandlers(db, () => settings, { request: fake(outputs, calls), now: () => now, hooks });
+function queueWith(request: ModelRequester, hooks = new NotesWrittenHooks()) {
+  const handlers = wrapUpHandlers(db, () => settings, { request, now: () => now, hooks });
   const discard = async () => 'discard' as const;
   return new JobQueue(db, () => now, { page_enrichment: discard, concept_resolution: discard, merge_verdict: discard, ...handlers }, [db.expeditions]);
 }
+const queue = (outputs: Record<string, unknown>, calls?: Call[], hooks?: NotesWrittenHooks) => queueWith(fake(outputs, calls), hooks);
 const drain = async (q: JobQueue) => { while (await q.runNext()) { /* drain */ } };
 
 test('wrap-up stores the title, driving question and kind, then queues field notes for a learning Expedition', async () => {
@@ -123,6 +125,19 @@ test('a title the user chose and notes the user edited are never overwritten', a
     title: 'My own title', fieldNotes: 'My notes', userEdited: true, drivingQuestion: 'How do CRDTs represent deletes?',
   });
   expect((await db.expeditions.get('expedition:v1'))!.unseenNotes).toBeUndefined();
+});
+
+test('a field-notes edit wins even when regeneration is already in flight', async () => {
+  await seed({ fieldNotes: 'Previously generated notes' });
+  const corrections = createCorrections({ db, now: () => now, newId: () => 'note-edit' });
+  await drain(queueWith(async (_db, payload, guard) => {
+    expect(await guard.allow()).toBe(true);
+    if (payload.task === 'expedition_wrap_up') return { output: wrapUp };
+    // An empty edit is intentional, not the null marker for never-written notes.
+    await corrections.editFieldNotes('expedition:v1', '');
+    return { output: notes };
+  }));
+  expect(await db.expeditions.get('expedition:v1')).toMatchObject({ fieldNotes: '', userEdited: true });
 });
 
 test('a renamed Expedition that has no notes yet still gets them', async () => {

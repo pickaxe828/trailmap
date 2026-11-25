@@ -52,12 +52,28 @@ export function createCorrections({ db, now, newId }: CorrectionsOptions) {
 
     async rename(expeditionId: string, title: string) {
       const next = title.trim();
-      if (!next) return;
-      await db.transaction('rw', db.expeditions, db.corrections, async () => {
+      if (!next) return false;
+      return db.transaction('rw', db.expeditions, db.corrections, async () => {
         const expedition = await db.expeditions.get(expeditionId);
-        if (!expedition) return;
+        if (!expedition) return false;
         await db.expeditions.update(expeditionId, { title: next, userEdited: true });
         await logEntry('rename', [expeditionId], { title: expedition.title }, { title: next });
+        return true;
+      });
+    },
+
+    async editFieldNotes(expeditionId: string, text: string): Promise<boolean> {
+      return db.transaction('rw', db.expeditions, db.corrections, async () => {
+        const expedition = await db.expeditions.get(expeditionId);
+        if (!expedition) return false;
+        const at = now();
+        await db.expeditions.update(expeditionId, { fieldNotes: text, userEdited: true, notesWrittenAt: at, unseenNotes: undefined });
+        // Unlike a manual Note, generated field notes can quote many Visits. Avoid
+        // duplicating their content in the correction log when those Visits are forgotten.
+        await logEntry('field-notes', [expeditionId],
+          { userEdited: expedition.userEdited, notesWrittenAt: expedition.notesWrittenAt },
+          { userEdited: true, notesWrittenAt: at });
+        return true;
       });
     },
 
@@ -98,26 +114,27 @@ export function createCorrections({ db, now, newId }: CorrectionsOptions) {
 
     /** Moves one Visit (and its Query) into another Expedition. */
     async move(visitId: string, toExpeditionId: string) {
-      await db.transaction('rw', db.visits, db.queries, db.expeditions, db.notes, db.corrections, async () => {
+      return db.transaction('rw', db.visits, db.queries, db.expeditions, db.notes, db.corrections, async () => {
         const visit = await db.visits.get(visitId);
         const target = await db.expeditions.get(toExpeditionId);
-        if (!visit || !target || visit.expeditionId === toExpeditionId) return;
+        if (!visit || !target || visit.expeditionId === toExpeditionId) return false;
         const fromId = visit.expeditionId;
         await assign([visitId], toExpeditionId);
         if (fromId) await repairExpedition(db, fromId);
         await repairExpedition(db, toExpeditionId);
         await logEntry('move', [visitId, toExpeditionId, ...(fromId ? [fromId] : [])],
           { visits: { [visitId]: fromId } }, { visits: { [visitId]: toExpeditionId } });
+        return true;
       });
     },
 
     /** Folds `fromId` into `intoId`. The target keeps its title and notes. */
     async merge(intoId: string, fromId: string) {
-      if (intoId === fromId) return;
-      await db.transaction('rw', db.visits, db.queries, db.expeditions, db.notes, db.corrections, async () => {
+      if (intoId === fromId) return false;
+      return db.transaction('rw', db.visits, db.queries, db.expeditions, db.notes, db.corrections, async () => {
         const into = await db.expeditions.get(intoId);
         const from = await db.expeditions.get(fromId);
-        if (!into || !from) return;
+        if (!into || !from) return false;
         const ids = (await db.visits.where('expeditionId').equals(fromId).primaryKeys()) as string[];
         const before = await membership(ids);
         await assign(ids, intoId);
@@ -132,6 +149,7 @@ export function createCorrections({ db, now, newId }: CorrectionsOptions) {
         await repairExpedition(db, intoId);
         await logEntry('merge', [intoId, fromId, ...ids],
           { visits: before, intoId, fromId, fromTitle: from.title }, { visits: await membership(ids) });
+        return true;
       });
     },
 

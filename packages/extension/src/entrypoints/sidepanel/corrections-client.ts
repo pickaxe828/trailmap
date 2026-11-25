@@ -1,19 +1,7 @@
 import { useEffect, useState } from 'react';
-import { CORRECTION_MESSAGE, type CorrectionRequest } from '../../corrections/messages';
+import { correct } from '../../corrections/client';
 import { recordingState, type RecordingSettings } from '../../privacy/policy';
 import { readRecordingSettings, RECORDING_SETTINGS_KEY } from '../../privacy/settings';
-
-type Action = CorrectionRequest extends infer R ? R extends { action: infer A } ? A : never : never;
-type Body<A extends Action> = Omit<Extract<CorrectionRequest, { action: A }>, 'type' | 'action'>;
-
-/** Sends a correction to the service worker. Resolves to its reply, or false if it failed. */
-export async function correct<A extends Action>(action: A, body: Body<A>): Promise<boolean | string | null> {
-  try {
-    return await chrome.runtime.sendMessage({ type: CORRECTION_MESSAGE, action, ...body } as unknown as CorrectionRequest);
-  } catch {
-    return false;
-  }
-}
 
 /** The Visit shown in the browser's active tab, kept fresh as tabs and the trail change. */
 export function useCurrentVisitId(trailVersion: unknown): string | null {

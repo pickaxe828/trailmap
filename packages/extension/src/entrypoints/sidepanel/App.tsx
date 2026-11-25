@@ -19,8 +19,12 @@ export function App() {
     <VStack gap={3} padding={4}>
       <HStack align="center" justify="between" wrap="wrap" gap={2}>
         <Heading level={1}>Trailmap</Heading>
-        <Button size="sm" label="Open Trail" href={chrome.runtime.getURL('/trail.html')}
-          target="_blank" rel="noopener noreferrer" />
+        <HStack gap={1} wrap="wrap">
+          <Button size="sm" label="Open Journal" href={chrome.runtime.getURL('/journal.html')}
+            target="_blank" rel="noopener noreferrer" />
+          <Button size="sm" variant="secondary" label="Open Trail" href={chrome.runtime.getURL('/trail.html')}
+            target="_blank" rel="noopener noreferrer" />
+        </HStack>
       </HStack>
       <RecordingControls />
       <AiNotesStatus />
