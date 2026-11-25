@@ -52,7 +52,8 @@ const notes = { found: 'With tombstones.', key_ideas: [{ idea: 'Deletes are mark
 
 function queue(outputs: Record<string, unknown>, calls: Call[] = [], hooks = new NotesWrittenHooks()) {
   const handlers = wrapUpHandlers(db, () => settings, { request: fake(outputs, calls), now: () => now, hooks });
-  return new JobQueue(db, () => now, { page_enrichment: async () => 'discard', ...handlers }, [db.expeditions]);
+  const discard = async () => 'discard' as const;
+  return new JobQueue(db, () => now, { page_enrichment: discard, concept_resolution: discard, merge_verdict: discard, ...handlers }, [db.expeditions]);
 }
 const drain = async (q: JobQueue) => { while (await q.runNext()) { /* drain */ } };
 

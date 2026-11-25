@@ -14,7 +14,8 @@ afterEach(async () => { await db.delete(); });
 const enqueue = (id: string, priority: JobPriority = JOB_PRIORITY.readPage) =>
   enqueueJob(db, { kind: 'page_enrichment', key: id, priority, payload: { canonicalUrl: id, textHash: 'hash', visitId: 'visit' } }, now);
 
-const unused = { expedition_wrap_up: async () => 'discard' as const, field_notes: async () => 'discard' as const };
+const discard = async () => 'discard' as const;
+const unused = { expedition_wrap_up: discard, field_notes: discard, concept_resolution: discard, merge_verdict: discard };
 
 function worker(run: (url: string) => Promise<void>) {
   return new JobQueue(db, () => now, { ...unused, page_enrichment: ({ payload }) => run(payload.canonicalUrl) });
