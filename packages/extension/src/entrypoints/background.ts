@@ -2,8 +2,11 @@ import { ChromeEventSource, ensureTickAlarm } from '../capture/chrome-events';
 import { VisitRecorder } from '../capture/recorder';
 import { ChromeSessionStateStore } from '../capture/state-store';
 import { openTrailmapDb } from '../db/db';
+import { startCompanion } from '../companion/background';
 
 export default defineBackground(() => {
+  startCompanion();
+
   // Clicking the toolbar icon opens the side panel.
   void chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
 

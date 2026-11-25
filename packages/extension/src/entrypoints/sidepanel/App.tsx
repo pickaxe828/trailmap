@@ -7,6 +7,7 @@ import { VStack } from '@astryxdesign/core/VStack';
 import { formatActiveTime } from '../../trail/format';
 import { buildTrail, type TrailNode } from '../../trail/tree';
 import { useTodaysVisits } from '../../trail/useTodaysVisits';
+import { CompanionStatus } from './CompanionStatus';
 
 function hostOf(url: string): string {
   try {
@@ -36,6 +37,7 @@ export function App() {
         <StatusDot variant="success" label="Recording" isPulsing />
         <Text>Recording is on</Text>
       </HStack>
+      <CompanionStatus />
       {visits === undefined ? null : visits.length === 0 ? (
         <Text type="supporting">Your trail will appear here as you browse.</Text>
       ) : (
