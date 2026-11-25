@@ -1,8 +1,9 @@
+import { Code } from '@astryxdesign/core/Code';
 import { Heading } from '@astryxdesign/core/Heading';
 import { Text } from '@astryxdesign/core/Text';
 import { VStack } from '@astryxdesign/core/VStack';
 
-/** Onboarding tab, opened on first install. Placeholder: later tickets add the privacy screen and companion setup. */
+/** Onboarding tab, opened on first install. Placeholder: later tickets add the privacy screen. */
 export function App() {
   return (
     <VStack gap={3} padding={8} maxWidth={640}>
@@ -12,6 +13,25 @@ export function App() {
         Recording starts straight away.
       </Text>
       <Text type="supporting">Privacy settings and AI notes setup will appear here.</Text>
+      <VStack gap={2} id="companion">
+        <Heading level={2}>Set up the companion</Heading>
+        <Text>
+          The companion is a small program on your computer. AI notes (ChatGPT sign-in, Anthropic, Ollama) and
+          Obsidian sync need it; recording and trails work without it.
+        </Text>
+        <Text>
+          1. Build it: <Code>bun run build:companion</Code>
+        </Text>
+        <Text>
+          2. Register it with your browsers: <Code>packages/companion/dist/trailmap-companion install</Code>
+        </Text>
+        <Text>
+          3. Reopen the Trailmap side panel. It should say "Companion connected".
+        </Text>
+        <Text type="supporting">
+          <Code>trailmap-companion uninstall</Code> removes the registration again.
+        </Text>
+      </VStack>
     </VStack>
   );
 }
