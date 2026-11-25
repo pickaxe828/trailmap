@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { CompanionEvent, CompanionResponse, ErrorCode, type CompanionRequestType } from '@trailmap/shared';
+import { CompanionEvent, CompanionResponse, ErrorCode, ErrorDetails, type CompanionRequestType } from '@trailmap/shared';
 import { CompanionRequestError, type RequestPayload, type ResponseFor } from './client';
 
 export const COMPANION_RELAY = 'trailmap.companion.request';
@@ -11,6 +11,7 @@ export const RelayReply = z.discriminatedUnion('ok', [
     ok: z.literal(false),
     code: ErrorCode.or(z.enum(['not_connected', 'timeout'])),
     message: z.string(),
+    details: ErrorDetails.optional(),
   }),
 ]);
 
@@ -23,7 +24,7 @@ export async function requestCompanion<T extends CompanionRequestType>(
   const raw: unknown = await chrome.runtime.sendMessage({ type: COMPANION_RELAY, request: { ...payload, type } });
   const reply = RelayReply.safeParse(raw);
   if (!reply.success) throw new CompanionRequestError('internal', 'The companion returned an invalid response.');
-  if (!reply.data.ok) throw new CompanionRequestError(reply.data.code, reply.data.message);
+  if (!reply.data.ok) throw new CompanionRequestError(reply.data.code, reply.data.message, reply.data.details);
   if (reply.data.response.type !== type) throw new CompanionRequestError('internal', 'The companion returned an unexpected response.');
   return reply.data.response as ResponseFor<T>;
 }

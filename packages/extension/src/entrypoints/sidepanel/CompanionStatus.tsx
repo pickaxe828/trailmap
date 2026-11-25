@@ -6,6 +6,7 @@ import { VStack } from '@astryxdesign/core/VStack';
 import { ChatGptConnection } from '../../ui/ChatGptConnection';
 import { SETUP_INSTRUCTIONS_PATH } from '../../companion/status';
 import { useCompanionStatus } from '../../companion/useCompanionStatus';
+import { SummarizePage } from './SummarizePage';
 
 /** Whether the companion (the local helper for AI features and Obsidian sync) is connected. Everything else works without it. */
 export function CompanionStatus() {
@@ -19,6 +20,7 @@ export function CompanionStatus() {
           <Text>Companion connected</Text>
         </HStack>
         <ChatGptConnection />
+        <SummarizePage />
       </VStack>
     );
   }

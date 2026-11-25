@@ -62,6 +62,7 @@ export function startCompanion(): void {
         ok: false,
         code: error instanceof CompanionRequestError ? error.code : 'internal',
         message: error instanceof CompanionRequestError ? error.message : 'The companion request failed.',
+        details: error instanceof CompanionRequestError ? error.details : undefined,
       }),
     );
     return true;

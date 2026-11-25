@@ -10,6 +10,8 @@
   },
   "dependencies": {
     "@trailmap/shared": "workspace:*",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
     "jose": "6.2.18",
     "zod": "4.6.7"
   }

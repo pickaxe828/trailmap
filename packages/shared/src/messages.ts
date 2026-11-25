@@ -11,6 +11,7 @@
  * The protocol carries account status, never ChatGPT credentials.
  */
 import { z } from 'zod';
+import { LlmCompletion, LlmErrorCode, LlmModel, LlmOutput } from './llm';
 
 /** The Native Messaging host name, shared by the install manifest and `chrome.runtime.connectNative`. */
 export const NATIVE_HOST_NAME = 'com.trailmap.companion';
@@ -20,6 +21,8 @@ export const CompanionRequest = z.discriminatedUnion('type', [
   z.object({ type: z.literal('auth.signIn'), id: z.string() }),
   z.object({ type: z.literal('auth.status'), id: z.string() }),
   z.object({ type: z.literal('auth.signOut'), id: z.string() }),
+  LlmCompletion.extend({ type: z.literal('llm.complete'), id: z.string() }),
+  z.object({ type: z.literal('llm.models'), id: z.string() }),
 ]);
 export type CompanionRequest = z.infer<typeof CompanionRequest>;
 export type CompanionRequestType = CompanionRequest['type'];
@@ -37,10 +40,17 @@ export const ErrorCode = z.enum([
   'auth_unavailable',
   'auth_required',
   'plan_usage_disabled',
+  ...LlmErrorCode.options,
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
 
-export const CompanionError = z.object({
+export const ErrorDetails = z.object({
+  retryAfterMs: z.number().int().positive().optional(),
+  requestId: z.string().optional(),
+});
+export type ErrorDetails = z.infer<typeof ErrorDetails>;
+
+export const CompanionError = ErrorDetails.extend({
   type: z.literal('error'),
   id: z.string().nullable(),
   code: ErrorCode,
@@ -71,6 +81,8 @@ export const CompanionResponse = z.discriminatedUnion('type', [
   z.object({ type: z.literal('auth.signIn'), id: z.string(), url: z.url() }),
   ChatGptStatus.extend({ type: z.literal('auth.status'), id: z.string() }),
   z.object({ type: z.literal('auth.signOut'), id: z.string(), revocationConfirmed: z.boolean() }),
+  z.object({ type: z.literal('llm.complete'), id: z.string(), output: LlmOutput }),
+  z.object({ type: z.literal('llm.models'), id: z.string(), models: z.array(LlmModel) }),
   CompanionError,
 ]);
 export type CompanionResponse = z.infer<typeof CompanionResponse>;
