@@ -21,6 +21,7 @@
     "@xyflow/react": "12.12.1",
     "dexie": "4.4.7",
     "elkjs": "0.12.1",
+    "fflate": "0.8.2",
     "graphology": "0.26.0",
     "graphology-communities-louvain": "2.0.2",
     "graphology-layout-forceatlas2": "0.10.1",

@@ -2,6 +2,7 @@ import { ChatGptAuthError, getChatGptAuth } from './auth/auth';
 import type { SecretStore } from './secrets';
 import { openAiProvider } from './llm/openai';
 import { LlmFailure } from './llm/provider';
+import { VaultError, type Vault } from './vault';
 import { CompanionRequest, type CompanionEvent, type CompanionRequestType, type CompanionResponse, type ErrorCode, type ModelDispatch } from '@trailmap/shared';
 
 export const COMPANION_VERSION = '0.0.0';
@@ -19,6 +20,7 @@ export interface CompanionContext {
   now?: () => number;
   authorizeDispatch?: (auditId: string, dispatch: ModelDispatch) => Promise<boolean>;
   acknowledgeDispatch?: (dispatchId: string, allow: boolean) => void;
+  vault?: Vault;
   /** Overrides for tests. */
   handlers?: Partial<Handlers>;
 }
@@ -47,7 +49,21 @@ export const defaultHandlers: Handlers = {
     ctx.acknowledgeDispatch?.(dispatchId, allow);
     return { type, id };
   },
+  'vault.setFolder': async ({ type, id, path }, ctx) => ({ type, id, ...await configuredVault(ctx).setFolder(path) }),
+  'vault.write': ({ type, id, folderId, path, markdown }, ctx) => {
+    configuredVault(ctx).write(folderId, path, markdown);
+    return { type, id };
+  },
+  'vault.remove': ({ type, id, folderId, path, sha256 }, ctx) => {
+    configuredVault(ctx).remove(folderId, path, sha256);
+    return { type, id };
+  },
 };
+
+function configuredVault(ctx: CompanionContext): Vault {
+  if (!ctx.vault) throw new VaultError('vault_unavailable', 'Vault sync is unavailable.');
+  return ctx.vault;
+}
 
 function errorReply(id: string | null, code: ErrorCode, message: string): CompanionResponse {
   return { type: 'error', id, code, message };
@@ -75,7 +91,7 @@ export async function handleMessage(raw: unknown, ctx: CompanionContext): Promis
   try {
     return await handler(request, ctx);
   } catch (error) {
-    if (error instanceof ChatGptAuthError) return errorReply(request.id, error.code, error.message);
+    if (error instanceof ChatGptAuthError || error instanceof VaultError) return errorReply(request.id, error.code, error.message);
     if (error instanceof LlmFailure) return {
       type: 'error', id: request.id, code: error.code, message: error.message, ...error.details,
     };

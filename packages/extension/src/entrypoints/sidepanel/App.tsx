@@ -33,7 +33,10 @@ export function App() {
       <CompanionStatus />
       {trail && <FieldNotes expeditions={trail.finished} />}
       {trail && <PageNotes pages={trail.pageNotes} />}
-      <Link href={chrome.runtime.getURL('/onboarding.html#sent-to-model')} target="_blank">Sent-to-model log</Link>
+      <HStack gap={2} wrap="wrap">
+        <Link href={chrome.runtime.getURL('/onboarding.html#settings')} target="_blank">Settings</Link>
+        <Link href={chrome.runtime.getURL('/onboarding.html#sent-to-model')} target="_blank">Sent-to-model log</Link>
+      </HStack>
       {trail && trail.open.length === 0 && trail.today.length === 0 && (
         <Text type="supporting">Your trail will appear here as you browse.</Text>
       )}
