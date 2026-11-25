@@ -9,8 +9,7 @@ import { z } from 'zod';
 /**
  * How the user arrived at a Visit. PLAN §3 lists link / typed / search / new-tab / back;
  * `form`, `reload`, `bookmark` and `auto` were added for the other `webNavigation`
- * transition types. `back` covers forward as well. `search` is not assigned by the
- * navigation recorder: the search-query capture (ticket 03) sets it.
+ * transition types. `back` covers forward as well.
  */
 export const Transition = z.enum(['link', 'typed', 'search', 'new-tab', 'back', 'form', 'reload', 'bookmark', 'auto']);
 export type Transition = z.infer<typeof Transition>;
@@ -41,6 +40,7 @@ export const Page = z.object({
   canonicalUrl: z.string(),
   text: z.string(),
   textHash: z.string(),
+  sourceHash: z.string().optional(), // Fingerprint of the input DOM for the last extraction.
   summary: z.string().nullable(),
   takeaways: z.array(z.string()),
   embedding: z.instanceof(Int8Array).nullable(),
@@ -51,6 +51,7 @@ export type Page = z.infer<typeof Page>;
 
 export const Query = z.object({
   id: z.string(),
+  visitId: z.string().optional(), // Only absent on records created before Visit linkage.
   engine: z.string(),
   q: z.string(),
   at: z.number(),
@@ -136,6 +137,7 @@ export type Edge = z.infer<typeof Edge>;
 export const Highlight = z.object({
   id: z.string(),
   visitId: z.string(),
+  canonicalUrl: z.string().optional(), // Only absent on records created before Page linkage.
   text: z.string(),
   at: z.number(),
   source: z.enum(['selection', 'copy']),

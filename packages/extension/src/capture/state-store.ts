@@ -10,6 +10,8 @@ export type RecorderState = {
   version: 1;
   /** Each tab's current Visit id. This is what parents are taken from. */
   currentVisitByTab: Record<number, string>;
+  /** Document ids distinguish successive visits with the same URL, such as reloads. */
+  documentIdsByTab?: Record<number, string>;
   /**
    * Tabs opened from a link, mapped to the Visit that was current in the source
    * tab (`null` if it had none). Consumed by the new tab's first commit.

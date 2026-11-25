@@ -1,0 +1,127 @@
+import { extractPageText, hasPasswordField, hashText } from '../capture/extract';
+import { PAGE_CONTENT_MESSAGE, type PageContent, type PageContentMessage, type PageContentReply } from '../capture/page-messages';
+
+const EXTRACTION_DELAY_MS = 2_000;
+const SCROLL_INTERVAL_MS = 250;
+const SELECTION_DELAY_MS = 250;
+const words = new Intl.Segmenter(undefined, { granularity: 'word' });
+
+function canonicalLink(): string | undefined {
+  const href = document.querySelector('link[rel~="canonical" i][href]')?.getAttribute('href');
+  return href?.trim() ? URL.parse(href, document.baseURI)?.href : undefined;
+}
+
+function send(content: PageContent): Promise<PageContentReply | undefined> {
+  const message: PageContentMessage = { type: PAGE_CONTENT_MESSAGE, pageUrl: location.href, ...content };
+  return chrome.runtime.sendMessage(message).catch(() => undefined);
+}
+
+function selectedText(): string {
+  const focused = document.activeElement;
+  if (focused instanceof HTMLInputElement || focused instanceof HTMLTextAreaElement) {
+    const { selectionStart, selectionEnd, value } = focused;
+    if (selectionStart !== null && selectionEnd !== null) return value.slice(selectionStart, selectionEnd).trim();
+  }
+  return window.getSelection()?.toString().trim() ?? '';
+}
+
+function isHighlight(text: string): boolean {
+  let count = 0;
+  for (const segment of words.segment(text)) {
+    if (segment.isWordLike && ++count === 3) return true;
+  }
+  return false;
+}
+
+export default defineContentScript({
+  matches: ['http://*/*', 'https://*/*'],
+  runAt: 'document_start',
+  main(ctx) {
+    let extractionTimer: number | undefined;
+    let scrollTimer: number | undefined;
+    let selectionTimer: number | undefined;
+    let generation = 0;
+    let url = location.href.split('#')[0];
+    let lastSelection = '';
+    let maxDepth = 0;
+    let reportedDepth = 0;
+
+    const capture = async (started: number) => {
+      if (!document.body || hasPasswordField(document)) return;
+      const sourceHash = hashText(document.documentElement.outerHTML);
+      const reply = await send({ kind: 'probe', sourceHash, canonicalLink: canonicalLink() });
+      if (!reply?.extract || generation !== started || hasPasswordField(document)) return;
+
+      // The DOM may have changed while the service worker looked up the Page.
+      const latestHash = hashText(document.documentElement.outerHTML);
+      const article = extractPageText(document);
+      if (article) {
+        await send({ kind: 'text', visitId: reply.visitId, ...article, sourceHash: latestHash });
+      }
+    };
+
+    const reportScroll = () => {
+      clearTimeout(scrollTimer);
+      scrollTimer = undefined;
+      if (maxDepth <= reportedDepth) return;
+      reportedDepth = maxDepth;
+      void send({ kind: 'scroll', depth: maxDepth });
+    };
+
+    const trackScroll = () => {
+      const root = document.scrollingElement;
+      if (!root) return;
+      const scrollable = root.scrollHeight - root.clientHeight;
+      if (scrollable <= 0) return;
+
+      maxDepth = Math.max(maxDepth, Math.min(1, root.scrollTop / scrollable));
+      if (maxDepth > reportedDepth && scrollTimer === undefined) {
+        scrollTimer = ctx.setTimeout(reportScroll, SCROLL_INTERVAL_MS);
+      }
+    };
+
+    const schedule = () => {
+      clearTimeout(extractionTimer);
+      clearTimeout(scrollTimer);
+      clearTimeout(selectionTimer);
+      scrollTimer = undefined;
+      maxDepth = reportedDepth = 0;
+      lastSelection = '';
+      trackScroll();
+      const started = ++generation;
+      extractionTimer = ctx.setTimeout(() => void capture(started).catch(() => undefined), EXTRACTION_DELAY_MS);
+    };
+
+    if (document.readyState === 'complete') schedule();
+    else ctx.addEventListener(window, 'load', schedule, { once: true });
+    ctx.addEventListener(window, 'pageshow', (event) => {
+      if (event.persisted) schedule();
+    });
+    ctx.addEventListener(window, 'pagehide', reportScroll);
+    ctx.addEventListener(window, 'scroll', trackScroll, { passive: true });
+    ctx.addEventListener(window, 'scrollend', reportScroll);
+    ctx.addEventListener(document, 'selectionchange', () => {
+      clearTimeout(selectionTimer);
+      selectionTimer = ctx.setTimeout(() => {
+        if (hasPasswordField(document)) return;
+        const text = selectedText();
+        if (text !== lastSelection && isHighlight(text)) {
+          void send({ kind: 'highlight', source: 'selection', text, canonicalLink: canonicalLink() });
+        }
+        lastSelection = text;
+      }, SELECTION_DELAY_MS);
+    }, { capture: true });
+    ctx.addEventListener(window, 'copy', (event) => {
+      if (!event.isTrusted || hasPasswordField(document)) return;
+      const text = event.clipboardData?.getData('text/plain').trim() || selectedText();
+      if (text) void send({ kind: 'highlight', source: 'copy', text, canonicalLink: canonicalLink() });
+    });
+
+    window.navigation?.addEventListener('currententrychange', () => {
+      const currentUrl = location.href.split('#')[0];
+      if (currentUrl === url) return;
+      url = currentUrl;
+      schedule();
+    });
+  },
+});
