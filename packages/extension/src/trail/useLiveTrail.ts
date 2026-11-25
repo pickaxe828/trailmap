@@ -12,6 +12,8 @@ type LiveTrail = {
   pageNotes: TrailPageNotes[];
   /** Wrapped-up Expeditions, newest first. */
   finished: Expedition[];
+  /** The user's own Note text, by Visit or Expedition id. */
+  notes: Record<string, string>;
 };
 
 let db: ReturnType<typeof openTrailmapDb> | undefined;
@@ -22,7 +24,7 @@ export function useLiveTrail(): LiveTrail | undefined {
   useEffect(() => {
     const database = db ??= openTrailmapDb();
     const subscription = liveQuery(() =>
-      database.transaction('r', database.expeditions, database.visits, database.pages, async () => {
+      database.transaction('r', database.expeditions, database.visits, database.pages, database.notes, async () => {
         const expeditions = await database.expeditions.orderBy('startedAt').reverse()
           .filter(({ endedAt }) => endedAt === null).toArray();
         const openIds = new Set(expeditions.map(({ id }) => id));
@@ -46,7 +48,11 @@ export function useLiveTrail(): LiveTrail | undefined {
           }] : []);
         const finished = await database.expeditions.orderBy('endedAt').reverse()
           .filter((expedition) => expedition.endedAt !== null && expedition.wrappedUpAt !== undefined).limit(10).toArray();
-        return { open, today, pageNotes, finished };
+        const nodeIds = [...open.flatMap(({ expedition, visits }) => [expedition.id, ...visits.map(({ id }) => id)]),
+          ...today.map(({ id }) => id)];
+        const notes = Object.fromEntries((await database.notes.where('nodeId').anyOf(nodeIds).toArray())
+          .map(({ nodeId, text }) => [nodeId, text]));
+        return { open, today, pageNotes, notes, finished };
       }),
     ).subscribe({ next: setTrail });
     return () => subscription.unsubscribe();

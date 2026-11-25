@@ -30,6 +30,7 @@ export const Visit = z.object({
   scrollDepth: z.number().min(0).max(1),
   engagement: Engagement,
   privacyBlocked: z.literal(true).optional(),
+  starred: z.literal(true).optional(), // The user marked this a key page.
   expeditionId: z.string().nullable(),
   segmentationPending: z.literal(1).optional(),
   expeditionEmbedding: z.instanceof(Int8Array).nullable().optional(),

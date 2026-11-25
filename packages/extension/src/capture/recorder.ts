@@ -116,6 +116,23 @@ export class VisitRecorder {
     });
   }
 
+  /**
+   * Runs a deletion in order with captures, then stops tracking the removed
+   * Visits so a page that is still open can't write them (or their text) back.
+   */
+  forgetVisits(remove: () => Promise<readonly string[]>): Promise<readonly string[]> {
+    return this.enqueue(async () => {
+      const removed = new Set(await remove());
+      for (const [tabId, visit] of this.current) {
+        if (removed.has(visit.id)) this.endTrail(tabId);
+      }
+      for (const [tabId, parent] of Object.entries(this.state.pendingNewTabParent)) {
+        if (parent && removed.has(parent)) this.state.pendingNewTabParent[Number(tabId)] = null;
+      }
+      return [...removed];
+    });
+  }
+
   subscribe(listener: (change: VisitChange) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);

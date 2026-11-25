@@ -33,6 +33,17 @@ export type TrailmapDb = Dexie & {
   jobs: EntityTable<Job, 'id'>;
   queueHolds: EntityTable<QueueHold, 'id'>;
   sentToModel: EntityTable<SentToModel, 'id'>;
+  corrections: EntityTable<CorrectionLogEntry, 'id'>;
+};
+
+/** A user correction (docs/PLAN.md §4.3 rule 5). `targetIds` lets Forget remove entries that mention forgotten items. */
+export type CorrectionLogEntry = {
+  id: string;
+  at: number;
+  kind: string;
+  targetIds: string[];
+  before: unknown;
+  after: unknown;
 };
 
 export type SentToModel = ModelDispatch & { id: string; at: number; task: string; canonicalUrl?: string; expeditionId?: string; canonicalUrls?: string[] };
@@ -92,6 +103,21 @@ export function openTrailmapDb(name: string = DB_NAME): TrailmapDb {
     visits: 'id, canonicalUrl, tabId, parentVisitId, startedAt, expeditionId, [segmentationPending+startedAt]',
     pages: 'canonicalUrl, textHash, enrichedAt',
     queries: 'id, expeditionId, at, visitId',
+    expeditions: 'id, startedAt, endedAt, threadId, kind',
+    threads: 'id, lastActiveAt, status',
+    concepts: 'id, name, *aliases, firstSeen',
+    edges: 'id, from, to, type, [from+type], [to+type]',
+    highlights: 'id, visitId, at, canonicalUrl',
+    notes: 'id, nodeId, at',
+    jobs: 'id, status, [status+priority+createdAt]',
+    queueHolds: 'id',
+    sentToModel: 'id, at, canonicalUrl',
+    corrections: 'id, at, *targetIds',
+  });
+  db.version(6).stores({
+    visits: 'id, canonicalUrl, tabId, parentVisitId, startedAt, expeditionId, [segmentationPending+startedAt]',
+    pages: 'canonicalUrl, textHash, enrichedAt',
+    queries: 'id, expeditionId, at, visitId',
     expeditions: 'id, startedAt, endedAt, threadId, kind, unseenNotes',
     threads: 'id, lastActiveAt, status',
     concepts: 'id, name, *aliases, firstSeen',
@@ -101,6 +127,7 @@ export function openTrailmapDb(name: string = DB_NAME): TrailmapDb {
     jobs: 'id, status, [status+priority+createdAt]',
     queueHolds: 'id',
     sentToModel: 'id, at, canonicalUrl',
+    corrections: 'id, at, *targetIds',
   });
   return db;
 }
