@@ -2,6 +2,7 @@ import { ChromeEventSource, ensureTickAlarm } from '../capture/chrome-events';
 import { VisitRecorder } from '../capture/recorder';
 import { ChromeSessionStateStore } from '../capture/state-store';
 import { openTrailmapDb } from '../db/db';
+import { startCorrections } from '../corrections/background';
 import { startJobs } from '../jobs/background';
 import { startPageSummary } from '../llm/background';
 import { startSegmentation } from '../segmentation/background';
@@ -39,6 +40,7 @@ export default defineBackground(() => {
   startSegmentation(db, recorder);
   recorder.start();
   privacy.start(recorder);
+  startCorrections(db, recorder, privacy);
   startPageSummary(db, recorder, privacy.getSettings);
   startJobs(db, privacy.ready, privacy.getSettings);
   void ensureTickAlarm();
