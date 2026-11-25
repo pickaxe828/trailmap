@@ -12,6 +12,8 @@ export type RecorderState = {
   currentVisitByTab: Record<number, string>;
   /** Document ids distinguish successive visits with the same URL, such as reloads. */
   documentIdsByTab?: Record<number, string>;
+  /** Browser-session tab ids only; never store a password page's URL. */
+  passwordTabs?: number[];
   /**
    * Tabs opened from a link, mapped to the Visit that was current in the source
    * tab (`null` if it had none). Consumed by the new tab's first commit.

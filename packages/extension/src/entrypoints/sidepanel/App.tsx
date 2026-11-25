@@ -1,7 +1,6 @@
 import { Button } from '@astryxdesign/core/Button';
 import { Heading } from '@astryxdesign/core/Heading';
 import { HStack } from '@astryxdesign/core/HStack';
-import { StatusDot } from '@astryxdesign/core/StatusDot';
 import { Text } from '@astryxdesign/core/Text';
 import { TreeList, type TreeListItemData } from '@astryxdesign/core/TreeList';
 import { VStack } from '@astryxdesign/core/VStack';
@@ -9,6 +8,7 @@ import { formatActiveTime } from '../../trail/format';
 import { buildTrail, type TrailNode } from '../../trail/tree';
 import { useLiveTrail } from '../../trail/useLiveTrail';
 import { CompanionStatus } from './CompanionStatus';
+import { RecordingControls } from './RecordingControls';
 
 function hostOf(url: string): string {
   try {
@@ -38,10 +38,7 @@ export function App() {
         <Button size="sm" label="Open Trail" href={chrome.runtime.getURL('/trail.html')}
           target="_blank" rel="noopener noreferrer" />
       </HStack>
-      <HStack gap={2} align="center">
-        <StatusDot variant="success" label="Recording" isPulsing />
-        <Text>Recording is on</Text>
-      </HStack>
+      <RecordingControls />
       <CompanionStatus />
       {trail && trail.open.length === 0 && trail.today.length === 0 && (
         <Text type="supporting">Your trail will appear here as you browse.</Text>
