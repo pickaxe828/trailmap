@@ -8,8 +8,8 @@ The spec is [docs/PLAN.md](docs/PLAN.md). Read §3 (domain model) before writing
 | Path | What it is |
 |---|---|
 | `packages/extension` | WXT + React 19 extension. Pages live in `src/entrypoints/<name>/` (`index.html`, `main.tsx`, `App.tsx`). `src/db/` is the Dexie database. `src/ui/` holds shared UI plumbing (`globals.css`, `Root.tsx`, `mount.tsx`). `extension-key.ts` holds the public key and extension ID. |
-| `packages/companion` | Bun program that talks to the extension over Native Messaging. Compiled with `bun build --compile`. |
-| `packages/shared` | Zod schemas and domain types (`domain.ts`) plus the Native Messaging message schemas (`messages.ts`). Imported as `@trailmap/shared` by both of the above. |
+| `packages/companion` | Bun program that talks to the extension over Native Messaging (`host.ts` loop, `handle.ts` router, `framing.ts`, `installer.ts`, `secrets.ts`). Compiled with `bun build --compile`. CLI: `install [--user-data-dir <dir>]`, `uninstall`. |
+| `packages/shared` | Zod schemas and domain types (`domain.ts`), the Native Messaging message schemas (`messages.ts`) and 1 MB result paging (`chunking.ts`). Imported as `@trailmap/shared` by both of the above. |
 | `e2e/` | Playwright end-to-end tests, the harness (`fixtures.ts`) and the fixture site (`site/`, `fixture-server.ts`). |
 
 ## Scripts (run from the repo root)
@@ -56,8 +56,17 @@ Only the **public** key is committed (`packages/extension/extension-key.ts`). Th
 - Import `test` and `expect` from `e2e/fixtures.ts`, not from `@playwright/test`. Its `context` fixture launches Playwright's Chromium (`channel: 'chromium'`, headless) in a **persistent context** with `packages/extension/.output/chrome-mv3` loaded.
 - Fixtures: `extensionId` (read from the service worker URL), `openExtensionPage('sidepanel.html')` (opens `chrome-extension://<id>/<path>` in a tab) and `fixtureUrl('learn.test', '/article.html')`.
 - **Fake hostnames.** Chromium runs with `--host-resolver-rules=MAP *.test 127.0.0.1`, and a Bun process (`e2e/fixture-server.ts`, started by Playwright's `webServer`) serves `e2e/site/` on port 4173. So fixture pages live at `http://learn.test:4173/...`, never on `localhost`, because the privacy deny-list will hide localhost. Add pages by dropping HTML into `e2e/site/`.
+- **Companion in E2E.** `test.use({ companionInstalled: true })` installs the real compiled companion (`bun run build:companion` first) into the test's profile folder; `installCompanion()` does it mid-test; override the `companionEnv` fixture to point the companion at mock servers. Every test already gets its own profile (`userDataDir`) and companion data dir, and the real Keychain is never touched. See `e2e/companion.e2e.ts`.
 - You cannot open the real side panel UI headless; test it by opening `sidepanel.html` as a normal tab.
 - Playwright runs under Node (via `bunx playwright`); only the fixture server runs under Bun. Test files must not use Bun-only APIs.
+
+## Companion
+
+- **Adding a verb:** add its request/response schemas to `messages.ts`, then add a handler to `defaultHandlers` in `packages/companion/src/handle.ts` (typecheck fails until you do). From the extension call `getCompanionClient().request('<verb>', payload)` (`src/companion/background.ts`, background only). Handlers get `ctx` (`env`, `secrets`, `log`); never log secrets or page text, and never return a secret in a message.
+- stdout of the companion is **frames only**; diagnostics go through `ctx.log` (stderr plus `~/.trailmap/companion.log`).
+- Environment knobs: `TRAILMAP_COMPANION_DATA_DIR` (default `~/.trailmap`), `TRAILMAP_SECRET_STORE=file|keychain` (default keychain on macOS). Later tickets read mock-server URLs from `TRAILMAP_*` variables via `ctx.env`.
+- The status the side panel shows is mirrored by the background into `chrome.storage.session` (`src/companion/status.ts`).
+- Details and gotchas: `trailmap-notes/notes-05.md`.
 
 ## CI
 
