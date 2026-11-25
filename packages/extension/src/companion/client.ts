@@ -83,6 +83,7 @@ export class CompanionClient {
   private readonly newId: () => string;
 
   private _status: CompanionStatus = { state: 'disconnected' };
+  private modelAudit = false;
   private readonly statusListeners = new Set<(status: CompanionStatus) => void>();
   private readonly eventListeners = new Set<(event: CompanionEvent) => void>();
 
@@ -102,6 +103,10 @@ export class CompanionClient {
 
   get status(): CompanionStatus {
     return this._status;
+  }
+
+  get supportsModelAudit(): boolean {
+    return this._status.state === 'connected' && this.modelAudit;
   }
 
   /** Calls `fn` on every status change (not with the current status). Returns an unsubscribe function. */
@@ -145,6 +150,9 @@ export class CompanionClient {
   async request<T extends CompanionRequestType>(type: T, payload: RequestPayload<T>): Promise<ResponseFor<T>> {
     if (this._status.state === 'connecting') await this.whenReady();
     if (this._status.state !== 'connected') throw new CompanionRequestError('not_connected', 'The companion is not connected');
+    if (type === 'llm.complete' && 'auditId' in payload && !this.supportsModelAudit) {
+      throw new CompanionRequestError('not_connected', 'Update the companion before requesting AI notes.');
+    }
     const response = await this.send({ type, ...payload } as Omit<CompanionRequest, 'id'>);
     return response as ResponseFor<T>;
   }
@@ -186,6 +194,7 @@ export class CompanionClient {
         return;
       }
       this.failures = 0;
+      this.modelAudit = result.modelAudit === true;
       this.setStatus({ state: 'connected', version: result.version });
       const waiters = this.readyWaiters;
       this.readyWaiters = [];

@@ -39,6 +39,28 @@ export type Visit = z.infer<typeof Visit>;
 export const PageKind = z.enum(['article', 'docs', 'paper', 'video', 'forum', 'reference', 'tool', 'other']);
 export type PageKind = z.infer<typeof PageKind>;
 
+export const ConceptKind = z.enum(['concept', 'person', 'tool', 'work', 'event', 'place']);
+export type ConceptKind = z.infer<typeof ConceptKind>;
+
+export const ConceptMention = z.object({
+  name: z.string(), kind: ConceptKind, gloss: z.string(), role: z.enum(['explains', 'mentions', 'uses']),
+});
+export const ConceptRelationType = z.enum([
+  'is_a', 'part_of', 'uses', 'alternative_to', 'contrasts_with', 'prerequisite_of', 'related_to',
+]);
+export const RelationMention = z.object({ from: z.string(), to: z.string(), type: ConceptRelationType });
+
+/** PLAN §4.4, deliberately unresolved until concept resolution. */
+export const PageEnrichment = z.object({
+  summary: z.string(),
+  takeaways: z.array(z.string()).min(2).max(5),
+  answers_question: z.string(),
+  page_kind: PageKind,
+  concepts: z.array(ConceptMention),
+  relations: z.array(RelationMention),
+});
+export type PageEnrichment = z.infer<typeof PageEnrichment>;
+
 export const Page = z.object({
   canonicalUrl: z.string(),
   text: z.string(),
@@ -50,6 +72,12 @@ export const Page = z.object({
   embedding: z.instanceof(Int8Array).nullable(),
   pageKind: PageKind.nullable(),
   enrichedAt: z.number().nullable(),
+  sourceVisitId: z.string().optional(),
+  textRevision: z.number().int().optional(), // Advances when Readability output changes.
+  enrichmentVisitId: z.string().optional(), // Evidence for the unresolved mentions.
+  answersQuestion: PageEnrichment.shape.answers_question.optional(),
+  conceptMentions: PageEnrichment.shape.concepts.optional(),
+  relationMentions: PageEnrichment.shape.relations.optional(),
 });
 export type Page = z.infer<typeof Page>;
 
@@ -96,9 +124,6 @@ export const Thread = z.object({
 });
 export type Thread = z.infer<typeof Thread>;
 
-export const ConceptKind = z.enum(['concept', 'person', 'tool', 'work', 'event', 'place']);
-export type ConceptKind = z.infer<typeof ConceptKind>;
-
 export const Concept = z.object({
   id: z.string(),
   name: z.string(),
@@ -120,13 +145,7 @@ export const EdgeType = z.enum([
   'teaches',
   'mentions',
   // concept edges
-  'is_a',
-  'part_of',
-  'uses',
-  'alternative_to',
-  'contrasts_with',
-  'prerequisite_of',
-  'related_to',
+  ...ConceptRelationType.options,
 ]);
 export type EdgeType = z.infer<typeof EdgeType>;
 

@@ -2,7 +2,7 @@ import { ChatGptAuthError, getChatGptAuth } from './auth/auth';
 import type { SecretStore } from './secrets';
 import { openAiProvider } from './llm/openai';
 import { LlmFailure } from './llm/provider';
-import { CompanionRequest, type CompanionEvent, type CompanionRequestType, type CompanionResponse, type ErrorCode } from '@trailmap/shared';
+import { CompanionRequest, type CompanionEvent, type CompanionRequestType, type CompanionResponse, type ErrorCode, type ModelDispatch } from '@trailmap/shared';
 
 export const COMPANION_VERSION = '0.0.0';
 
@@ -17,6 +17,8 @@ export interface CompanionContext {
   /** Auth lifecycle notifications sent by the Native Messaging host. */
   emit?: (event: CompanionEvent) => void;
   now?: () => number;
+  authorizeDispatch?: (auditId: string, dispatch: ModelDispatch) => Promise<boolean>;
+  acknowledgeDispatch?: (dispatchId: string, allow: boolean) => void;
   /** Overrides for tests. */
   handlers?: Partial<Handlers>;
 }
@@ -30,7 +32,10 @@ export type Handlers = {
 
 /** One entry per verb in `CompanionRequest`: adding a verb to the schema fails typecheck until it has a handler. */
 export const defaultHandlers: Handlers = {
-  'companion.hello': (request) => ({ type: 'companion.hello', id: request.id, version: COMPANION_VERSION }),
+  'companion.hello': (request, ctx) => ({
+    type: 'companion.hello', id: request.id, version: COMPANION_VERSION,
+    ...(ctx.authorizeDispatch ? { modelAudit: true } : {}),
+  }),
   'auth.signIn': async ({ id }, ctx) => ({ type: 'auth.signIn', id, url: await getChatGptAuth(ctx).signIn() }),
   'auth.status': async ({ id }, ctx) => ({ type: 'auth.status', id, ...await getChatGptAuth(ctx).status() }),
   'auth.signOut': async ({ id }, ctx) => ({
@@ -38,6 +43,10 @@ export const defaultHandlers: Handlers = {
   }),
   'llm.complete': async ({ id, type, ...request }, ctx) => ({ type, id, output: await openAiProvider(ctx).complete(request) }),
   'llm.models': async ({ id, type }, ctx) => ({ type, id, models: await openAiProvider(ctx).models() }),
+  'llm.dispatchAck': ({ id, type, dispatchId, allow }, ctx) => {
+    ctx.acknowledgeDispatch?.(dispatchId, allow);
+    return { type, id };
+  },
 };
 
 function errorReply(id: string | null, code: ErrorCode, message: string): CompanionResponse {

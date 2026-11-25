@@ -4,12 +4,14 @@ import type {
   Edge,
   Expedition,
   Highlight,
+  ModelDispatch,
   Note,
   Page,
   Query,
   Thread,
   Visit,
 } from '@trailmap/shared';
+import type { Job, QueueHold } from '../jobs/types';
 
 /**
  * The Trailmap IndexedDB database. One table per entity in docs/PLAN.md §3.
@@ -28,7 +30,12 @@ export type TrailmapDb = Dexie & {
   edges: EntityTable<Edge, 'id'>;
   highlights: EntityTable<Highlight, 'id'>;
   notes: EntityTable<Note, 'id'>;
+  jobs: EntityTable<Job, 'id'>;
+  queueHolds: EntityTable<QueueHold, 'id'>;
+  sentToModel: EntityTable<SentToModel, 'id'>;
 };
+
+export type SentToModel = ModelDispatch & { id: string; at: number; task: string; canonicalUrl?: string };
 
 export const DB_NAME = 'trailmap';
 
@@ -66,6 +73,20 @@ export function openTrailmapDb(name: string = DB_NAME): TrailmapDb {
     edges: 'id, from, to, type, [from+type], [to+type]',
     highlights: 'id, visitId, at, canonicalUrl',
     notes: 'id, nodeId, at',
+  });
+  db.version(4).stores({
+    visits: 'id, canonicalUrl, tabId, parentVisitId, startedAt, expeditionId, [segmentationPending+startedAt]',
+    pages: 'canonicalUrl, textHash, enrichedAt',
+    queries: 'id, expeditionId, at, visitId',
+    expeditions: 'id, startedAt, endedAt, threadId, kind',
+    threads: 'id, lastActiveAt, status',
+    concepts: 'id, name, *aliases, firstSeen',
+    edges: 'id, from, to, type, [from+type], [to+type]',
+    highlights: 'id, visitId, at, canonicalUrl',
+    notes: 'id, nodeId, at',
+    jobs: 'id, status, [status+priority+createdAt]',
+    queueHolds: 'id',
+    sentToModel: 'id, at, canonicalUrl',
   });
   return db;
 }

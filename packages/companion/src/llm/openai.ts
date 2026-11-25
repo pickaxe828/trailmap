@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { LlmModel } from '@trailmap/shared';
+import { LlmModel, type ModelDispatch } from '@trailmap/shared';
 import { ChatGptAuthError, getChatGptAuth } from '../auth/auth';
 import type { CompanionContext } from '../handle';
 import { LlmFailure, outputValidator, type LlmProvider } from './provider';
@@ -65,6 +65,7 @@ export function openAiProvider(ctx: CompanionContext): LlmProvider {
   async function call<T>(
     path: '/models' | '/responses', signal: AbortSignal,
     consume: (response: Response, touch: () => void, requestId?: string) => Promise<T>, body?: object,
+    authorize?: () => Promise<boolean | undefined>,
   ): Promise<T> {
     let token: string;
     try {
@@ -84,6 +85,10 @@ export function openAiProvider(ctx: CompanionContext): LlmProvider {
     let requestId: string | undefined;
     touch();
     try {
+      signal.throwIfAborted();
+      if (authorize && !await authorize()) {
+        throw new LlmFailure('dispatch_cancelled', 'Trailmap did not authorize this model call.');
+      }
       const response = await fetch(base + path, {
         method: body ? 'POST' : 'GET', redirect: 'error', signal: AbortSignal.any([signal, idle.signal]),
         headers: {
@@ -126,12 +131,17 @@ export function openAiProvider(ctx: CompanionContext): LlmProvider {
       const body = {
         model,
         instructions: request.instructions,
-        input: [{ role: 'user', content: request.input }],
+        input: [{ role: 'user', content: request.input }] satisfies ModelDispatch['input'],
         store: false,
         stream: true,
       };
       const { $schema: _dialect, ...schema } = request.schema;
-      const infer = (payload: object) => call('/responses', signal, readResponse, payload);
+      const infer = (payload: Omit<typeof body, 'input'> & { input: ModelDispatch['input']; text?: object }) => {
+        const { auditId } = request;
+        return call('/responses', signal, readResponse, payload, auditId ? async () => ctx.authorizeDispatch?.(auditId, {
+          provider: 'ChatGPT plan', model, instructions: payload.instructions, input: payload.input,
+        }) : undefined);
+      };
       let output;
       try {
         output = validate(await infer({
