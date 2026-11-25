@@ -50,6 +50,14 @@ test('a typed error from the companion rejects the request with its code', async
   await expect(reply).rejects.toMatchObject({ name: 'CompanionRequestError', code: 'internal' });
 });
 
+test('a model error preserves the retry hint and upstream request ID for callers', async () => {
+  connect();
+  const reply = client.request('llm.models', {});
+  transport.latest.receive({ type: 'error', id: transport.latest.lastId, code: 'usage_unavailable',
+    message: 'Unavailable', retryAfterMs: 5_000, requestId: 'req_fixture' });
+  await expect(reply).rejects.toMatchObject({ code: 'usage_unavailable', details: { retryAfterMs: 5_000, requestId: 'req_fixture' } });
+});
+
 test('request() while not connected fails fast; while connecting it waits for the handshake', async () => {
   await expect(client.request('companion.hello', {})).rejects.toMatchObject({ code: 'not_connected' });
 

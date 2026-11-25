@@ -11,6 +11,8 @@ import {
   ChunkFrame,
   CompanionEvent,
   CompanionResponse,
+  ErrorDetails,
+  LLM_REQUEST_TIMEOUT_MS,
   type CompanionRequest,
   type CompanionRequestType,
   type ErrorCode,
@@ -41,7 +43,7 @@ export type CompanionStatus =
 export type RequestErrorCode = ErrorCode | 'not_connected' | 'timeout';
 
 export class CompanionRequestError extends Error {
-  constructor(readonly code: RequestErrorCode, message: string) {
+  constructor(readonly code: RequestErrorCode, message: string, readonly details: ErrorDetails = {}) {
     super(message);
     this.name = 'CompanionRequestError';
   }
@@ -230,8 +232,10 @@ export class CompanionClient {
   }
 
   private send(request: Omit<CompanionRequest, 'id'>): Promise<CompanionResponse> {
+    const timeout = request.type === 'llm.complete' || request.type === 'llm.models'
+      ? LLM_REQUEST_TIMEOUT_MS : REQUEST_TIMEOUT_MS;
     return new Promise((resolve, reject) =>
-      this.sendWith(request, REQUEST_TIMEOUT_MS, (result) =>
+      this.sendWith(request, timeout, (result) =>
         result instanceof CompanionRequestError ? reject(result) : resolve(result),
       ),
     );
@@ -269,7 +273,7 @@ export class CompanionClient {
     this.pending.delete(id!);
     this.scheduler.clearTimeout(pending.timer);
     if (response.data.type === 'error') {
-      pending.settle(new CompanionRequestError(response.data.code, response.data.message));
+      pending.settle(new CompanionRequestError(response.data.code, response.data.message, ErrorDetails.parse(response.data)));
     } else {
       pending.settle(response.data);
     }

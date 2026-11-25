@@ -301,8 +301,8 @@ Keep it as a fallback only, in case OpenAI ever accepts custom schemes and loopb
 |---|---|
 | `auth.signIn` / `auth.status` / `auth.signOut` | Open an authorize URL, read the account status, or end the session (§7.1). The companion pushes `auth.completed` when sign-in succeeds. Tokens stay in the companion. |
 | `keys.set` | Saves an Anthropic API key to the Keychain. The extension never stores the key. |
-| `llm.models` | Lists the models available from each connected provider |
-| `llm.complete` | Runs one model call (prompt, input, JSON schema). Refreshes tokens when needed. Returns validated JSON, or a typed error from the §7.1 table. |
+| `llm.models` | Lists displayable models as `{ models: [{ slug, displayName }] }` from the current provider. |
+| `llm.complete` | Takes `{ task, model?, instructions, input, schema, schemaName }`. The prompt and input are strings; pass a JSON Schema 2020-12 object (e.g. from Zod). Returns `{ output }` only after validation, or a typed error from §7.1. |
 | `vault.write` | Writes a Markdown file, only inside the chosen Obsidian folder |
 
 - **No general-purpose commands.** There is nothing like "fetch any URL" or "read any file", so a bug in the extension can't turn the companion into a general proxy. Every incoming message is checked against the shared Zod schemas.
@@ -360,23 +360,28 @@ Assumed volume: about 50 enriched pages a day (about 3k tokens in and 500 out ea
 **Inference and structured output**
 
 - Call `POST https://api.openai.com/v1/responses` with `Authorization: Bearer <access_token>`. Use `store: false`, `stream: true` and an array for `input`. Put instructions in `instructions` or developer messages. The route rejects system-role items and fields such as `max_output_tokens`, `temperature` and `previous_response_id`. Budget prompt size locally and follow OpenAI's supported input and tool lists. [OpenAI preview limitations](https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations)
-- Populate the picker from `GET /v1/models`, keeping entries with `visibility == "list"`. Treat only `response.completed` as success. Handle `response.failed`, `response.incomplete`, explicit errors and interrupted streams. For example, a usage limit can arrive as `response.failed` after streaming starts. [OpenAI models and inference](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference)
-- Try JSON Schema via `text.format`. Plan usage support for this format is unconfirmed. If `subscription_sharing_unsupported_capability` identifies the `text` format in `error.param`, ask for JSON in the prompt, validate with the shared Zod schema and allow one repair attempt.
+- Read the account's catalog from `GET /v1/models`, keeping entries with `visibility == "list"` in server order. Until per-task model settings exist, use the first listed slug when `model` is omitted. Treat only `response.completed` as success. Handle `response.failed`, `response.incomplete`, explicit errors and interrupted streams. For example, a usage limit can arrive as `response.failed` after streaming starts. [OpenAI models and inference](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference)
+- Try JSON Schema via `text.format`. Plan usage support for this format is unconfirmed. If `subscription_sharing_unsupported_capability` identifies the `text` format in `error.param`, ask for JSON in the prompt and allow one repair attempt if that output is invalid. In both paths, the companion validates against the caller's JSON Schema before returning the output; task callers can additionally check their Zod schema.
+- **Summarize this page** runs only on click. It uses the active tab's current Visit to read the Page's stored text, sends only that text as the source, and shows a summary and takeaways in the side panel. It does not re-extract text or write enrichment fields to the Page.
 
 **Errors the UI must handle**
 
 Before the stream opens, the response may carry a `detail` field. Use the HTTP status for recovery and retain the request ID for diagnosis. A 401 calls for checking identity and grants, a 403 for checking serving policy or region, and a 503 for bounded backoff. [OpenAI errors and recovery](https://developers.openai.com/siwc/token-sharing-open-source/errors-and-recovery)
 
-| Error | What Trailmap does |
+`@trailmap/shared` exports `LlmErrorCode`. Both model verbs use these stable codes in the companion error reply. `CompanionRequestError` exposes `code` and `details` (optional `requestId` and `retryAfterMs`). Other transport errors, such as `not_connected`, are separate. The companion never includes raw provider messages, page text or credentials in error replies or logs.
+
+| Provider condition | Trailmap code and recovery |
 |---|---|
-| `subscription_sharing_user_not_eligible` (403) | Explain the plan, workspace or policy restriction and offer other providers. |
-| `subscription_sharing_usage_limit_exceeded` (429) | Pause new plan requests and link to ChatGPT Settings → Usage. Preserve the queue and avoid guessing which cap applied or when it resets. |
-| `subscription_sharing_usage_unavailable` or `subscription_sharing_user_unavailable` (503) | Keep credentials and retry later with bounded backoff. |
-| `subscription_sharing_unsupported_capability` (400) | Use `error.param` to remove the unsupported field, tool or feature. |
-| `subscription_sharing_route_not_supported` (403) | Verify the HTTP method and endpoint. |
-| `subscription_sharing_invalid_user` (401) | Keep the request ID and diagnose the credential failure. Ask for sign-in after confirmed revocation or terminal refresh failure. |
-| `chatpass_v2_scope_not_authorized` or `chatpass_v2_invalid_authorization_context` (403) | Check client configuration and grants. |
-| `chatgpt.tokens.use.direct` absent | Show plan usage as off. Offer explicit reauthorization or another provider. |
+| `subscription_sharing_user_not_eligible` (403) | `not_eligible`: stop plan requests. Explain the plan, workspace or policy restriction; do not retry or loop through OAuth. |
+| `subscription_sharing_usage_limit_exceeded` (429) | `usage_limit_exceeded`: pause new plan requests and link to ChatGPT Settings → Usage. Preserve the queue and do not guess which cap applied or when it resets. |
+| `subscription_sharing_usage_unavailable`, `subscription_sharing_user_unavailable`, a temporary OAuth or transport failure, or a stream ending before completion | `usage_unavailable`: keep credentials and retry later with bounded backoff (the error includes a 5-second initial hint, not a reset time). |
+| `subscription_sharing_unsupported_capability` (400) | Fall back only for `text` per `error.param`. Otherwise `provider_rejected`: change the request before trying again. |
+| `subscription_sharing_route_not_supported` (403) | `provider_rejected`: verify the HTTP method and endpoint. |
+| `subscription_sharing_invalid_user` (401) or direct admission 401/403 | `provider_rejected`: check account, grant, policy or region; keep credentials unless a disconnect or terminal refresh failure is confirmed. |
+| `chatpass_v2_scope_not_authorized` or `chatpass_v2_invalid_authorization_context` (403) | `provider_rejected`: check client configuration and grants; do not silently switch billing. |
+| `chatgpt.tokens.use.direct` absent | `plan_usage_not_granted`: show plan usage as off and offer explicit reauthorization or another provider. |
+| No session or terminal refresh failure | `not_signed_in`: sign in again using the saved client registration if present. |
+| Refusal, incomplete response, or output that fails JSON or schema validation | `invalid_output`: do not present the output as a success. |
 
 **Budgeting against plan limits.** Run `read` page enrichment first, then field notes, then `skimmed` page enrichment when there's room, and concept-merge verdicts last. Link to ChatGPT Settings → Usage for app usage and credit settings.
 
