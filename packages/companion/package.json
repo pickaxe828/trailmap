@@ -9,6 +9,8 @@
     "build": "bun build --compile src/main.ts --outfile dist/trailmap-companion"
   },
   "dependencies": {
-    "@trailmap/shared": "workspace:*"
+    "@trailmap/shared": "workspace:*",
+    "jose": "6.2.18",
+    "zod": "4.6.7"
   }
 }

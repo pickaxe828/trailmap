@@ -15,6 +15,8 @@
       "version": "0.0.0",
       "dependencies": {
         "@trailmap/shared": "workspace:*",
+        "jose": "6.2.18",
+        "zod": "4.6.7",
       },
     },
     "packages/extension": {
@@ -30,6 +32,7 @@
         "dexie": "4.4.7",
         "react": "19.2.9",
         "react-dom": "19.2.9",
+        "zod": "4.6.7",
       },
       "devDependencies": {
         "@astryxdesign/cli": "0.7.7",
@@ -489,6 +492,8 @@
     "isobject": ["isobject@3.0.1", "", {}, "sha512-WhB9zCku7EGTj/HQQRz5aUQEUeoQZH2bWcltRErOpymJ4boYE6wL9Tbr23krRPSZ+C5zqNSrSw+Cc7sZZ4b7vg=="],
 
     "jiti": ["jiti@2.7.0", "", { "bin": { "jiti": "lib/jiti-cli.mjs" } }, "sha512-AC/7JofJvZGrrneWNaEnJeOLUx+JlGt7tNa0wZiRPT4MY1wmfKjt2+6O2p2uz2+skll8OZZmJMNqeke7kKbNgQ=="],
+
+    "jose": ["jose@6.2.18", "", {}, "sha512-doV4thUwgkrycJH4yLeqwTGIIZphHl+pk7CPReuMIhYhncmgzdko85MaCG4YQFTxqMFr1/oEH32tZuKKovcDEg=="],
 
     "js-tokens": ["js-tokens@4.0.0", "", {}, "sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ=="],
 

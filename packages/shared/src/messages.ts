@@ -8,8 +8,7 @@
  * Requests carry an `id` the response echoes. The companion can also push
  * `event`s, and pages results over 1 MB as `chunk`s (see chunking.ts).
  *
- * Only `companion.hello` exists so far; later tickets add auth.*, keys.set,
- * llm.* and vault.write.
+ * The protocol carries account status, never ChatGPT credentials.
  */
 import { z } from 'zod';
 
@@ -18,6 +17,9 @@ export const NATIVE_HOST_NAME = 'com.trailmap.companion';
 
 export const CompanionRequest = z.discriminatedUnion('type', [
   z.object({ type: z.literal('companion.hello'), id: z.string() }),
+  z.object({ type: z.literal('auth.signIn'), id: z.string() }),
+  z.object({ type: z.literal('auth.status'), id: z.string() }),
+  z.object({ type: z.literal('auth.signOut'), id: z.string() }),
 ]);
 export type CompanionRequest = z.infer<typeof CompanionRequest>;
 export type CompanionRequestType = CompanionRequest['type'];
@@ -31,6 +33,10 @@ export const ErrorCode = z.enum([
   'invalid_message',
   /** A handler failed unexpectedly. The message never contains secrets or page text. */
   'internal',
+  'auth_in_progress',
+  'auth_unavailable',
+  'auth_required',
+  'plan_usage_disabled',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
 
@@ -52,8 +58,19 @@ export const ChunkFrame = z.object({
 });
 export type ChunkFrame = z.infer<typeof ChunkFrame>;
 
+export const ChatGptStatus = z.object({
+  signedIn: z.boolean(),
+  email: z.string().nullable(),
+  planUsage: z.boolean(),
+  signingIn: z.boolean(),
+});
+export type ChatGptStatus = z.infer<typeof ChatGptStatus>;
+
 export const CompanionResponse = z.discriminatedUnion('type', [
   z.object({ type: z.literal('companion.hello'), id: z.string(), version: z.string() }),
+  z.object({ type: z.literal('auth.signIn'), id: z.string(), url: z.url() }),
+  ChatGptStatus.extend({ type: z.literal('auth.status'), id: z.string() }),
+  z.object({ type: z.literal('auth.signOut'), id: z.string(), revocationConfirmed: z.boolean() }),
   CompanionError,
 ]);
 export type CompanionResponse = z.infer<typeof CompanionResponse>;
@@ -61,6 +78,9 @@ export type CompanionResponse = z.infer<typeof CompanionResponse>;
 /** Messages the companion pushes without being asked. */
 export const CompanionEvent = z.discriminatedUnion('name', [
   z.object({ type: z.literal('event'), name: z.literal('companion.ready'), version: z.string() }),
+  z.object({ type: z.literal('event'), name: z.literal('auth.completed') }),
+  z.object({ type: z.literal('event'), name: z.literal('auth.changed') }),
+  z.object({ type: z.literal('event'), name: z.literal('auth.failed'), message: z.string() }),
   /** Sent just before the companion exits on an error it cannot recover from. */
   z.object({ type: z.literal('event'), name: z.literal('companion.fatal'), message: z.string() }),
 ]);

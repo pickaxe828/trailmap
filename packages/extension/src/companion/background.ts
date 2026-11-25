@@ -5,8 +5,10 @@
  *
  * Status is mirrored into `chrome.storage.session` so the side panel (a separate context) can show it live.
  */
-import { CompanionClient } from './client';
+import { CompanionRequest } from '@trailmap/shared';
+import { CompanionClient, CompanionRequestError } from './client';
 import { chromeTransport } from './chrome-transport';
+import { COMPANION_EVENT, COMPANION_RELAY } from './relay';
 import { COMPANION_RECONNECT_MESSAGE, COMPANION_STATUS_KEY } from './status';
 
 const KEEPALIVE_ALARM = 'trailmap.companion.retry';
@@ -30,10 +32,39 @@ export function startCompanion(): void {
     if (alarm.name === KEEPALIVE_ALARM) companion.reconnectNow();
   });
 
-  chrome.runtime.onMessage.addListener((message: unknown) => {
-    if (typeof message === 'object' && message !== null && 'type' in message && message.type === COMPANION_RECONNECT_MESSAGE) {
+  companion.onEvent((event) => {
+    void chrome.runtime.sendMessage({ type: COMPANION_EVENT, event }).catch(() => {});
+  });
+
+  const relayPages = new Set(['/sidepanel.html', '/onboarding.html'].map((path) => chrome.runtime.getURL(path)));
+  chrome.runtime.onMessage.addListener((message: unknown, sender, respond) => {
+    if (typeof message !== 'object' || message === null || !('type' in message)) return;
+    if (message.type === COMPANION_RECONNECT_MESSAGE) {
       companion.reconnectNow();
+      return;
     }
+    if (message.type !== COMPANION_RELAY || sender.id !== chrome.runtime.id || !sender.url) return;
+    // Fragments are used for links into onboarding. Web pages and content scripts cannot proxy Native Messaging.
+    const page = sender.url.split(/[?#]/, 1)[0]!;
+    if (!relayPages.has(page)) return;
+    const raw = 'request' in message ? message.request : null;
+    const request = CompanionRequest.safeParse(
+      typeof raw === 'object' && raw !== null ? { ...raw, id: 'relay' } : raw,
+    );
+    if (!request.success) {
+      respond({ ok: false, code: 'invalid_message', message: 'Malformed companion request.' });
+      return;
+    }
+    const { type, id: _id, ...payload } = request.data;
+    void companion.request(type, payload).then(
+      (response) => respond({ ok: true, response }),
+      (error: unknown) => respond({
+        ok: false,
+        code: error instanceof CompanionRequestError ? error.code : 'internal',
+        message: error instanceof CompanionRequestError ? error.message : 'The companion request failed.',
+      }),
+    );
+    return true;
   });
 
   companion.start();

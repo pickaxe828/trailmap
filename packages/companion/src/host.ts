@@ -4,6 +4,7 @@
  * diagnostics go through `ctx.log`, never `console.log`.
  */
 import { chunkMessage, type CompanionEvent, type CompanionResponse } from '@trailmap/shared';
+import { disposeChatGptAuth } from './auth/auth';
 import { FrameDecoder, FrameTooLargeError, encodeFrame } from './framing';
 import { COMPANION_VERSION, handleFrame, type CompanionContext } from './handle';
 
@@ -18,6 +19,16 @@ export async function runHost(
     for (const frame of chunkMessage(message)) write(encodeFrame(frame));
   };
 
+  const context: CompanionContext = {
+    ...ctx,
+    emit(event) {
+      try {
+        send(event);
+      } catch {
+        ctx.log('failed to send an event');
+      }
+    },
+  };
   send({ type: 'event', name: 'companion.ready', version: COMPANION_VERSION });
 
   const decoder = new FrameDecoder();
@@ -25,7 +36,7 @@ export async function runHost(
     for await (const chunk of input) {
       for (const json of decoder.push(chunk)) {
         // Requests run concurrently; responses carry the request id.
-        void handleFrame(json, ctx).then(send, () => ctx.log('failed to send a response'));
+        void handleFrame(json, context).then(send).catch(() => ctx.log('failed to send a response'));
       }
     }
     return true;
@@ -39,5 +50,7 @@ export async function runHost(
       // Port already gone.
     }
     return false;
+  } finally {
+    disposeChatGptAuth(context);
   }
 }
