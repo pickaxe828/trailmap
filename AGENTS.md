@@ -54,6 +54,10 @@ Before you finish a ticket run all of: `bun run typecheck && bun run test && bun
 - `createCorrections` (`corrections.ts`, `forget.ts`) works on Dexie only. Each correction is one transaction that also writes a `corrections` log row with before/after state. `service.ts` routes side panel messages in the service worker; ignore-site goes through the privacy controller's `setSiteSkipped`, and forgets go through `recorder.forgetVisits` so an open tab can't write the forgotten Visit back.
 - **New derived data must join the Forget cascade** (`forgetCascade` in `forget.ts`) and carry `targetIds` in any correction-log entry that mentions it. The cascade test scans every table for the forgotten text, so a missed table fails there.
 
+## Wrap-up and field notes
+
+`packages/extension/src/wrapup/`: closing an Expedition queues `expedition_wrap_up` (title, driving question, learning/errand, merge suggestions), which queues `field_notes` for learning Expeditions. Model inputs are built in `trail.ts` (no Page text, privacy filtered); handlers in `handlers.ts` take a `request` seam for tests. `fieldNotesWritten` (`hooks.ts`) is the "notes written" hook for later tickets. Details: `trailmap-notes/notes-13.md`.
+
 ## Extension identity
 
 The manifest `key` pins the extension ID, so it is the same on every machine and every build:
