@@ -2,11 +2,14 @@ import { expect, test } from './fixtures';
 
 const ARTICLE = '/content/article.html';
 
-test('Chromium registers the pause and resume shortcut', async ({ serviceWorker }) => {
+test('Chromium registers the pause and resume command with its suggested shortcut', async ({ serviceWorker }) => {
   const worker = await serviceWorker();
-  expect(await worker.evaluate(() => chrome.commands.getAll())).toContainEqual(expect.objectContaining({
-    name: 'toggle-recording', shortcut: expect.stringMatching(/P$/),
-  }));
+  // Headless Linux Chromium may leave a suggested key unbound, so check what the extension controls:
+  // the command exists and the manifest suggests Alt+Shift+P.
+  const commands = await worker.evaluate(() => chrome.commands.getAll());
+  expect(commands).toContainEqual(expect.objectContaining({ name: 'toggle-recording' }));
+  const manifest = await worker.evaluate(() => chrome.runtime.getManifest());
+  expect(manifest.commands?.['toggle-recording']?.suggested_key?.default).toBe('Alt+Shift+P');
 });
 
 test('default-denied and localhost navigations store nothing and show a skipped badge', async ({
