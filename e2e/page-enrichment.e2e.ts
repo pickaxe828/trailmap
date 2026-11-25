@@ -102,7 +102,7 @@ test('a usage limit shows why automatic Page notes paused but capture continues'
   await page.goto(fixtureUrl('limit.test', ARTICLE));
   await expect.poll(async () => (await readCapture('pages')).length).toBe(1);
   await page.locator('#highlight').selectText();
-  const banner = panel.getByText('AI notes paused until your limit resets. Browsing is still recorded.');
+  const banner = panel.getByText('ChatGPT jobs paused until your plan limit resets. Browsing is still recorded.');
   await expect(banner).toBeVisible({ timeout: 40_000 });
   await expect(panel.getByRole('link', { name: 'ChatGPT usage settings' })).toBeVisible();
   await panel.screenshot({ path: testInfo.outputPath('ai-notes-paused.png') });

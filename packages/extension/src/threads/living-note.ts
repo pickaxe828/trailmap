@@ -19,7 +19,7 @@ export function updateLivingNote(db: TrailmapDb, getSettings: () => RecordingSet
   { request = requestModel, now = Date.now }: { request?: LivingNoteRequester; now?: () => number } = {},
 ): JobHandlers['living_note'] {
   const tables = [db.threads, db.expeditions, db.visits, db.pages, db.jobs];
-  return async (job) => {
+  return async (job, route) => {
     const { threadId, revision, checkpoint } = job.payload;
     const prepare = async () => {
       const thread = await db.threads.get(threadId);
@@ -53,7 +53,7 @@ export function updateLivingNote(db: TrailmapDb, getSettings: () => RecordingSet
           const lease = (await db.jobs.get(job.id))?.lease;
           return !!lease && lease.token === job.lease?.token && lease.until > now() && await unchanged();
         },
-      }));
+      }, route));
     } catch (error) {
       if (error instanceof CompanionRequestError && error.code === 'dispatch_cancelled') return { retryAt: now() + 30_000 };
       throw error;

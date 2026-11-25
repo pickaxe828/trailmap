@@ -6,6 +6,7 @@ import type { TrailmapDb } from '../db/db';
 import { maySendToModel, type RecordingSettings } from '../privacy/policy';
 import { requestModel } from './dispatch';
 import { PageSummary, SIDE_PANEL_PATH, SUMMARIZE_PAGE, type PageSummaryReply } from './page-summary';
+import { readModelRoutes } from './settings';
 
 const schema = LlmCompletion.shape.schema.parse(z.toJSONSchema(PageSummary));
 const noText: PageSummaryReply = { ok: false, code: 'no_text', message: 'No captured text is available for this page yet.' };
@@ -26,7 +27,8 @@ async function summarize(db: TrailmapDb, recorder: VisitRecorder, getSettings: (
     return !!latest && captured?.text === page.text && maySendToModel(latest, captured, getSettings(), source);
   };
   if (!await allowed()) return { ok: false, code: 'privacy_filtered', message: 'This page is not eligible for a model summary.' };
-  const hold = await db.queueHolds.get('ai');
+  const { extraction: route } = await readModelRoutes();
+  const hold = route.provider === 'chatgpt' ? await db.queueHolds.get('ai') : undefined;
   if (hold) return { ok: false, code: hold.reason, message: 'AI notes are currently paused or stopped.' };
 
   const { output } = await requestModel(db, {
@@ -38,8 +40,8 @@ async function summarize(db: TrailmapDb, recorder: VisitRecorder, getSettings: (
   }, {
     canonicalUrl: page.canonicalUrl,
     tables: [db.visits, db.pages, db.queueHolds],
-    allow: async () => !await db.queueHolds.get('ai') && await allowed(),
-  });
+    allow: async () => (route.provider !== 'chatgpt' || !await db.queueHolds.get('ai')) && await allowed(),
+  }, route);
   const summary = PageSummary.safeParse(output);
   if (!summary.success) return { ok: false, code: 'invalid_output', message: 'The model did not return a valid Page summary.' };
   return { ok: true, title: visit.title || new URL(visit.url).hostname, summary: summary.data };

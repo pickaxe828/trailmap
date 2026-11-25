@@ -37,7 +37,8 @@ export function startCompanion(): void {
     void chrome.runtime.sendMessage({ type: COMPANION_EVENT, event }).catch(() => {});
   });
 
-  const relayPages = new Set(['/sidepanel.html', '/onboarding.html'].map((path) => chrome.runtime.getURL(path)));
+  const settingsPages = new Set(['/onboarding.html', '/settings.html'].map((path) => chrome.runtime.getURL(path)));
+  const relayPages = new Set([...settingsPages, chrome.runtime.getURL('/sidepanel.html')]);
   chrome.runtime.onMessage.addListener((message: unknown, sender, respond) => {
     if (typeof message !== 'object' || message === null || !('type' in message)) return;
     if (message.type === COMPANION_RECONNECT_MESSAGE) {
@@ -57,6 +58,10 @@ export function startCompanion(): void {
       return;
     }
     const { type, id: _id, ...payload } = request.data;
+    if ((type === 'keys.set' || type === 'keys.status') && !settingsPages.has(page)) {
+      respond({ ok: false, code: 'invalid_message', message: 'API keys can only be managed from Settings.' });
+      return;
+    }
     void companion.request(type, payload).then(
       (response) => respond({ ok: true, response }),
       (error: unknown) => respond({

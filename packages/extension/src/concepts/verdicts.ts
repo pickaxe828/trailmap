@@ -60,7 +60,7 @@ export function decideConceptMerges(db: TrailmapDb, getSettings: () => Recording
     };
   }
 
-  return async (job) => {
+  return async (job, route) => {
     if (getSettings().paused) return { retryAt: now() + 30_000 };
     const prepared = await db.transaction('r', sources, () => prepare(job.payload));
     if (!prepared) return 'discard';
@@ -72,7 +72,7 @@ export function decideConceptMerges(db: TrailmapDb, getSettings: () => Recording
           const lease = (await db.jobs.get(job.id))?.lease;
           return !!lease && lease.token === job.lease?.token && lease.until > now() && (await prepare(job.payload))?.input === input;
         },
-      }));
+      }, route));
     } catch (error) {
       if (error instanceof CompanionRequestError && error.code === 'dispatch_cancelled') return { retryAt: now() + 30_000 };
       throw error;

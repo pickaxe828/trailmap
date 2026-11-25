@@ -1,10 +1,10 @@
-import type { Table } from 'dexie';
 import { ExpeditionWrapUp, FieldNotesDraft, LlmCompletion, type Expedition, type MergeSuggestion } from '@trailmap/shared';
 import { z } from 'zod';
 import { CompanionRequestError } from '../companion/client';
 import type { TrailmapDb } from '../db/db';
 import { jobId, enqueueJob, JOB_PRIORITY, type JobHandlers, type JobResult } from '../jobs/queue';
 import { requestModel } from '../llm/dispatch';
+import type { ModelRoute } from '../llm/settings';
 import { maySendToModel, type RecordingSettings } from '../privacy/policy';
 import { startOfLocalDay } from '../trail/tree';
 import { refreshThread } from '../threads/model';
@@ -12,11 +12,7 @@ import { notesProvenance } from '../threads/provenance';
 import { fieldNotesWritten, type NotesWrittenHooks } from './hooks';
 import { buildFieldNotesInput, buildWrapUpInput, collectTrail, renderFieldNotes, type SameDay, type TrailSources } from './trail';
 
-export type ModelRequester = (
-  db: TrailmapDb,
-  payload: Omit<LlmCompletion, 'auditId'>,
-  guard: { canonicalUrl?: string; expeditionId?: string; canonicalUrls?: string[]; visitIds?: string[]; tables: Table[]; allow: () => Promise<boolean> },
-) => Promise<{ output: unknown }>;
+export type ModelRequester = (...args: Parameters<typeof requestModel>) => Promise<{ output: unknown }>;
 
 type Options = { request?: ModelRequester; now?: () => number; hooks?: NotesWrittenHooks };
 
@@ -43,7 +39,7 @@ const oneLine = (text: string) => text.replace(/\s+/g, ' ').trim();
 export function wrapUpHandlers(
   db: TrailmapDb,
   getSettings: () => RecordingSettings,
-  { request = requestModel as ModelRequester, now = Date.now, hooks = fieldNotesWritten }: Options = {},
+  { request = requestModel, now = Date.now, hooks = fieldNotesWritten }: Options = {},
 ): Pick<JobHandlers, 'expedition_wrap_up' | 'field_notes'> {
   const sources = [db.expeditions, db.visits, db.pages, db.highlights, db.queries];
 
@@ -89,6 +85,7 @@ export function wrapUpHandlers(
     schema: Record<string, import('@trailmap/shared').LlmOutput>,
     prepare: () => Promise<'waiting' | { text: string; urls: string[]; visitIds?: string[]; value: T } | undefined>,
     expeditionId: string,
+    route?: ModelRoute,
   ): Promise<{ early: JobResult } | { early?: undefined; output: unknown; prepared: { text: string; urls: string[]; value: T } }> {
     const prepared = await db.transaction('r', [...sources, db.jobs], prepare);
     if (prepared === 'waiting') return { early: { retryAt: now() + WAIT_MS } };
@@ -104,7 +101,7 @@ export function wrapUpHandlers(
           return typeof again === 'object' && again.text === prepared.text &&
             JSON.stringify([again.urls, again.visitIds]) === JSON.stringify([prepared.urls, prepared.visitIds]);
         },
-      }));
+      }, route));
     } catch (error) {
       if (error instanceof CompanionRequestError && error.code === 'dispatch_cancelled') return { early: { retryAt: now() + 30_000 } };
       throw error;
@@ -116,7 +113,7 @@ export function wrapUpHandlers(
     collectTrail(s, settings).entries.flatMap((entry) => 'url' in entry ? [entry.url] : []);
 
   return {
-    async expedition_wrap_up(job) {
+    async expedition_wrap_up(job, route) {
       const { expeditionId, endedAt } = job.payload;
       const prepare = async () => {
         const s = await load(expeditionId, endedAt, true);
@@ -126,7 +123,7 @@ export function wrapUpHandlers(
         const built = buildWrapUpInput(s, settings);
         return built && { text: JSON.stringify(built.input), urls: urlsOf(s, settings), value: built.sameDayIds };
       };
-      const result = await run(job, 'expedition_wrap_up', wrapUpInstructions, 'expedition_wrap_up', wrapUpSchema, prepare, expeditionId);
+      const result = await run(job, 'expedition_wrap_up', wrapUpInstructions, 'expedition_wrap_up', wrapUpSchema, prepare, expeditionId, route);
       if ('early' in result) return result.early;
       const parsed = ExpeditionWrapUp.safeParse(result.output);
       if (!parsed.success) throw new CompanionRequestError('invalid_output', 'Invalid Expedition wrap-up.');
@@ -162,7 +159,7 @@ export function wrapUpHandlers(
       } };
     },
 
-    async field_notes(job) {
+    async field_notes(job, route) {
       const { expeditionId, endedAt } = job.payload;
       const prepare = async () => {
         const s = await load(expeditionId, endedAt, false);
@@ -178,7 +175,7 @@ export function wrapUpHandlers(
           s.pages.filter(({ canonicalUrl }) => urls.includes(canonicalUrl)));
         return { text: JSON.stringify(built.input), urls: notesSource.canonicalUrls, visitIds: notesSource.visitIds, value: { built, notesSource } };
       };
-      const result = await run(job, 'field_notes', notesInstructions, 'field_notes', notesSchema, prepare, expeditionId);
+      const result = await run(job, 'field_notes', notesInstructions, 'field_notes', notesSchema, prepare, expeditionId, route);
       if ('early' in result) return result.early;
       const parsed = FieldNotesDraft.safeParse(result.output);
       const { built, notesSource } = result.prepared.value;
