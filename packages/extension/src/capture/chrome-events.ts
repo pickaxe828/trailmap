@@ -13,7 +13,7 @@ import type {
   NavTransitionType,
 } from './events';
 import { WINDOW_ID_NONE } from './events';
-import { isPageVisibilityMessage } from './page-messages';
+import { isPageContentMessage, isPageVisibilityMessage } from './page-messages';
 
 export const TICK_ALARM = 'trailmap.capture-tick';
 /** MV3 alarms can fire at most every 30 seconds. */
@@ -28,12 +28,14 @@ type CommittedDetails = {
   transitionType: string;
   transitionQualifiers: string[];
   documentLifecycle?: string;
+  documentId?: string;
 };
 
 function toNavigationEvent(d: CommittedDetails): NavigationEvent {
   return {
     tabId: d.tabId,
     frameId: d.frameId,
+    documentId: d.documentId,
     url: d.url,
     transitionType: d.transitionType as NavTransitionType,
     transitionQualifiers: d.transitionQualifiers as NavTransitionQualifier[],
@@ -62,9 +64,20 @@ export class ChromeEventSource implements BrowserEventSource {
     const onAlarm = (alarm: { name: string }) => {
       if (alarm.name === TICK_ALARM) void h.onTick();
     };
-    const onMessage = (message: unknown, sender: chrome.runtime.MessageSender) => {
-      if (!isPageVisibilityMessage(message) || sender.tab?.id === undefined || sender.frameId !== 0) return;
-      void h.onPageVisibilityChanged({ tabId: sender.tab.id, visible: message.visible });
+    const onMessage = (message: unknown, sender: chrome.runtime.MessageSender, respond: (reply?: unknown) => void) => {
+      const tabId = sender.tab?.id;
+      if (tabId === undefined || sender.frameId !== 0) return;
+      if (isPageVisibilityMessage(message)) {
+        void h.onPageVisibilityChanged({ tabId, visible: message.visible });
+        return;
+      }
+      if (!sender.url || sender.documentLifecycle !== 'active' || !isPageContentMessage(message)) return;
+      // Chrome can report the document's original sender URL after pushState.
+      const senderOrigin = URL.parse(sender.url)?.origin;
+      if (!senderOrigin || URL.parse(message.pageUrl)?.origin !== senderOrigin) return;
+      h.onPageContent({ tabId, documentId: sender.documentId, url: message.pageUrl, content: message })
+        .then(respond, () => respond());
+      return true;
     };
 
     chrome.webNavigation.onCommitted.addListener(onCommitted);

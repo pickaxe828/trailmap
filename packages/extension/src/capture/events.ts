@@ -8,6 +8,8 @@
  * registering their own navigation listeners.
  */
 
+import type { PageContent, PageContentReply } from './page-messages';
+
 /** `webNavigation` transition types, as Chrome spells them. */
 export type NavTransitionType =
   | 'link'
@@ -28,6 +30,7 @@ export type NavTransitionQualifier = 'client_redirect' | 'server_redirect' | 'fo
 export type NavigationEvent = {
   tabId: number;
   frameId: number;
+  documentId?: string;
   url: string;
   transitionType: NavTransitionType;
   transitionQualifiers: NavTransitionQualifier[];
@@ -59,6 +62,8 @@ export type BrowserSnapshot = {
  * that resolves once the recorder has finished (and persisted) its work, so a
  * test can `await` an event; the production adapter ignores the promise.
  */
+export type PageContentEvent = { tabId: number; documentId?: string; url: string; content: PageContent };
+
 export type BrowserEventHandlers = {
   /** `webNavigation.onCommitted` */
   onCommitted(event: NavigationEvent): Promise<void>;
@@ -74,6 +79,8 @@ export type BrowserEventHandlers = {
   onIdleStateChanged(state: IdleState): Promise<void>;
   /** `visibilitychange` in the page, relayed by a content script. */
   onPageVisibilityChanged(event: { tabId: number; visible: boolean }): Promise<void>;
+  /** Content from the current top-level document. */
+  onPageContent(event: PageContentEvent): Promise<PageContentReply | undefined>;
   /** `tabs.onUpdated` with a title (and the URL the tab had at that moment). */
   onTabTitleChanged(event: { tabId: number; url: string; title: string }): Promise<void>;
   /** `tabs.onRemoved` */

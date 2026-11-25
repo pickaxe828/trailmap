@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Deleting items in a replicated list</title>
+    <link rel="canonical" href="../replicated-lists?chapter=2&amp;utm_source=example&amp;session-id=fixture#deletes">
+  </head>
+  <body>
+    <article>
+      <h1>Deleting items in a replicated list</h1>
+      <p id="highlight">Tombstones preserve causal history across replicas. A replica can learn about a deletion even if it receives updates out of order, because the tombstone records what happened to a specific item.</p>
+      <p id="short-copy">Replica</p>
+    </article>
+    <script>
+      const article = document.querySelector('article');
+      const paragraph = document.getElementById('highlight').textContent;
+      for (let index = 0; index < 140; index++) {
+        const copy = document.createElement('p');
+        copy.textContent = paragraph;
+        article.append(copy);
+      }
+      const end = document.createElement('p');
+      end.textContent = 'This paragraph appears after the extraction limit.';
+      article.append(end);
+      if (new URLSearchParams(location.search).has('private')) {
+        document.querySelector('link[rel=canonical]').href = '../private-article';
+        document.body.insertAdjacentHTML('beforeend', '<form><input type="password" aria-label="Password"></form>');
+      }
+    </script>
+  </body>
+</html>
