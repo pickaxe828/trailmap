@@ -1,6 +1,7 @@
 import type { Transition, Visit } from '@trailmap/shared';
 import type { TrailmapDb } from '../db/db';
 import { canonicalizeUrl } from './canonical';
+import { scoreEngagement } from './engagement';
 import { WINDOW_ID_NONE, type BrowserEventHandlers, type BrowserEventSource, type NavigationEvent, type PageContentEvent } from './events';
 import type { PageContentReply } from './page-messages';
 import { newPage } from './pages';
@@ -147,8 +148,14 @@ export class VisitRecorder {
     const tabId = this.accruingTabId();
     const visit = tabId === undefined ? undefined : this.current.get(tabId);
     if (!visit) return;
-    visit.activeMs += now - last;
-    await this.options.db.visits.update(visit.id, { activeMs: visit.activeMs });
+    await this.updateEngagement(visit, { activeMs: visit.activeMs + now - last });
+  }
+
+  private async updateEngagement(visit: Visit, changes: Partial<Pick<Visit, 'activeMs' | 'scrollDepth'>>, interacted = false) {
+    const engagement = scoreEngagement(changes.activeMs ?? visit.activeMs, changes.scrollDepth ?? visit.scrollDepth,
+      interacted || visit.engagement === 'read');
+    await this.options.db.visits.update(visit.id, { ...changes, engagement });
+    Object.assign(visit, changes, { engagement });
     this.emit({ type: 'updated', visit: { ...visit } });
   }
 
@@ -237,9 +244,11 @@ export class VisitRecorder {
     const { db } = this.options;
     if (content.kind === 'scroll') {
       if (content.depth <= visit.scrollDepth) return;
-      await db.visits.update(visit.id, { scrollDepth: content.depth });
-      visit.scrollDepth = content.depth;
-      this.emit({ type: 'updated', visit: { ...visit } });
+      await this.updateEngagement(visit, { scrollDepth: content.depth });
+      return;
+    }
+    if (content.kind === 'selection') {
+      if (visit.engagement !== 'read') await this.updateEngagement(visit, {}, true);
       return;
     }
     if (content.kind === 'text') {
@@ -259,6 +268,7 @@ export class VisitRecorder {
       ? this.canonicalize(visit.url, content.canonicalLink)
       : visit.canonicalUrl;
     const changed = canonicalUrl !== visit.canonicalUrl;
+    const read = content.kind === 'highlight' && visit.engagement !== 'read';
     const page = await db.transaction('rw', db.visits, db.pages, db.highlights, async () => {
       const page = await db.pages.get(canonicalUrl);
       let needsPage = content.kind === 'highlight';
@@ -268,6 +278,7 @@ export class VisitRecorder {
         needsPage ||= relinked > 0;
       }
       if (needsPage && !page) await db.pages.add(newPage(canonicalUrl));
+      if (read) await db.visits.update(visit.id, { engagement: 'read' });
       if (content.kind === 'highlight') {
         await db.highlights.add({
           id: this.options.newId(),
@@ -280,8 +291,9 @@ export class VisitRecorder {
       }
       return page;
     });
-    if (changed) {
+    if (changed || read) {
       visit.canonicalUrl = canonicalUrl;
+      if (read) visit.engagement = 'read';
       this.emit({ type: 'updated', visit: { ...visit } });
     }
     if (content.kind === 'probe') {

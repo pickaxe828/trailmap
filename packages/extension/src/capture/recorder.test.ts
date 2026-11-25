@@ -45,6 +45,27 @@ afterEach(async () => {
   await db.delete();
 });
 
+test('a Visit updates engagement from time, scroll and selection, then stops accruing on navigation', async () => {
+  const first = `${LEARN}/article`;
+  await browser.focusWindow(WINDOW);
+  await browser.activateTab(TAB, WINDOW);
+  await browser.commit(TAB, first);
+  clock.advance(10_000);
+  await browser.tick();
+  expect(await byUrl(first)).toMatchObject({ engagement: 'skimmed' });
+
+  await browser.reportPageContent(TAB, first, { kind: 'scroll', depth: 0.51 });
+  expect(await byUrl(first)).toMatchObject({ engagement: 'read' });
+  const second = `${LEARN}/another`;
+  await browser.commit(TAB, second);
+  await browser.reportPageContent(TAB, second, { kind: 'selection' });
+  expect(await byUrl(second)).toMatchObject({ engagement: 'read' });
+  clock.advance(60_001);
+  await browser.tick();
+  expect(await byUrl(first)).toMatchObject({ activeMs: 10_000, engagement: 'read' });
+  expect(await byUrl(second)).toMatchObject({ activeMs: 60_001, engagement: 'read' });
+});
+
 describe('navigation lineage', () => {
   test('clicking a link creates a Visit whose parent is the previous page in that tab', async () => {
     await browser.commit(TAB, `${LEARN}/index.html`, { transitionType: 'typed' });

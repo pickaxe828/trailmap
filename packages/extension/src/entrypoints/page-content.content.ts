@@ -105,8 +105,10 @@ export default defineContentScript({
       selectionTimer = ctx.setTimeout(() => {
         if (hasPasswordField(document)) return;
         const text = selectedText();
-        if (text !== lastSelection && isHighlight(text)) {
-          void send({ kind: 'highlight', source: 'selection', text, canonicalLink: canonicalLink() });
+        if (text && text !== lastSelection) {
+          void send(isHighlight(text)
+            ? { kind: 'highlight', source: 'selection', text, canonicalLink: canonicalLink() }
+            : { kind: 'selection' });
         }
         lastSelection = text;
       }, SELECTION_DELAY_MS);

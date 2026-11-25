@@ -23,6 +23,7 @@ export type PageContent =
   | { kind: 'probe'; canonicalLink?: string; sourceHash: string }
   | ({ kind: 'text'; visitId: string } & PageText)
   | { kind: 'scroll'; depth: number }
+  | { kind: 'selection' }
   | { kind: 'highlight'; source: Highlight['source']; text: string; canonicalLink?: string };
 
 export type PageContentMessage = PageContent & { type: typeof PAGE_CONTENT_MESSAGE; pageUrl: string };
@@ -34,6 +35,7 @@ export function isPageContentMessage(value: unknown): value is PageContentMessag
   if (typeof value !== 'object' || value === null) return false;
   const message = value as Record<string, unknown>;
   if (message.type !== PAGE_CONTENT_MESSAGE || typeof message.pageUrl !== 'string') return false;
+  if (message.kind === 'selection') return true;
   if (message.kind === 'scroll') {
     return typeof message.depth === 'number' && Number.isFinite(message.depth) && message.depth > 0 && message.depth <= 1;
   }
