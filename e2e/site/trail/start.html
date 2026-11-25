@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8" /><title>Trail start</title></head>
+  <body>
+    <h1>Trail start</h1>
+    <a id="same-tab" href="/trail/article.html">Open the article here</a>
+    <a id="new-tab" href="/trail/other.html" target="_blank">Open the other page in a new tab</a>
+    <form action="/trail/results.html" method="get">
+      <input name="q" value="crdt" />
+      <button id="search" type="submit">Search</button>
+    </form>
+    <button id="push" type="button">Go to section two</button>
+    <script>
+      document.getElementById('push').addEventListener('click', () => {
+        history.pushState({}, '', '/trail/start/section-two');
+        document.title = 'Trail section two';
+      });
+    </script>
+  </body>
+</html>

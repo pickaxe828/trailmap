@@ -39,6 +39,14 @@ Before you finish a ticket run all of: `bun run typecheck && bun run test && bun
 - **Privacy is a feature.** Never log tokens, keys or page text. Never commit secrets, private keys or `.env` files.
 - **Commits:** small Conventional Commits.
 
+## Capture (navigation lineage)
+
+`packages/extension/src/capture/` turns browser events into Visits (PLAN §4.1).
+
+- `recorder.ts` (`VisitRecorder`) is the one place that decides parents, transitions and active time. It never touches `chrome.*`: it takes a `BrowserEventSource` (`events.ts`), a `RecorderStateStore` (`state-store.ts`), a clock and an id generator. `chrome-events.ts` is the only file with `chrome.*` calls; `testing.ts` has `FakeBrowser` and `FakeClock` for unit tests.
+- Later tickets extend the recorder rather than adding their own navigation listeners: `recorder.subscribe(listener)` reports every Visit created or updated, `recorder.getCurrentVisit(tabId)` says what a tab is showing, and the `shouldRecord(url)` option is where privacy filters plug in.
+- Anything that must survive a service-worker restart goes in `RecorderState` (saved after every event).
+
 ## Extension identity
 
 The manifest `key` pins the extension ID, so it is the same on every machine and every build:

@@ -11,20 +11,16 @@ declare const chrome: { storage: { session: { get(key: string): Promise<Record<s
 
 const STATUS_KEY = 'trailmap.companionStatus';
 
-async function storedStatus(context: import('@playwright/test').BrowserContext) {
-  let [worker] = context.serviceWorkers();
-  worker ??= await context.waitForEvent('serviceworker');
-  return worker.evaluate((key) => chrome.storage.session.get(key).then((v) => v[key]), STATUS_KEY);
-}
 
 test.describe('with the companion installed', () => {
   test.use({ companionInstalled: true });
 
-  test('the side panel says Companion connected after the hello handshake', async ({ context, openExtensionPage }) => {
+  test('the side panel says Companion connected after the hello handshake', async ({ serviceWorker, openExtensionPage }) => {
     const page = await openExtensionPage('sidepanel.html');
     await expect(page.getByText('Companion connected')).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText('Companion not connected')).toHaveCount(0);
-    expect(await storedStatus(context)).toEqual({ state: 'connected', version: '0.0.0' });
+    const worker = await serviceWorker();
+    expect(await worker.evaluate((key) => chrome.storage.session.get(key).then((v) => v[key]), STATUS_KEY)).toEqual({ state: 'connected', version: '0.0.0' });
   });
 
   test('the browser launched the real binary with the test environment (it logged to the test data dir)', async ({

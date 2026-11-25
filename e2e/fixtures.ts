@@ -9,11 +9,12 @@
  *    not caught by the (future) localhost/intranet privacy deny-list;
  *  - waits for the extension's service worker, from which `extensionId` is read.
  */
-import { chromium, test as base, expect, type BrowserContext, type Page } from '@playwright/test';
+import { chromium, test as base, expect, type BrowserContext, type Page, type Worker } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { Visit } from '../packages/shared/src/domain';
 import { COMPANION_BIN, EXTENSION_DIR, FIXTURE_PORT } from './constants';
 
 type Fixtures = {
@@ -39,6 +40,10 @@ type Fixtures = {
   openExtensionPage: (path: string) => Promise<Page>;
   /** Builds a fixture-site URL on a fake hostname, e.g. fixtureUrl('learn.test', '/article.html'). */
   fixtureUrl: (host: string, path?: string) => string;
+  /** The extension's current service worker (waits for one to start if it was stopped). */
+  serviceWorker: () => Promise<Worker>;
+  /** Every recorded Visit, oldest first, read straight from the extension's IndexedDB. */
+  readVisits: () => Promise<Visit[]>;
 };
 
 type Options = {
@@ -85,6 +90,12 @@ export const test = base.extend<Fixtures & Options>({
         '--host-resolver-rules=MAP *.test 127.0.0.1',
       ],
     });
+    // The background opens the onboarding tab from its `onInstalled` handler, which only runs after
+    // the service worker's top level has registered every listener. Tests that navigate straight
+    // away would otherwise race the registration and miss their first events.
+    await expect
+      .poll(() => context.pages().some((p) => p.url().endsWith('/onboarding.html')), { timeout: 15_000 })
+      .toBe(true);
     await use(context);
     await context.close();
   },
@@ -100,6 +111,40 @@ export const test = base.extend<Fixtures & Options>({
       const page = await context.newPage();
       await page.goto(`chrome-extension://${extensionId}/${path.replace(/^\//, '')}`);
       return page;
+    });
+  },
+
+  serviceWorker: async ({ context }, use) => {
+    await use(async () => context.serviceWorkers()[0] ?? (await context.waitForEvent('serviceworker')));
+  },
+
+  // Reads through the onboarding tab the extension opens on install (it is an extension page, so it
+  // shares the extension's IndexedDB). That keeps the tab under test the active one. (Reading from the
+  // service worker was flaky: `indexedDB.databases()` is empty there.)
+  readVisits: async ({ context, extensionId }, use) => {
+    const readerUrl = `chrome-extension://${extensionId}/onboarding.html`;
+    await use(async () => {
+      let reader = context.pages().find((p) => p.url() === readerUrl);
+      if (!reader) {
+        await expect.poll(() => context.pages().some((p) => p.url() === readerUrl), { timeout: 10_000 }).toBe(true);
+        reader = context.pages().find((p) => p.url() === readerUrl)!;
+      }
+      return reader.evaluate(async () => {
+        // Opening a database that doesn't exist yet would create it empty and confuse Dexie.
+        if (!(await indexedDB.databases()).some((d) => d.name === 'trailmap')) return [];
+        const db = await new Promise<IDBDatabase>((resolve, reject) => {
+          const request = indexedDB.open('trailmap');
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+        const rows = await new Promise<unknown[]>((resolve, reject) => {
+          const request = db.transaction('visits').objectStore('visits').getAll();
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+        db.close();
+        return rows;
+      }) as Promise<Visit[]>;
     });
   },
 
