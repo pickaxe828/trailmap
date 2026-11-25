@@ -1,0 +1,3 @@
+[test]
+# Installs fake IndexedDB globals before any module (notably Dexie) is evaluated.
+preload = ["./test-setup.ts"]

@@ -1,0 +1,100 @@
+# AGENTS
+
+Guidance for AI coding agents working on **Trailmap**: a Chromium MV3 extension plus a local companion program.
+The spec is [docs/PLAN.md](docs/PLAN.md). Read §3 (domain model) before writing code.
+
+## Layout
+
+| Path | What it is |
+|---|---|
+| `packages/extension` | WXT + React 19 extension. Pages live in `src/entrypoints/<name>/` (`index.html`, `main.tsx`, `App.tsx`). `src/db/` is the Dexie database. `src/ui/` holds shared UI plumbing (`globals.css`, `Root.tsx`, `mount.tsx`). `extension-key.ts` holds the public key and extension ID. |
+| `packages/companion` | Bun program that talks to the extension over Native Messaging. Compiled with `bun build --compile`. |
+| `packages/shared` | Zod schemas and domain types (`domain.ts`) plus the Native Messaging message schemas (`messages.ts`). Imported as `@trailmap/shared` by both of the above. |
+| `e2e/` | Playwright end-to-end tests, the harness (`fixtures.ts`) and the fixture site (`site/`, `fixture-server.ts`). |
+
+## Scripts (run from the repo root)
+
+| Command | What it does |
+|---|---|
+| `bun install` | Install everything (one lockfile, Bun workspaces). |
+| `bun run typecheck` | `tsc --noEmit` in every package and in `e2e/`. |
+| `bun run test` | Runs `bun test` in every package (unit tests; `fake-indexeddb` for the database). |
+| `bun run build` | Builds the unpacked extension to `packages/extension/.output/chrome-mv3`. |
+| `bun run build:companion` | Compiles the companion to `packages/companion/dist/trailmap-companion`. |
+| `bun run e2e` | Playwright E2E, headless. **Needs `bun run build` first**: it loads the built extension. |
+| `bun run dev` | WXT dev server with hot reload (opens a browser; tests do not use it). |
+| `bun run astryx <cmd>` | The Astryx CLI at the project's pinned version. Astryx is a dependency of `packages/extension`, so the CLI must run from there; this script does the `cd`. |
+
+Before you finish a ticket run all of: `bun run typecheck && bun run test && bun run build && bun run build:companion && bun run e2e`.
+
+## Conventions
+
+- **Bun only.** `bun`, `bunx`, `bun test`. Never npm, pnpm or yarn. Pin dependency versions exactly (no `^` or `~`).
+- **UI:** Astryx components first. Use Tailwind v4 utilities (mapped to Astryx tokens by `tailwind-theme.css`) for anything the components' props do not cover. **No hand-written CSS files, no inline `style`, no hard-coded colours or pixel values.** The one CSS file, `src/ui/globals.css`, only declares the layer order and imports; its `@layer` line must stay above the Tailwind imports. Start new pages with `bun run astryx build "<what the page is for>"`.
+- **No remote requests from extension pages.** The theme's Google Fonts import is stubbed out in `wxt.config.ts`; do not add CDNs, remote fonts or analytics.
+- **Domain vocabulary** comes from PLAN.md §3: Visit, Page, Query, Expedition, Thread, Concept, Edge, Highlight, Note; plus field notes, loose ends, living note, Atlas, Journal, companion. Use these words in code, test names and UI copy.
+- **Schemas live in `@trailmap/shared`.** Anything that crosses the extension/companion boundary is a Zod schema there, validated on receipt. The companion has a short fixed command set; never add "fetch a URL" or "read a file" messages.
+- **Database:** `packages/extension/src/db/db.ts`. Never edit an existing `version(n)` block; add `version(n + 1)`. Unit tests get `fake-indexeddb` from the test preload in `packages/extension/bunfig.toml` and use a unique database name per test.
+- **Tests:** build test-first (red, then green). Keep tests deterministic: fake the clock, the embedder and the LLM behind interfaces; point the companion at `Bun.serve` mocks; never call real OpenAI or Anthropic endpoints, or download anything, in tests.
+- **Privacy is a feature.** Never log tokens, keys or page text. Never commit secrets, private keys or `.env` files.
+- **Commits:** small Conventional Commits.
+
+## Extension identity
+
+The manifest `key` pins the extension ID, so it is the same on every machine and every build:
+
+```
+boahmdajmiicaicaopfgkcdaahidmalm
+```
+
+Only the **public** key is committed (`packages/extension/extension-key.ts`). The private key was generated once and kept **outside the repo** at `~/.trailmap/extension-key.pem` on the maintainer's machine. It is only needed to pack a `.crx`, never to load the extension unpacked. A unit test re-derives the ID from the public key. The companion's Native Messaging manifest will use `chrome-extension://boahmdajmiicaicaopfgkcdaahidmalm/` as its `allowed_origins`.
+
+## E2E
+
+`bun run e2e` runs Playwright (`e2e/*.e2e.ts`, config in `e2e/playwright.config.ts`).
+
+- Import `test` and `expect` from `e2e/fixtures.ts`, not from `@playwright/test`. Its `context` fixture launches Playwright's Chromium (`channel: 'chromium'`, headless) in a **persistent context** with `packages/extension/.output/chrome-mv3` loaded.
+- Fixtures: `extensionId` (read from the service worker URL), `openExtensionPage('sidepanel.html')` (opens `chrome-extension://<id>/<path>` in a tab) and `fixtureUrl('learn.test', '/article.html')`.
+- **Fake hostnames.** Chromium runs with `--host-resolver-rules=MAP *.test 127.0.0.1`, and a Bun process (`e2e/fixture-server.ts`, started by Playwright's `webServer`) serves `e2e/site/` on port 4173. So fixture pages live at `http://learn.test:4173/...`, never on `localhost`, because the privacy deny-list will hide localhost. Add pages by dropping HTML into `e2e/site/`.
+- You cannot open the real side panel UI headless; test it by opening `sidepanel.html` as a normal tab.
+- Playwright runs under Node (via `bunx playwright`); only the fixture server runs under Bun. Test files must not use Bun-only APIs.
+
+## CI
+
+`.github/workflows/ci.yml` (ubuntu): install, typecheck, test, build, build:companion, then install Chromium and run E2E. It runs on pull requests to any branch and on pushes to `main` and `integration`.
+
+## Astryx
+
+The block below was written by `astryx init`, run from `packages/extension` (where Astryx is installed), and copied here. After an Astryx upgrade, run `bun run astryx init --agent codex`, copy the refreshed block from the `packages/extension/AGENTS.md` it writes into this file, and delete that file. Run its commands as `bun run astryx <cmd>` from the repo root.
+
+<!-- ASTRYX:START -->
+Astryx v0.7.7 · 90+ components
+CLI: run every command as `bunx astryx <cmd>` (shown below as `astryx ...`).
+
+SETUP (once, in app entry e.g. main.tsx) — without these, components render unstyled:
+  import "@astryxdesign/core/reset.css";
+  import "@astryxdesign/core/astryx.css";
+
+WORKFLOW — start every page from a template, never from scratch:
+1. `astryx build "<idea>"` — names the template to scaffold from and the parts it lacks.
+2. `astryx template <name> <path>` — scaffold it; keep its frame, gap and padding; replace the content.
+3. `astryx template <Block>` for parts it lacks; `astryx component <Name>` to read props before using one.
+Changing an existing page? Keep it: skip step 2 and add blocks/components inside its sections.
+Before you deliver a build, run `astryx doctor --built <dir>`; don't deliver it if it fails.
+
+RULES:
+- No <div> — components handle all layout and spacing.
+- Read `astryx docs layout` before changing a template's frame.
+- Dense data = rows (Table, List/Item), not Card-wrapped lists. Badge = counts only.
+- Style with component props first, then tokens (var(--color-*|--spacing-*|--radius-*)). No raw hex/px. No StyleX/Tailwind compiler here — don't use xstyle/utility classes directly. Some templates use StyleX and need a compiler plugin; see `astryx docs styling-overview`.
+- Palettes and custom colors go through the theme, never :root overrides. Run `astryx theme add <slug>` to import; `theme eject <slug>` only forks source. See `astryx docs theme`.
+- SELF-CHECK: re-read the file; replace any raw <div>/<span>, imported .css/@apply, or hardcoded #hex/px with the component or a token.
+
+`astryx help` lists every command. Key ones beyond the workflow:
+  search "<query>"   find any component / hook / doc / template
+  discover <words>   integrations you could add
+  docs <topic>       getting-started, principles, tokens, theme … (`astryx docs` lists all)
+  docs cli           commands and API reference
+  docs authoring     build an integration package, and every field it holds
+  upgrade --from <old version> --apply   run after a dependency bump
+<!-- ASTRYX:END -->

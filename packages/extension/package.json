@@ -1,0 +1,33 @@
+{
+  "name": "@trailmap/extension",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prepare": "wxt prepare",
+    "dev": "wxt",
+    "build": "wxt build",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@astryxdesign/core": "0.7.7",
+    "@astryxdesign/theme-neutral": "0.7.7",
+    "@stylexjs/stylex": "0.19.1",
+    "@trailmap/shared": "workspace:*",
+    "dexie": "4.4.7",
+    "react": "19.2.9",
+    "react-dom": "19.2.9"
+  },
+  "devDependencies": {
+    "@astryxdesign/cli": "0.7.7",
+    "@tailwindcss/vite": "4.3.4",
+    "@types/chrome": "0.3.7",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@wxt-dev/module-react": "1.2.2",
+    "fake-indexeddb": "6.2.7",
+    "tailwindcss": "4.3.4",
+    "wxt": "0.21.5"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "name": "trailmap",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "typecheck": "bun run --filter '*' typecheck && tsc -p e2e/tsconfig.json",
+    "test": "bun run --filter '*' test",
+    "build": "bun run build:extension",
+    "build:extension": "bun run --cwd packages/extension build",
+    "build:companion": "bun run --cwd packages/companion build",
+    "dev": "bun run --cwd packages/extension dev",
+    "e2e": "bunx playwright test --config e2e/playwright.config.ts",
+    "astryx": "cd packages/extension && bunx astryx"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1",
+    "@types/bun": "1.4.4",
+    "typescript": "7.0.2"
+  }
+}
