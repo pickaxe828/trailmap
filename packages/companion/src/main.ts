@@ -13,6 +13,7 @@ import { COMPANION_VERSION, type CompanionContext } from './handle';
 import { runHost } from './host';
 import { installManifests, uninstallManifests } from './installer';
 import { companionDataDir, createSecretStore } from './secrets';
+import { Vault } from './vault';
 
 const argv = process.argv.slice(2);
 const command = argv[0];
@@ -67,6 +68,7 @@ if (command === '--version') {
     env: process.env,
     secrets: createSecretStore({ platform: process.platform, env: process.env, dataDir }),
     log,
+    vault: new Vault(dataDir),
   };
   log(`host started (v${COMPANION_VERSION})`);
   const ok = await runHost(
