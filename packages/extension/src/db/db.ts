@@ -45,5 +45,16 @@ export function openTrailmapDb(name: string = DB_NAME): TrailmapDb {
     highlights: 'id, visitId, at',
     notes: 'id, nodeId, at',
   });
+  db.version(2).stores({
+    visits: 'id, canonicalUrl, tabId, parentVisitId, startedAt, expeditionId',
+    pages: 'canonicalUrl, textHash, enrichedAt',
+    queries: 'id, expeditionId, at, visitId',
+    expeditions: 'id, startedAt, endedAt, threadId, kind',
+    threads: 'id, lastActiveAt, status',
+    concepts: 'id, name, *aliases, firstSeen',
+    edges: 'id, from, to, type, [from+type], [to+type]',
+    highlights: 'id, visitId, at, canonicalUrl',
+    notes: 'id, nodeId, at',
+  });
   return db;
 }

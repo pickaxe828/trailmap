@@ -1,7 +1,10 @@
 import type { Transition, Visit } from '@trailmap/shared';
 import type { TrailmapDb } from '../db/db';
 import { canonicalizeUrl } from './canonical';
-import { WINDOW_ID_NONE, type BrowserEventHandlers, type BrowserEventSource, type NavigationEvent } from './events';
+import { WINDOW_ID_NONE, type BrowserEventHandlers, type BrowserEventSource, type NavigationEvent, type PageContentEvent } from './events';
+import type { PageContentReply } from './page-messages';
+import { newPage } from './pages';
+import { parseSearchQuery } from './search';
 import { emptyRecorderState, type RecorderState, type RecorderStateStore } from './state-store';
 
 export type VisitChange = { type: 'created'; visit: Visit } | { type: 'updated'; visit: Visit };
@@ -30,13 +33,13 @@ export function toVisitTransition(event: Pick<NavigationEvent, 'transitionType' 
 }
 
 export type VisitRecorderOptions = {
-  db: Pick<TrailmapDb, 'visits'>;
+  db: TrailmapDb;
   source: BrowserEventSource;
   store: RecorderStateStore;
   /** The clock; fake it in tests. */
   now: () => number;
   newId: () => string;
-  canonicalize?: (url: string) => string;
+  canonicalize?: typeof canonicalizeUrl;
   /**
    * Decides whether a URL becomes a Visit. The default accepts http(s) pages
    * only; the privacy filters (ticket 08) pass a stricter one.
@@ -59,7 +62,7 @@ export class VisitRecorder {
   private current = new Map<number, Visit>();
   private queue: Promise<void> = Promise.resolve();
   private listeners = new Set<(change: VisitChange) => void>();
-  private readonly canonicalize: (url: string) => string;
+  private readonly canonicalize: typeof canonicalizeUrl;
 
   constructor(private readonly options: VisitRecorderOptions) {
     this.canonicalize = options.canonicalize ?? canonicalizeUrl;
@@ -114,14 +117,15 @@ export class VisitRecorder {
    * last event (a change would have woken us), so the whole gap belongs to
    * whichever tab was accruing.
    */
-  private enqueue(work: () => Promise<void>, { settle = true } = {}): Promise<void> {
+  private enqueue<T>(work: () => Promise<T>, { settle = true } = {}): Promise<T> {
     const run = this.queue.then(async () => {
       await this.ready;
       if (settle) await this.settleActiveTime();
-      await work();
+      const result = await work();
       await this.options.store.save(this.state);
+      return result;
     });
-    this.queue = run.catch(() => undefined);
+    this.queue = run.then(() => undefined, () => undefined);
     return run;
   }
 
@@ -163,7 +167,6 @@ export class VisitRecorder {
       case 'form':
       case 'back':
       case 'new-tab':
-      case 'search':
         return previous?.id ?? null;
       case 'reload':
         return previous?.parentVisitId ?? null;
@@ -180,27 +183,107 @@ export class VisitRecorder {
   private endTrail(tabId: number) {
     this.current.delete(tabId);
     delete this.state.currentVisitByTab[tabId];
+    delete this.state.documentIdsByTab?.[tabId];
   }
 
-  private async createVisit(event: Pick<NavigationEvent, 'tabId' | 'url'>, transition: Transition, parentVisitId: string | null) {
+  private async createVisit(event: Pick<NavigationEvent, 'tabId' | 'url' | 'documentId'>, transition: Transition, parentVisitId: string | null) {
+    const search = parseSearchQuery(event.url);
     const visit: Visit = {
       id: this.options.newId(),
       url: event.url,
       canonicalUrl: this.canonicalize(event.url),
       title: '',
       tabId: event.tabId,
-      parentVisitId,
-      transition,
+      parentVisitId: search ? null : parentVisitId,
+      transition: search ? 'search' : transition,
       startedAt: this.options.now(),
       activeMs: 0,
       scrollDepth: 0,
       engagement: 'bounced',
       expeditionId: null,
     };
-    await this.options.db.visits.put(visit);
+    const { db } = this.options;
+    if (search) {
+      await db.transaction('rw', db.visits, db.queries, async () => {
+        await db.visits.put(visit);
+        await db.queries.put({
+          ...search,
+          id: this.options.newId(),
+          visitId: visit.id,
+          at: visit.startedAt,
+          expeditionId: null,
+        });
+      });
+    } else {
+      await db.visits.put(visit);
+    }
     this.current.set(event.tabId, visit);
     this.state.currentVisitByTab[event.tabId] = visit.id;
+    if (event.documentId) {
+      (this.state.documentIdsByTab ??= {})[event.tabId] = event.documentId;
+    } else {
+      delete this.state.documentIdsByTab?.[event.tabId];
+    }
     this.emit({ type: 'created', visit: { ...visit } });
+  }
+
+  private async capturePageContent({ tabId, documentId, url, content }: PageContentEvent): Promise<PageContentReply | undefined> {
+    const visit = this.current.get(tabId);
+    if (!visit || this.state.documentIdsByTab?.[tabId] !== documentId || visit.url.split('#')[0] !== url.split('#')[0]) return;
+
+    const { db } = this.options;
+    if (content.kind === 'scroll') {
+      if (content.depth <= visit.scrollDepth) return;
+      await db.visits.update(visit.id, { scrollDepth: content.depth });
+      visit.scrollDepth = content.depth;
+      this.emit({ type: 'updated', visit: { ...visit } });
+      return;
+    }
+    if (content.kind === 'text') {
+      if (content.visitId !== visit.id) return;
+      await db.transaction('rw', db.pages, async () => {
+        const page = await db.pages.get(visit.canonicalUrl);
+        if (page?.textHash !== content.textHash) {
+          await db.pages.put(newPage(visit.canonicalUrl, content.text, content.textHash, content.sourceHash));
+        } else if (page.sourceHash !== content.sourceHash) {
+          await db.pages.update(visit.canonicalUrl, { sourceHash: content.sourceHash });
+        }
+      });
+      return;
+    }
+
+    const canonicalUrl = content.canonicalLink
+      ? this.canonicalize(visit.url, content.canonicalLink)
+      : visit.canonicalUrl;
+    const changed = canonicalUrl !== visit.canonicalUrl;
+    const page = await db.transaction('rw', db.visits, db.pages, db.highlights, async () => {
+      const page = await db.pages.get(canonicalUrl);
+      let needsPage = content.kind === 'highlight';
+      if (changed) {
+        await db.visits.update(visit.id, { canonicalUrl });
+        const relinked = await db.highlights.where('visitId').equals(visit.id).modify({ canonicalUrl });
+        needsPage ||= relinked > 0;
+      }
+      if (needsPage && !page) await db.pages.add(newPage(canonicalUrl));
+      if (content.kind === 'highlight') {
+        await db.highlights.add({
+          id: this.options.newId(),
+          visitId: visit.id,
+          canonicalUrl,
+          text: content.text,
+          at: this.options.now(),
+          source: content.source,
+        });
+      }
+      return page;
+    });
+    if (changed) {
+      visit.canonicalUrl = canonicalUrl;
+      this.emit({ type: 'updated', visit: { ...visit } });
+    }
+    if (content.kind === 'probe') {
+      return { visitId: visit.id, extract: page?.sourceHash !== content.sourceHash };
+    }
   }
 
   private readonly handlers: BrowserEventHandlers = {
@@ -249,6 +332,7 @@ export class VisitRecorder {
         if (!visible) hidden.push(tabId);
         this.state.hiddenTabs = hidden;
       }),
+    onPageContent: (event) => this.enqueue(() => this.capturePageContent(event), { settle: false }),
     onTabTitleChanged: ({ tabId, url, title }) =>
       this.enqueue(async () => {
         const visit = this.current.get(tabId);

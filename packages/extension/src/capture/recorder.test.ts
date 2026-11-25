@@ -405,3 +405,26 @@ describe('canonicalizeUrl', () => {
     expect(canonicalizeUrl('not a url')).toBe('not a url');
   });
 });
+
+test('a new document reuses unchanged Page text and rejects the previous document at the same URL', async () => {
+  const url = `${LEARN}/article.html`;
+  const firstDocument = 'document-1';
+  const secondDocument = 'document-2';
+  const sourceHash = 'a'.repeat(64);
+  const article = { kind: 'text', text: 'Tombstones preserve history.', textHash: 'b'.repeat(64), sourceHash } as const;
+
+  await browser.commit(TAB, url, { documentId: firstDocument });
+  const first = await browser.reportPageContent(TAB, url, { kind: 'probe', sourceHash }, firstDocument);
+  expect(first?.extract).toBe(true);
+  await browser.reportPageContent(TAB, url, { ...article, visitId: first!.visitId }, firstDocument);
+
+  await browser.commit(TAB, url, { documentId: secondDocument, transitionType: 'reload' });
+  recorder = createRecorder();
+  const second = await browser.reportPageContent(TAB, url, { kind: 'probe', sourceHash }, secondDocument);
+  expect(second).toEqual({ visitId: 'v2', extract: false });
+
+  await browser.reportPageContent(TAB, url, { kind: 'scroll', depth: 1 }, firstDocument);
+  expect(recorder.getCurrentVisit(TAB)?.scrollDepth).toBe(0);
+  await browser.reportPageContent(TAB, url, { kind: 'scroll', depth: 0.5 }, secondDocument);
+  expect(recorder.getCurrentVisit(TAB)?.scrollDepth).toBe(0.5);
+});

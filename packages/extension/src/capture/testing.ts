@@ -10,6 +10,7 @@ import type {
   NavTransitionQualifier,
   NavTransitionType,
 } from './events';
+import type { PageContent } from './page-messages';
 import { WINDOW_ID_NONE } from './events';
 
 export class FakeClock {
@@ -20,7 +21,7 @@ export class FakeClock {
   }
 }
 
-type Nav = { transitionType?: NavTransitionType; qualifiers?: NavTransitionQualifier[]; frameId?: number };
+type Nav = { transitionType?: NavTransitionType; qualifiers?: NavTransitionQualifier[]; frameId?: number; documentId?: string };
 
 /** A scriptable stand-in for the browser: tests call these to "make things happen". */
 export class FakeBrowser implements BrowserEventSource {
@@ -46,6 +47,7 @@ export class FakeBrowser implements BrowserEventSource {
       tabId,
       url,
       frameId: nav.frameId ?? 0,
+      documentId: nav.documentId,
       transitionType: nav.transitionType ?? 'link',
       transitionQualifiers: nav.qualifiers ?? [],
     });
@@ -56,6 +58,7 @@ export class FakeBrowser implements BrowserEventSource {
       tabId,
       url,
       frameId: nav.frameId ?? 0,
+      documentId: nav.documentId,
       transitionType: nav.transitionType ?? 'link',
       transitionQualifiers: nav.qualifiers ?? [],
     });
@@ -78,6 +81,9 @@ export class FakeBrowser implements BrowserEventSource {
   }
   setPageVisible(tabId: number, visible: boolean) {
     return this.h.onPageVisibilityChanged({ tabId, visible });
+  }
+  reportPageContent(tabId: number, url: string, content: PageContent, documentId?: string) {
+    return this.h.onPageContent({ tabId, url, content, documentId });
   }
   setTitle(tabId: number, url: string, title: string) {
     return this.h.onTabTitleChanged({ tabId, url, title });
