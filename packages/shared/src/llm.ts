@@ -10,13 +10,32 @@ export const LlmErrorCode = z.enum([
   'invalid_output',
   'provider_rejected',
   'dispatch_cancelled',
+  'invalid_api_key',
+  'provider_rate_limited',
+  'provider_unreachable',
+  'provider_quota_exceeded',
+  'model_not_found',
 ]);
 export type LlmErrorCode = z.infer<typeof LlmErrorCode>;
 
 export const LlmOutput = z.json();
 export type LlmOutput = z.infer<typeof LlmOutput>;
 
+export const LlmProviderId = z.enum(['chatgpt', 'anthropic', 'ollama']);
+export type LlmProviderId = z.infer<typeof LlmProviderId>;
+export const LLM_PROVIDER_NAMES: Record<LlmProviderId, string> = { chatgpt: 'ChatGPT plan', anthropic: 'Anthropic', ollama: 'Ollama' };
+
+export type LlmTaskGroup = 'extraction' | 'notes';
+export function llmTaskGroup(task: string): LlmTaskGroup {
+  return task === 'page_enrichment' || task === 'page_summary' ? 'extraction' : 'notes';
+}
+
+export const ANTHROPIC_DEFAULT_MODELS: Record<LlmTaskGroup, string> = {
+  extraction: 'claude-haiku-5-5', notes: 'claude-sonnet-5-5',
+};
+
 export const LlmCompletion = z.object({
+  provider: LlmProviderId.optional(),
   task: z.string().min(1).max(100),
   auditId: z.uuid().optional(),
   model: z.string().min(1).max(200).optional(),
@@ -36,8 +55,11 @@ export const ModelDispatch = z.object({
 });
 export type ModelDispatch = z.infer<typeof ModelDispatch>;
 
-export const LlmModel = z.object({ slug: z.string().min(1), displayName: z.string().min(1) });
+export const LlmModel = z.object({ slug: z.string().min(1).max(200), displayName: z.string().min(1) });
 export type LlmModel = z.infer<typeof LlmModel>;
+
+export const ProviderModel = LlmModel.extend({ provider: LlmProviderId });
+export const ProviderCatalogStatus = z.object({ provider: LlmProviderId, error: LlmErrorCode.or(z.literal('internal')).optional() });
 
 /** Leaves room for the companion's upstream deadline and Native Messaging. */
 export const LLM_REQUEST_TIMEOUT_MS = 190_000;

@@ -100,11 +100,22 @@ test('a complete-looking Page summary is not accepted if the stream ends without
   expect(await complete()).toMatchObject({ type: 'error', code: 'usage_unavailable', retryAfterMs: 5_000 });
 });
 
-test('lists displayable models in catalog order and uses the first when no model is specified', async () => {
+test('lists displayable models from every connected provider and retains ChatGPT catalog order', async () => {
   await signIn();
+  ctx.env.TRAILMAP_ANTHROPIC_BASE_URL = mock.origin + '/anthropic/v1';
+  ctx.env.TRAILMAP_OLLAMA_BASE_URL = mock.origin;
+  await handleMessage({ type: 'keys.set', id: 'key', provider: 'anthropic', key: 'fixture-key' }, ctx);
   respond = async (request) => {
+    const url = new URL(request.url);
+    if (url.pathname === '/api/tags') return Response.json({ models: [{ name: 'gemma:latest' }, { name: 'glm:cloud' }] });
+    if (url.pathname === '/anthropic/v1/models') {
+      expect(request.headers.get('x-api-key')).toBe('fixture-key');
+      return url.searchParams.has('after_id')
+        ? Response.json({ data: [{ id: 'claude-sonnet-5-5', display_name: 'Claude Sonnet' }], has_more: false })
+        : Response.json({ data: [{ id: 'claude-haiku-5-5', display_name: 'Claude Haiku' }], has_more: true, last_id: 'claude-haiku-5-5' });
+    }
     expect(request.headers.get('authorization')).toBe('Bearer mock-access-0');
-    if (new URL(request.url).pathname === '/v1/models') {
+    if (url.pathname === '/v1/models') {
       expect(request.method).toBe('GET');
       return Response.json({ models: [
         { slug: 'hidden', display_name: 'Hidden', visibility: 'hide' },
@@ -117,8 +128,13 @@ test('lists displayable models in catalog order and uses the first when no model
   };
   expect(await handleMessage({ type: 'llm.models', id: 'models' }, ctx)).toEqual({
     type: 'llm.models', id: 'models', models: [
-      { slug: 'visible', displayName: 'First option' }, { slug: 'visible-2', displayName: 'Second option' },
+      { provider: 'chatgpt', slug: 'visible', displayName: 'First option' },
+      { provider: 'chatgpt', slug: 'visible-2', displayName: 'Second option' },
+      { provider: 'anthropic', slug: 'claude-haiku-5-5', displayName: 'Claude Haiku' },
+      { provider: 'anthropic', slug: 'claude-sonnet-5-5', displayName: 'Claude Sonnet' },
+      { provider: 'ollama', slug: 'gemma:latest', displayName: 'gemma:latest' },
     ],
+    providers: [{ provider: 'chatgpt' }, { provider: 'anthropic' }, { provider: 'ollama' }],
   });
   expect(await complete({ model: undefined })).toMatchObject({ type: 'llm.complete', output: { summary: 'A Page' } });
 });
