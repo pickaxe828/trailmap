@@ -3,13 +3,14 @@ import { getCompanionClient } from '../companion/background';
 import type { TrailmapDb } from '../db/db';
 import { enrichPage } from '../enrichment/handler';
 import type { RecordingSettings } from '../privacy/policy';
+import { wrapUpHandlers } from '../wrapup/handlers';
 import { JobQueue } from './queue';
 
 const ALARM = 'trailmap.jobs';
 
 /** Alarms recover due work even if the worker died after capture, claim or backoff. */
 export function startJobs(db: TrailmapDb, ready: Promise<void>, getSettings: () => RecordingSettings): void {
-  const queue = new JobQueue(db, Date.now, { page_enrichment: enrichPage(db, getSettings) }, [db.pages]);
+  const queue = new JobQueue(db, Date.now, { page_enrichment: enrichPage(db, getSettings), ...wrapUpHandlers(db, getSettings) }, [db.pages, db.expeditions]);
   const client = getCompanionClient();
   let pumping = false;
   function kick() {

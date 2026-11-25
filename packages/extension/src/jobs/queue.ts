@@ -17,10 +17,12 @@ export type JobHandlers = { [K in JobKind]: (job: Job<K>) => Promise<JobResult> 
 type JobChange = { job: Partial<Job>; hold?: QueueHold };
 type Attempt = { result: JobResult } | { error: unknown };
 
+export const jobId = (kind: JobKind, key: string) => JSON.stringify([kind, key]);
+
 /** A caller can include db.jobs in its domain transaction so the trigger and job commit together. */
 export async function enqueueJob<K extends JobKind>(db: TrailmapDb, spec: JobSpec<K>, now: number): Promise<void> {
   await db.transaction('rw', db.jobs, async () => {
-    const id = JSON.stringify([spec.kind, spec.key]);
+    const id = jobId(spec.kind, spec.key);
     const existing = await db.jobs.get(id);
     if (!existing) {
       await db.jobs.add({ ...spec, id, createdAt: now, status: 'pending', availableAt: now, failures: 0 });

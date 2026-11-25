@@ -16,6 +16,25 @@ const mock = startMockOAuth(async (request) => {
   const body = await request.json() as Inference;
   calls.push(body);
   const text = body.input?.[0]?.content ?? '';
+  const task = body.text?.format.name;
+  if (task === 'expedition_wrap_up' || task === 'field_notes') {
+    // Wrap-up inputs carry Page notes, never Page text.
+    if (body.model !== 'fixture-model') return new Response(null, { status: 400 });
+    const input = JSON.parse(text) as { trail: { ref: string; summary?: string }[] };
+    const page = input.trail.find((entry) => entry.summary);
+    if (task === 'expedition_wrap_up') {
+      return stream(JSON.stringify({
+        title: 'How replicated lists delete items', driving_question: 'How do replicated lists represent deletes?',
+        kind: 'learning', merge_with: [],
+      }));
+    }
+    return stream(JSON.stringify({
+      found: 'Replicated lists keep tombstones so deletes survive out-of-order updates.',
+      key_ideas: [{ idea: 'A tombstone records that an item was deleted.', page: page?.ref ?? 'p1' }],
+      trail: 'Opened one article and read it closely.',
+      loose_ends: ['How are tombstones garbage collected?'],
+    }));
+  }
   if (body.model !== 'fixture-model' || body.store !== false || body.stream !== true ||
     !text.includes('Tombstones preserve causal history across replicas.') || text.includes('This paragraph appears after the extraction limit.')) {
     return new Response(null, { status: 400 });

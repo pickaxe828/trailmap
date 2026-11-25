@@ -10,6 +10,8 @@ type LiveTrail = {
   open: { expedition: Expedition; visits: Visit[] }[];
   today: Visit[];
   pageNotes: TrailPageNotes[];
+  /** Wrapped-up Expeditions, newest first. */
+  finished: Expedition[];
   /** The user's own Note text, by Visit or Expedition id. */
   notes: Record<string, string>;
 };
@@ -44,11 +46,13 @@ export function useLiveTrail(): LiveTrail | undefined {
             canonicalUrl: page.canonicalUrl, title: titles.get(page.canonicalUrl) || new URL(page.canonicalUrl).hostname,
             summary: page.summary, takeaways: page.takeaways,
           }] : []);
+        const finished = await database.expeditions.orderBy('endedAt').reverse()
+          .filter((expedition) => expedition.endedAt !== null && expedition.wrappedUpAt !== undefined).limit(10).toArray();
         const nodeIds = [...open.flatMap(({ expedition, visits }) => [expedition.id, ...visits.map(({ id }) => id)]),
           ...today.map(({ id }) => id)];
         const notes = Object.fromEntries((await database.notes.where('nodeId').anyOf(nodeIds).toArray())
           .map(({ nodeId, text }) => [nodeId, text]));
-        return { open, today, pageNotes, notes };
+        return { open, today, pageNotes, notes, finished };
       }),
     ).subscribe({ next: setTrail });
     return () => subscription.unsubscribe();

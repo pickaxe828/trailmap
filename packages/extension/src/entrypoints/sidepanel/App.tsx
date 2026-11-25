@@ -8,6 +8,7 @@ import { useLiveTrail } from '../../trail/useLiveTrail';
 import { AiNotesStatus } from './AiNotesStatus';
 import { LiveTrail } from './LiveTrail';
 import { CompanionStatus } from './CompanionStatus';
+import { FieldNotes } from './FieldNotes';
 import { PageNotes } from './PageNotes';
 import { RecordingControls } from './RecordingControls';
 
@@ -24,6 +25,7 @@ export function App() {
       <RecordingControls />
       <AiNotesStatus />
       <CompanionStatus />
+      {trail && <FieldNotes expeditions={trail.finished} />}
       {trail && <PageNotes pages={trail.pageNotes} />}
       <Link href={chrome.runtime.getURL('/onboarding.html#sent-to-model')} target="_blank">Sent-to-model log</Link>
       {trail && trail.open.length === 0 && trail.today.length === 0 && (
