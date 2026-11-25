@@ -51,7 +51,7 @@ export type CorrectionLogEntry = {
 };
 
 export type SentToModel = ModelDispatch & {
-  id: string; at: number; task: string; canonicalUrl?: string; canonicalUrls?: string[]; visitIds?: string[];
+  id: string; at: number; task: string; canonicalUrl?: string; expeditionId?: string; canonicalUrls?: string[]; visitIds?: string[];
 };
 
 export const DB_NAME = 'trailmap';
@@ -110,6 +110,21 @@ export function openTrailmapDb(name: string = DB_NAME): TrailmapDb {
     pages: 'canonicalUrl, textHash, enrichedAt',
     queries: 'id, expeditionId, at, visitId',
     expeditions: 'id, startedAt, endedAt, threadId, kind',
+    threads: 'id, lastActiveAt, status',
+    concepts: 'id, name, *aliases, firstSeen',
+    edges: 'id, from, to, type, [from+type], [to+type]',
+    highlights: 'id, visitId, at, canonicalUrl',
+    notes: 'id, nodeId, at',
+    jobs: 'id, status, [status+priority+createdAt]',
+    queueHolds: 'id',
+    sentToModel: 'id, at, canonicalUrl',
+    corrections: 'id, at, *targetIds',
+  });
+  db.version(6).stores({
+    visits: 'id, canonicalUrl, tabId, parentVisitId, startedAt, expeditionId, [segmentationPending+startedAt]',
+    pages: 'canonicalUrl, textHash, enrichedAt',
+    queries: 'id, expeditionId, at, visitId',
+    expeditions: 'id, startedAt, endedAt, threadId, kind, unseenNotes',
     threads: 'id, lastActiveAt, status',
     concepts: 'id, name, *aliases, firstSeen',
     edges: 'id, from, to, type, [from+type], [to+type]',

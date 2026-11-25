@@ -12,7 +12,7 @@ type Sources = {
   parent?: Visit;
 };
 
-function cap(text: string, bytes: number): string {
+export function cap(text: string, bytes: number): string {
   const buffer = new Uint8Array(bytes);
   const { written } = new TextEncoder().encodeInto(text, buffer);
   return new TextDecoder().decode(buffer.subarray(0, written));

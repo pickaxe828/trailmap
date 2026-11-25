@@ -26,6 +26,8 @@ const defaultVectors = {
 const embedder: Embedder = { embed: async (texts) => texts.map((text) => Float32Array.from(vectors[text] ?? [1, 0])) };
 const queue = (model?: Parameters<typeof decideConceptMerges>[3]) => new JobQueue(db, () => now, {
   page_enrichment: async () => { throw new Error('Unexpected Page enrichment'); },
+  expedition_wrap_up: async () => { throw new Error('Unexpected wrap-up'); },
+  field_notes: async () => { throw new Error('Unexpected field notes'); },
   concept_resolution: resolveConcepts(db, embedder, () => now),
   merge_verdict: decideConceptMerges(db, () => ({ paused: false, skippedHosts: [] }), () => now, model),
 }, [db.visits, db.pages, db.concepts, db.conceptEvidence, db.edges]);

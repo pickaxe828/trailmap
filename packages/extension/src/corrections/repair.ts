@@ -26,9 +26,17 @@ export async function repairExpedition(db: TrailmapDb, expeditionId: string, { d
     }
   }
   // Model-written fields were derived from content that is gone. The user's own edits stay.
-  if (derivedContentRemoved && !expedition.userEdited) {
-    changes.fieldNotes = null;
-    changes.drivingQuestion = null;
+  if (derivedContentRemoved) {
+    if (!expedition.userEdited) {
+      changes.fieldNotes = null;
+      changes.drivingQuestion = null;
+    }
+    // Wrap-up output (merge suggestions) and notes never survive their source, so the badge can't count them either.
+    if (expedition.mergeSuggestions) changes.mergeSuggestions = [];
+    if (changes.fieldNotes === null) {
+      changes.unseenNotes = undefined;
+      changes.notesWrittenAt = undefined;
+    }
   }
   if (members[0]!.startedAt !== expedition.startedAt) changes.startedAt = members[0]!.startedAt;
   if (Object.keys(changes).length) await db.expeditions.update(expeditionId, changes);

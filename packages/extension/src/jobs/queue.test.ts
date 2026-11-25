@@ -14,10 +14,11 @@ afterEach(async () => { await db.delete(); });
 const enqueue = (id: string, priority: JobPriority = JOB_PRIORITY.readPage) =>
   enqueueJob(db, { kind: 'page_enrichment', key: id, priority, payload: { canonicalUrl: id, textHash: 'hash', visitId: 'visit' } }, now);
 
-const concepts = { concept_resolution: async () => 'discard' as const, merge_verdict: async () => 'discard' as const };
+const discard = async () => 'discard' as const;
+const unused = { expedition_wrap_up: discard, field_notes: discard, concept_resolution: discard, merge_verdict: discard };
 
 function worker(run: (url: string) => Promise<void>) {
-  return new JobQueue(db, () => now, { ...concepts, page_enrichment: ({ payload }) => run(payload.canonicalUrl) });
+  return new JobQueue(db, () => now, { ...unused, page_enrichment: ({ payload }) => run(payload.canonicalUrl) });
 }
 
 test('a restarted worker claims jobs in budget order, promotes a skimmed Page, and deduplicates completed keys', async () => {
@@ -42,7 +43,7 @@ test('a replacement worker respects the lease and a late completion cannot commi
   const entered = Promise.withResolvers<void>();
   const release = Promise.withResolvers<void>();
   const commits: string[] = [];
-  const original = new JobQueue(db, () => now, { ...concepts, page_enrichment: async () => {
+  const original = new JobQueue(db, () => now, { ...unused, page_enrichment: async () => {
     entered.resolve();
     await release.promise;
     return { commit: async () => { commits.push('stale'); } };

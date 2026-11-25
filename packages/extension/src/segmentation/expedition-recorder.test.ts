@@ -78,3 +78,19 @@ test('pending parent and child Visits captured in the same millisecond still sha
   expect(await db.expeditions.count()).toBe(1);
   expect((await db.visits.get(child.id))?.expeditionId).toBe((await db.visits.get(root.id))?.expeditionId);
 });
+
+test('closing queues one wrap-up per Expedition in the closure, and Wrap up closes only the chosen one', async () => {
+  const second = { ...root, id: 'other-root', title: 'Indoor gardening', tabId: 2, startedAt: 2000 };
+  await db.visits.bulkPut([root, second]);
+  const recorder = new ExpeditionRecorder({ db, embedder, now: () => 5000 });
+  await recorder.sync();
+  await recorder.close(4000, 'expedition:other-root');
+  expect((await db.jobs.toArray()).map(({ kind, payload }) => [kind, payload])).toEqual([
+    ['expedition_wrap_up', { expeditionId: 'expedition:other-root', endedAt: 4000, revision: 0 }],
+  ]);
+  expect((await db.expeditions.get('expedition:root'))!.endedAt).toBeNull();
+  await recorder.close(6000);
+  await recorder.close(6000);
+  expect((await db.jobs.toArray()).map(({ payload }) => (payload as { expeditionId: string }).expeditionId).sort())
+    .toEqual(['expedition:other-root', 'expedition:root']);
+});

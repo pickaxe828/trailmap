@@ -63,15 +63,18 @@ export async function forgetCascade(db: TrailmapDb, input: ForgetInput): Promise
     await db.highlights.bulkDelete([...highlights]);
     const pagesDeleted = await db.pages.where('canonicalUrl').anyOf(urls).delete();
 
+    // Multi-source requests record provenance for each source in the attempt.
     const audit = [...new Set([
       ...await db.sentToModel.where('canonicalUrl').anyOf(urls).primaryKeys(),
-      ...await db.sentToModel.filter((row) => !!row.visitIds?.some((id) => gone.has(id)) ||
+      ...await db.sentToModel.filter((row) => (!!row.expeditionId && forgottenExpeditions.includes(row.expeditionId)) ||
+        !!row.visitIds?.some((id) => gone.has(id)) ||
         !!row.canonicalUrls?.some((url) => orphans.has(url))).primaryKeys(),
     ])];
     await db.sentToModel.bulkDelete(audit);
 
-    const jobs = await db.jobs.filter(({ payload }) => 'canonicalUrl' in payload &&
-      (orphans.has(payload.canonicalUrl) || gone.has(payload.visitId))).primaryKeys();
+    const jobs = await db.jobs.filter(({ payload }) => 'canonicalUrl' in payload
+      ? orphans.has(payload.canonicalUrl) || gone.has(payload.visitId)
+      : 'expeditionId' in payload && forgottenExpeditions.includes(payload.expeditionId)).primaryKeys();
     await db.jobs.bulkDelete(jobs);
     let replacedJobs = 0;
     for (const url of survivors) {
@@ -110,6 +113,12 @@ export async function forgetCascade(db: TrailmapDb, input: ForgetInput): Promise
     for (const id of forgottenExpeditions) {
       await db.expeditions.delete(id);
       await db.notes.where('nodeId').equals(id).delete();
+    }
+    if (forgottenExpeditions.length) {
+      // A merge suggestion's reason was written from the forgotten Expedition's content.
+      await db.expeditions.filter(({ mergeSuggestions }) =>
+        !!mergeSuggestions?.some(({ expeditionId }) => forgottenExpeditions.includes(expeditionId)))
+        .modify((expedition) => { delete expedition.mergeSuggestions; });
     }
     for (const id of new Set(visits.flatMap((v) => v.expeditionId && !forgottenExpeditions.includes(v.expeditionId) ? [v.expeditionId] : []))) {
       await repairExpedition(db, id, { derivedContentRemoved: true });

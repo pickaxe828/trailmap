@@ -6,6 +6,7 @@ import { EXPEDITION_IDLE_SECONDS } from './config';
 import { ExpeditionRecorder } from './expedition-recorder';
 import { expeditionIdle } from './idle';
 import type { TrailmapDb } from '../db/db';
+import { isWrapUpRequest } from '../wrapup/messages';
 
 const IDLE_KEY = 'trailmap.expeditionIdleDeadline';
 const CLOSE_ALARM = 'trailmap.expedition-close';
@@ -56,6 +57,15 @@ export function startSegmentation(db: TrailmapDb, recorder: VisitRecorder) {
     // model is loading, and preserve their order against subsequent Visits.
     enqueue(async () => { void expeditions.sync().catch(() => {}); });
   }
+
+  // Wrap up closes one Expedition now instead of waiting for 30 minutes of idle.
+  chrome.runtime.onMessage.addListener((input: unknown, sender, reply) => {
+    if (sender.url !== chrome.runtime.getURL('/sidepanel.html') || !isWrapUpRequest(input)) return;
+    const done = Promise.withResolvers<boolean>();
+    queue = queue.then(() => expeditions.close(Date.now(), input.expeditionId)).then(() => done.resolve(true), () => done.resolve(false));
+    void done.promise.then(reply);
+    return true;
+  });
 
   recorder.subscribe((change) => {
     if (change.type === 'created' || change.titleChanged) sync();

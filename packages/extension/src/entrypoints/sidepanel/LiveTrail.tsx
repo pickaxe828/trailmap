@@ -15,6 +15,7 @@ import { siteKey } from '../../privacy/policy';
 import { formatActiveTime } from '../../trail/format';
 import { buildTrail, type TrailNode } from '../../trail/tree';
 import type { useLiveTrail } from '../../trail/useLiveTrail';
+import { WRAP_UP_MESSAGE } from '../../wrapup/messages';
 import { correct, useCurrentVisitId, useSiteSkipped } from './corrections-client';
 
 type Trail = NonNullable<ReturnType<typeof useLiveTrail>>;
@@ -102,6 +103,9 @@ export function LiveTrail({ trail }: { trail: Trail }) {
                 header={
                   <HStack gap={1} align="center" justify="between">
                     <Heading level={3}>{expedition.title}</Heading>
+                    <HStack gap={1} align="center">
+                    <Button size="sm" label="Wrap up" aria-label={`Wrap up expedition ${expedition.title}`}
+                      clickAction={async () => { await chrome.runtime.sendMessage({ type: WRAP_UP_MESSAGE, expeditionId: expedition.id }).catch(() => {}); }} />
                     <MoreMenu size="sm" alignment="end" label={`Actions for expedition ${expedition.title}`} items={[
                       { label: 'Rename', onClick: () => setDialogue({ kind: 'rename', expedition }) },
                       ...others.map((other) => ({
@@ -112,6 +116,7 @@ export function LiveTrail({ trail }: { trail: Trail }) {
                       { label: 'Forget expedition', variant: 'destructive' as const,
                         onClick: () => setDialogue({ kind: 'forget-expedition', expedition }) },
                     ]} />
+                    </HStack>
                   </HStack>
                 }
                 items={buildTrail(visits).map((node) => toItem(node, group))} />

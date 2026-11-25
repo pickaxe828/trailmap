@@ -28,7 +28,8 @@ const page = (url: string, extra: Partial<Page> = {}): Page => ({
 /** e1: secret.example (root, with Query) -> a.example; e2: b.example plus a second visit to the secret page. */
 async function seed() {
   await db.expeditions.bulkPut([
-    expedition('e1', { rootVisitId: 's', title: `search ${SECRET}`, fieldNotes: 'field notes' }),
+    expedition('e1', { rootVisitId: 's', title: `search ${SECRET}`, fieldNotes: 'field notes', unseenNotes: 1, notesWrittenAt: 9,
+      mergeSuggestions: [{ expeditionId: 'e2', reason: SECRET }] }),
     expedition('e2', { rootVisitId: 'b', title: 'Other' }),
   ]);
   await db.visits.bulkPut([
@@ -54,10 +55,14 @@ async function seed() {
       payload: { canonicalUrl: 'https://secret.example/s', textHash: 'h', visitId: 's' } },
     { id: 'j2', kind: 'page_enrichment', key: 'k2', priority: 0, createdAt: 1, status: 'done', availableAt: 1, failures: 0,
       payload: { canonicalUrl: 'https://a.example/a', textHash: 'h', visitId: 'a' } },
+    { id: 'j3', kind: 'field_notes', key: 'k3', priority: 1, createdAt: 1, status: 'pending', availableAt: 1, failures: 0,
+      payload: { expeditionId: 'e1', endedAt: 5, revision: 0 } },
   ]);
   const sent = { provider: 'p', model: 'm', instructions: 'i', input: [{ role: 'user' as const, content: SECRET }] };
   await db.sentToModel.bulkPut([
     { id: 'm1', at: 1, task: 'page_enrichment', canonicalUrl: 'https://secret.example/s', ...sent },
+    { id: 'm3', at: 3, task: 'field_notes', expeditionId: 'e1', ...sent,
+      canonicalUrls: ['https://secret.example/s', 'https://a.example/a'] },
     { id: 'm2', at: 2, task: 'page_enrichment', canonicalUrl: 'https://a.example/a', ...sent, input: [{ role: 'user', content: 'fine' }] },
   ]);
   await db.edges.bulkPut([
@@ -86,12 +91,14 @@ test('forgetting a Page removes its Visits, Query, Highlights, Notes, jobs, audi
   expect((await db.pages.toArray()).map((p) => p.canonicalUrl).sort()).toEqual(['https://a.example/a', 'https://b.example/b']);
   expect((await db.highlights.toArray()).map((h) => h.id)).toEqual(['h2']);
   expect((await db.notes.toArray()).map((n) => n.id).sort()).toEqual(['n2']);
-  expect((await db.jobs.toArray()).map((j) => j.id)).toEqual(['j2']);
+  expect((await db.jobs.toArray()).map((j) => j.id).sort()).toEqual(['j2', 'j3']);
+  expect((await db.sentToModel.toArray()).map((row) => row.id)).not.toContain('m3'); // it quoted the forgotten Page
   expect(await db.queries.count()).toBe(0);
   // Edges that depended on the forgotten Visit lose it; an edge left without evidence goes away.
   expect((await db.edges.toArray()).map((e) => [e.id, e.evidence])).toEqual([['edge2', ['a']]]);
   // e1 lost its root and its derived, non-user fields; e2 is untouched.
-  expect(await db.expeditions.get('e1')).toMatchObject({ rootVisitId: 'a', title: 'Title a', fieldNotes: null });
+  expect(await db.expeditions.get('e1')).toMatchObject({ rootVisitId: 'a', title: 'Title a', fieldNotes: null, mergeSuggestions: [] });
+  expect((await db.expeditions.get('e1'))!.unseenNotes).toBeUndefined();
   expect(await db.expeditions.get('e2')).toMatchObject({ rootVisitId: 'b', title: 'Other' });
 });
 
@@ -103,11 +110,11 @@ test('forgetting records that audit rows were removed without keeping their cont
   expect(audit.map((row) => row.id)).toContain('m2');
   expect(audit.map((row) => row.id)).not.toContain('m1');
   const tombstone = audit.find((row) => row.task === 'forgotten')!;
-  expect(tombstone.instructions).toMatch(/1 .*removed/);
+  expect(tombstone.instructions).toMatch(/2 .*removed/);
   expect(tombstone.canonicalUrl).toBeUndefined();
   const forgotten = (await db.corrections.toArray()).find((entry) => entry.kind === 'forget-page')!;
   expect(forgotten.targetIds).toEqual([]);
-  expect(forgotten.before).toMatchObject({ visits: 2, pages: 1, highlights: 1, notes: 2, jobs: 1, auditRows: 1 });
+  expect(forgotten.before).toMatchObject({ visits: 2, pages: 1, highlights: 1, notes: 2, jobs: 1, auditRows: 2 });
   expect(forgotten.after).toBeNull();
   expect((await db.corrections.toArray()).some((e) => e.kind === 'star')).toBe(true); // unrelated entries stay
 });
@@ -123,6 +130,7 @@ test('forgetting an Expedition removes it and its Visits but keeps a Page that o
   expect((await db.pages.get('https://secret.example/s'))).toBeDefined();
   expect((await db.pages.get('https://a.example/a'))).toBeUndefined();
   expect(await db.queries.count()).toBe(0);
+  expect((await db.jobs.get('j3'))).toBeUndefined(); // the forgotten Expedition's field-notes job
   expect((await db.highlights.get('h1'))).toBeUndefined();
   await corrections().forgetExpedition('e2');
   expect(await everything()).not.toContain('secret.example');

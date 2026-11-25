@@ -7,7 +7,7 @@ import type { TrailmapDb } from '../db/db';
 export async function requestModel(
   db: TrailmapDb,
   payload: Omit<LlmCompletion, 'auditId'>,
-  guard: { canonicalUrl?: string; canonicalUrls?: string[]; visitIds?: string[]; tables: Table[]; allow: () => Promise<boolean> },
+  guard: { canonicalUrl?: string; expeditionId?: string; canonicalUrls?: string[]; visitIds?: string[]; tables: Table[]; allow: () => Promise<boolean> },
 ) {
   const client = getCompanionClient();
   const auditId = crypto.randomUUID();
@@ -20,7 +20,8 @@ export async function requestModel(
         if (!active || !await guard.allow() || !active) return false;
         await db.sentToModel.add({
           id: dispatchId, at: Date.now(), task: payload.task, canonicalUrl: guard.canonicalUrl,
-          canonicalUrls: guard.canonicalUrls, visitIds: guard.visitIds, provider, model, instructions, input,
+          expeditionId: guard.expeditionId, canonicalUrls: guard.canonicalUrls, visitIds: guard.visitIds,
+          provider, model, instructions, input,
         });
         return true;
       }).catch(() => false); // No durable log, no outbound text.

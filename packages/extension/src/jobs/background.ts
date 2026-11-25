@@ -6,6 +6,7 @@ import type { TrailmapDb } from '../db/db';
 import { getEmbedder } from '../embeddings/background';
 import { enrichPage } from '../enrichment/handler';
 import type { RecordingSettings } from '../privacy/policy';
+import { wrapUpHandlers } from '../wrapup/handlers';
 import { JobQueue } from './queue';
 
 const ALARM = 'trailmap.jobs';
@@ -14,9 +15,10 @@ const ALARM = 'trailmap.jobs';
 export function startJobs(db: TrailmapDb, ready: Promise<void>, getSettings: () => RecordingSettings): void {
   const queue = new JobQueue(db, Date.now, {
     page_enrichment: enrichPage(db, getSettings),
+    ...wrapUpHandlers(db, getSettings),
     concept_resolution: resolveConcepts(db, getEmbedder(), Date.now),
     merge_verdict: decideConceptMerges(db, getSettings, Date.now),
-  }, [db.pages, db.visits, db.concepts, db.conceptEvidence, db.edges]);
+  }, [db.pages, db.expeditions, db.visits, db.concepts, db.conceptEvidence, db.edges]);
   const client = getCompanionClient();
   let pumping = false;
   function kick() {
