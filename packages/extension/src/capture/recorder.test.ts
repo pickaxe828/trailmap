@@ -87,6 +87,29 @@ test('pausing ends the active Visit and resuming does not admit its stale conten
   expect(await db.highlights.count()).toBe(0);
 });
 
+test('forgetting the Visit shown in a tab stops its capture and starts the next trail fresh', async () => {
+  const first = `${LEARN}/article`;
+  await browser.focusWindow(WINDOW);
+  await browser.activateTab(TAB, WINDOW);
+  await browser.commit(TAB, first);
+  const shown = (await byUrl(first))!;
+  const removed = await recorder.forgetVisits(async () => {
+    await db.visits.delete(shown.id);
+    return [shown.id];
+  });
+  expect(removed).toEqual([shown.id]);
+  expect(recorder.getCurrentVisit(TAB)).toBeUndefined();
+
+  await browser.reportPageContent(TAB, first, { kind: 'highlight', source: 'copy', text: 'Forgotten text' });
+  clock.advance(5_000);
+  await browser.tick();
+  expect(await db.highlights.count()).toBe(0);
+  expect(await db.visits.count()).toBe(0);
+  const next = `${LEARN}/another`;
+  await browser.commit(TAB, next, { transitionType: 'link' });
+  expect(await byUrl(next)).toMatchObject({ parentVisitId: null });
+});
+
 describe('navigation lineage', () => {
   test('clicking a link creates a Visit whose parent is the previous page in that tab', async () => {
     await browser.commit(TAB, `${LEARN}/index.html`, { transitionType: 'typed' });
