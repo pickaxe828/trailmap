@@ -1,0 +1,78 @@
+import { Button } from '@astryxdesign/core/Button';
+import { Card } from '@astryxdesign/core/Card';
+import { Heading } from '@astryxdesign/core/Heading';
+import { HStack } from '@astryxdesign/core/HStack';
+import { Item } from '@astryxdesign/core/Item';
+import { List } from '@astryxdesign/core/List';
+import { Text } from '@astryxdesign/core/Text';
+import { VStack } from '@astryxdesign/core/VStack';
+import type { Concept } from '@trailmap/shared';
+import { useCallback } from 'react';
+import { readAtlasEvidence } from '../../atlas/data';
+import type { TrailmapDb } from '../../db/db';
+import { useJournalData } from '../../journal/data';
+import { expeditionHref, formatExpeditionDate } from '../../journal/links';
+import { webUrl } from '../../ui/web-url';
+
+export function ConceptCard({ concept, neighbours, onFocus, onClose }: {
+  concept: Concept; neighbours: readonly Pick<Concept, 'id' | 'name'>[];
+  onFocus: (id: string) => void; onClose: () => void;
+}) {
+  const read = useCallback((db: TrailmapDb) => readAtlasEvidence(db, concept.id), [concept.id]);
+  const evidence = useJournalData(read);
+  return (
+    <VStack as="aside" aria-label="Concept details" className="min-w-0">
+      <Card padding={5}>
+        <VStack gap={5}>
+          <VStack gap={2}>
+            <HStack align="center" justify="between" gap={2}>
+              <Text type="supporting">Concept details</Text>
+              <Button size="sm" variant="ghost" label="Close" onClick={onClose} />
+            </HStack>
+            <Heading level={2}>{concept.name}</Heading>
+            <Text>{concept.gloss || 'No gloss yet.'}</Text>
+            <Text type="supporting">First seen {formatExpeditionDate(concept.firstSeen)}</Text>
+          </VStack>
+          {!evidence && <Text type="supporting">Looking up evidence…</Text>}
+          {evidence?.error && <Text role="alert">Could not load this concept’s evidence.</Text>}
+          {evidence?.data && (
+            <>
+              <VStack gap={1}>
+                <Heading level={3}>Evidence pages</Heading>
+                {evidence.data.pages.length ? (
+                  <List edge="flush" aria-label="Evidence pages">
+                    {evidence.data.pages.map(({ url, title, taught }) => (
+                      <Item key={url} as="li" label={title} labelLines={2} density="compact"
+                        description={taught ? 'Explains this concept' : 'Mentions or uses this concept'}
+                        href={webUrl(url)?.href} target="_blank" />
+                    ))}
+                  </List>
+                ) : <Text type="supporting">No evidence pages remain.</Text>}
+              </VStack>
+              <VStack gap={1}>
+                <Heading level={3}>Expeditions</Heading>
+                {evidence.data.expeditions.length ? (
+                  <List edge="flush" aria-label="Expeditions">
+                    {evidence.data.expeditions.map(({ id, title }) => (
+                      <Item key={id} as="li" label={title} labelLines={2} density="compact" href={expeditionHref(id)} />
+                    ))}
+                  </List>
+                ) : <Text type="supporting">Not part of an expedition yet.</Text>}
+              </VStack>
+            </>
+          )}
+          <VStack gap={1}>
+            <Heading level={3}>Neighbours</Heading>
+            {neighbours.length ? (
+              <List edge="flush" aria-label="Neighbours">
+                {neighbours.map(({ id, name }) => (
+                  <Item key={id} as="li" label={name} labelLines={2} density="compact" onClick={() => onFocus(id)} />
+                ))}
+              </List>
+            ) : <Text type="supporting">No connected concepts at this date.</Text>}
+          </VStack>
+        </VStack>
+      </Card>
+    </VStack>
+  );
+}
