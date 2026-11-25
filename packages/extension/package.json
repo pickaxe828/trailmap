@@ -21,6 +21,7 @@
     "@xyflow/react": "12.12.1",
     "dexie": "4.4.7",
     "elkjs": "0.12.1",
+    "fflate": "0.8.2",
     "react": "19.2.9",
     "react-dom": "19.2.9",
     "zod": "4.6.7"

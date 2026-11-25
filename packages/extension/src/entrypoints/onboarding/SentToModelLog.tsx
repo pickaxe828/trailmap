@@ -27,7 +27,7 @@ export function SentToModelLog() {
     <VStack as="section" aria-labelledby="sent-to-model" gap={2}>
       <Heading level={3} id="sent-to-model">Sent-to-model log</Heading>
       <Text as="p">
-        This log stays in this browser. It records the exact text and provider for each model attempt, including retries and failed calls.
+        This log is stored in this browser. It records the exact text and provider for each model attempt, including retries and failed calls.
         Entries are written immediately before sending; a connection loss can prevent delivery.
       </Text>
       {entries?.length === 0 && <Text type="supporting">No model calls yet.</Text>}
