@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import type { Visit } from '@trailmap/shared';
+import type { Page, Visit } from '@trailmap/shared';
+import Dexie from 'dexie';
 import { openTrailmapDb, type TrailmapDb } from './db';
 
 let db: TrailmapDb;
@@ -45,9 +46,23 @@ describe('database', () => {
     expect(inExp1.map((v) => v.id)).toEqual(['visit-1']);
   });
 
+  test('upgrade queues resolution for previously enriched Pages with evidence without calling a model', async () => {
+    const previous = new Dexie(dbName);
+    previous.version(5).stores({ pages: 'canonicalUrl, textHash, enrichedAt', jobs: 'id, status, [status+priority+createdAt]' });
+    await previous.table('pages').add({
+      canonicalUrl: visit.canonicalUrl, text: 'Page text', textHash: 'hash', summary: 'Summary', takeaways: [],
+      embedding: null, pageKind: 'article', enrichedAt: 2000, enrichmentVisitId: visit.id,
+      conceptMentions: [{ name: 'CRDT', gloss: 'A replicated data type', role: 'explains', kind: 'concept' }],
+    } satisfies Page);
+    previous.close();
+    expect(await db.jobs.toArray()).toMatchObject([
+      { kind: 'concept_resolution', status: 'pending', payload: { canonicalUrl: visit.canonicalUrl, visitId: visit.id, enrichedAt: 2000 } },
+    ]);
+  });
+
   test('has tables for domain entities, durable jobs, model dispatches and the correction log', () => {
     expect(db.tables.map((t) => t.name).sort()).toEqual([
-      'concepts', 'corrections', 'edges', 'expeditions', 'highlights', 'jobs', 'notes', 'pages', 'queries', 'queueHolds', 'sentToModel', 'threads', 'visits',
+      'conceptEvidence', 'concepts', 'corrections', 'edges', 'expeditions', 'highlights', 'jobs', 'notes', 'pages', 'queries', 'queueHolds', 'sentToModel', 'threads', 'visits',
     ]);
   });
 });

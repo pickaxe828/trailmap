@@ -11,7 +11,10 @@ import type {
   Thread,
   Visit,
 } from '@trailmap/shared';
-import type { Job, QueueHold } from '../jobs/types';
+import type { ConceptEvidence } from '../concepts/evidence';
+import { conceptResolutionJob } from '../concepts/enqueue';
+import { enqueueJob } from '../jobs/queue';
+import type { Job, JobSpec, QueueHold } from '../jobs/types';
 
 /**
  * The Trailmap IndexedDB database. One table per entity in docs/PLAN.md §3.
@@ -27,6 +30,7 @@ export type TrailmapDb = Dexie & {
   expeditions: EntityTable<Expedition, 'id'>;
   threads: EntityTable<Thread, 'id'>;
   concepts: EntityTable<Concept, 'id'>;
+  conceptEvidence: EntityTable<ConceptEvidence, 'id'>;
   edges: EntityTable<Edge, 'id'>;
   highlights: EntityTable<Highlight, 'id'>;
   notes: EntityTable<Note, 'id'>;
@@ -46,7 +50,9 @@ export type CorrectionLogEntry = {
   after: unknown;
 };
 
-export type SentToModel = ModelDispatch & { id: string; at: number; task: string; canonicalUrl?: string; expeditionId?: string; canonicalUrls?: string[] };
+export type SentToModel = ModelDispatch & {
+  id: string; at: number; task: string; canonicalUrl?: string; expeditionId?: string; canonicalUrls?: string[]; visitIds?: string[];
+};
 
 export const DB_NAME = 'trailmap';
 
@@ -128,6 +134,14 @@ export function openTrailmapDb(name: string = DB_NAME): TrailmapDb {
     queueHolds: 'id',
     sentToModel: 'id, at, canonicalUrl',
     corrections: 'id, at, *targetIds',
+  });
+  db.version(7).stores({ conceptEvidence: 'id, conceptId, visitId, sourceVisitId, canonicalUrl' }).upgrade(async () => {
+    const jobs: JobSpec<'concept_resolution'>[] = [];
+    await db.pages.where('enrichedAt').aboveOrEqual(0).each((page) => {
+      const job = conceptResolutionJob(page);
+      if (job) jobs.push(job);
+    });
+    for (const job of jobs) await enqueueJob(db, job, job.payload.enrichedAt);
   });
   return db;
 }

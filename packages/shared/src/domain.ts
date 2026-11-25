@@ -62,6 +62,11 @@ export const PageEnrichment = z.object({
 });
 export type PageEnrichment = z.infer<typeof PageEnrichment>;
 
+export const ConceptMergeVerdicts = z.object({
+  verdicts: z.array(z.object({ id: z.string(), verdict: z.enum(['same', 'broader', 'narrower', 'related', 'different']) })),
+});
+export type ConceptMergeVerdicts = z.infer<typeof ConceptMergeVerdicts>;
+
 export const Page = z.object({
   canonicalUrl: z.string(),
   text: z.string(),
@@ -76,6 +81,8 @@ export const Page = z.object({
   sourceVisitId: z.string().optional(),
   textRevision: z.number().int().optional(), // Advances when Readability output changes.
   enrichmentVisitId: z.string().optional(), // Evidence for the unresolved mentions.
+  enrichmentSourceVisitId: z.string().optional(),
+  enrichmentSourceUrl: z.string().optional(),
   answersQuestion: PageEnrichment.shape.answers_question.optional(),
   conceptMentions: PageEnrichment.shape.concepts.optional(),
   relationMentions: PageEnrichment.shape.relations.optional(),
@@ -182,6 +189,9 @@ export const Edge = z.object({
   type: EdgeType,
   weight: z.number(),
   evidence: z.array(z.string()),
+  observedEvidence: z.array(z.string()).optional(),
+  // A verdict is supported jointly by these Visits, not independently by each Visit.
+  verdictEvidence: z.array(z.array(z.string())).optional(),
 });
 export type Edge = z.infer<typeof Edge>;
 
