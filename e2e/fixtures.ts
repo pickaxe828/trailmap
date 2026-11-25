@@ -10,10 +10,13 @@
  *  - waits for the extension's service worker, from which `extensionId` is read.
  */
 import { chromium, test as base, expect, type BrowserContext, type Page, type Worker } from '@playwright/test';
-import type { Visit } from '../packages/shared/src/domain';
+import type { Highlight, Page as CapturedPage, Query, Visit } from '../packages/shared/src/domain';
 import { EXTENSION_DIR, FIXTURE_PORT } from './constants';
 
+type CaptureTables = { visits: Visit; pages: CapturedPage; queries: Query; highlights: Highlight };
+
 type Fixtures = {
+  readCapture: <T extends keyof CaptureTables>(table: T) => Promise<CaptureTables[T][]>;
   context: BrowserContext;
   extensionId: string;
   /** Opens chrome-extension://<id>/<path> in a new tab, e.g. openExtensionPage('sidepanel.html'). */
@@ -69,15 +72,15 @@ export const test = base.extend<Fixtures>({
   // Reads through the onboarding tab the extension opens on install (it is an extension page, so it
   // shares the extension's IndexedDB). That keeps the tab under test the active one. (Reading from the
   // service worker was flaky: `indexedDB.databases()` is empty there.)
-  readVisits: async ({ context, extensionId }, use) => {
+  readCapture: async ({ context, extensionId }, use) => {
     const readerUrl = `chrome-extension://${extensionId}/onboarding.html`;
-    await use(async () => {
+    await use(async <T extends keyof CaptureTables>(table: T) => {
       let reader = context.pages().find((p) => p.url() === readerUrl);
       if (!reader) {
         await expect.poll(() => context.pages().some((p) => p.url() === readerUrl), { timeout: 10_000 }).toBe(true);
         reader = context.pages().find((p) => p.url() === readerUrl)!;
       }
-      return reader.evaluate(async () => {
+      return reader.evaluate(async (table) => {
         // Opening a database that doesn't exist yet would create it empty and confuse Dexie.
         if (!(await indexedDB.databases()).some((d) => d.name === 'trailmap')) return [];
         const db = await new Promise<IDBDatabase>((resolve, reject) => {
@@ -86,15 +89,17 @@ export const test = base.extend<Fixtures>({
           request.onerror = () => reject(request.error);
         });
         const rows = await new Promise<unknown[]>((resolve, reject) => {
-          const request = db.transaction('visits').objectStore('visits').getAll();
+          const request = db.transaction(table).objectStore(table).getAll();
           request.onsuccess = () => resolve(request.result);
           request.onerror = () => reject(request.error);
         });
         db.close();
         return rows;
-      }) as Promise<Visit[]>;
+      }, table) as Promise<CaptureTables[T][]>;
     });
   },
+
+  readVisits: async ({ readCapture }, use) => use(() => readCapture('visits')),
 
   fixtureUrl: async ({}, use) => {
     await use((host, path = '/') => `http://${host}:${FIXTURE_PORT}${path}`);
