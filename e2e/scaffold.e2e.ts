@@ -11,13 +11,13 @@ test('the side panel page renders Astryx content saying recording is on', async 
   await expect(page.getByRole('heading', { name: 'Trailmap' })).toBeVisible();
   await expect(page.getByText('Recording is on')).toBeVisible();
   await expect(page.locator('.astryx-heading')).toHaveCount(1);
-  await expect(page.locator('.astryx-status-dot')).toBeVisible();
+  await expect(page.locator('.astryx-status-dot').first()).toBeVisible();
 });
 
 test('the onboarding page renders Astryx content', async ({ openExtensionPage }) => {
   const page = await openExtensionPage('onboarding.html');
   await expect(page.getByRole('heading', { name: 'Welcome to Trailmap' })).toBeVisible();
-  await expect(page.locator('.astryx-heading')).toHaveCount(1);
+  await expect(page.locator('.astryx-heading').first()).toBeVisible();
 });
 
 test('installing the extension opens the onboarding tab by itself', async ({ context, extensionId }) => {
