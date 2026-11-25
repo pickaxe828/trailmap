@@ -1,8 +1,10 @@
-export const JOB_PRIORITY = { readPage: 0, fieldNotes: 1, skimmedPage: 2, mergeVerdict: 3 } as const;
+export const JOB_PRIORITY = { readPage: 0, conceptResolution: 0, fieldNotes: 1, skimmedPage: 2, mergeVerdict: 3 } as const;
 export type JobPriority = (typeof JOB_PRIORITY)[keyof typeof JOB_PRIORITY];
 
 export type JobPayloads = {
   page_enrichment: { canonicalUrl: string; textHash: string; visitId: string; textRevision?: number };
+  concept_resolution: { canonicalUrl: string; visitId: string; enrichedAt: number; textHash: string; textRevision?: number };
+  merge_verdict: { pairs: { candidateId: string; existingId: string }[] };
 };
 
 export type JobKind = keyof JobPayloads;

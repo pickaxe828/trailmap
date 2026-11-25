@@ -1,6 +1,9 @@
 import { liveQuery } from 'dexie';
 import { getCompanionClient } from '../companion/background';
+import { resolveConcepts } from '../concepts/resolve';
+import { decideConceptMerges } from '../concepts/verdicts';
 import type { TrailmapDb } from '../db/db';
+import { getEmbedder } from '../embeddings/background';
 import { enrichPage } from '../enrichment/handler';
 import type { RecordingSettings } from '../privacy/policy';
 import { JobQueue } from './queue';
@@ -9,7 +12,11 @@ const ALARM = 'trailmap.jobs';
 
 /** Alarms recover due work even if the worker died after capture, claim or backoff. */
 export function startJobs(db: TrailmapDb, ready: Promise<void>, getSettings: () => RecordingSettings): void {
-  const queue = new JobQueue(db, Date.now, { page_enrichment: enrichPage(db, getSettings) }, [db.pages]);
+  const queue = new JobQueue(db, Date.now, {
+    page_enrichment: enrichPage(db, getSettings),
+    concept_resolution: resolveConcepts(db, getEmbedder(), Date.now),
+    merge_verdict: decideConceptMerges(db, getSettings, Date.now),
+  }, [db.pages, db.visits, db.concepts, db.conceptEvidence, db.edges]);
   const client = getCompanionClient();
   let pumping = false;
   function kick() {

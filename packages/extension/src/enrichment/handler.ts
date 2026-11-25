@@ -1,6 +1,7 @@
 import { LlmCompletion, PageEnrichment } from '@trailmap/shared';
 import { z } from 'zod';
 import { CompanionRequestError } from '../companion/client';
+import { enqueueConceptResolution } from '../concepts/enqueue';
 import type { TrailmapDb } from '../db/db';
 import type { JobHandlers } from '../jobs/queue';
 import type { JobPayloads } from '../jobs/types';
@@ -33,23 +34,26 @@ export function enrichPage(db: TrailmapDb, getSettings: () => RecordingSettings)
     const settings = getSettings();
     if (settings.paused) return 'waiting';
     const input = buildEnrichmentInput({ visit, page, highlights, sourceVisit, expedition, root, parent }, settings);
-    return input && JSON.stringify(input);
+    return input && { input: JSON.stringify(input), sourceUrl: page.sourceUrl, sourceVisitId: page.sourceVisitId };
   }
 
   return async (job) => {
     const { payload } = job;
-    const input = await db.transaction('r', sources, () => prepare(payload));
-    if (input === 'waiting') return { retryAt: Date.now() + 5_000 };
-    if (!input) return 'discard';
+    const prepared = await db.transaction('r', sources, () => prepare(payload));
+    if (prepared === 'waiting') return { retryAt: Date.now() + 5_000 };
+    if (!prepared) return 'discard';
+    const { input, sourceUrl, sourceVisitId } = prepared;
     let output: unknown;
     try {
       ({ output } = await requestModel(db, { task: 'page_enrichment', instructions, input, schema, schemaName: 'page_enrichment' }, {
         canonicalUrl: payload.canonicalUrl,
+        visitIds: [...new Set([payload.visitId, ...(sourceVisitId ? [sourceVisitId] : [])])],
         tables: [...sources, db.jobs],
         allow: async () => {
           const current = await db.jobs.get(job.id);
-          return !!current?.lease && current.lease.token === job.lease?.token &&
-            current.lease.until > Date.now() && await prepare(payload) === input;
+          if (!current?.lease || current.lease.token !== job.lease?.token || current.lease.until <= Date.now()) return false;
+          const latest = await prepare(payload);
+          return !!latest && latest !== 'waiting' && latest.input === input && latest.sourceVisitId === sourceVisitId && latest.sourceUrl === sourceUrl;
         },
       }));
     } catch (error) {
@@ -64,11 +68,15 @@ export function enrichPage(db: TrailmapDb, getSettings: () => RecordingSettings)
     return { commit: async () => {
       const page = await db.pages.get(payload.canonicalUrl);
       if (page?.textHash !== payload.textHash || page.textRevision !== payload.textRevision || page.enrichedAt !== null) return;
-      await db.pages.update(payload.canonicalUrl, {
-        summary: notes.summary, takeaways: notes.takeaways, answersQuestion: notes.answers_question,
-        pageKind: notes.page_kind, enrichedAt: Date.now(), enrichmentVisitId: payload.visitId,
+      const at = Date.now();
+      const enriched = {
+        ...page, summary: notes.summary, takeaways: notes.takeaways, answersQuestion: notes.answers_question,
+        pageKind: notes.page_kind, enrichedAt: at, enrichmentVisitId: payload.visitId,
+        enrichmentSourceUrl: sourceUrl, enrichmentSourceVisitId: sourceVisitId,
         conceptMentions: notes.concepts, relationMentions: notes.relations,
-      });
+      };
+      await db.pages.put(enriched);
+      await enqueueConceptResolution(db, enriched, at);
     } };
   };
 }

@@ -61,6 +61,14 @@ test('queued Page notes survive a worker restart, filter at dispatch, and log ev
     relationMentions: [{ from: 'Tombstone', to: 'CRDT', type: 'part_of' }],
   });
 
+  await expect.poll(async () => (await readCapture('concepts')).map(({ name, exposure }) => ({ name, exposure })))
+    .toEqual([{ name: 'Tombstone', exposure: 1 }]);
+  const [concept] = await readCapture('concepts');
+  const evidenceVisit = (await readCapture('visits')).find(({ url }) => new URL(url).hostname === 'learn.test');
+  await expect.poll(() => readCapture('edges')).toMatchObject([
+    { from: evidenceVisit?.id, to: concept?.id, type: 'teaches', evidence: [evidenceVisit?.id], weight: 1 },
+  ]);
+
   const settingsTab = context.waitForEvent('page');
   await panel.getByRole('link', { name: 'Sent-to-model log' }).click();
   const settings = await settingsTab;

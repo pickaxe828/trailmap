@@ -1,3 +1,4 @@
+import { forgetConceptEvidence, forgetEdgeEvidence } from '../concepts/forget';
 import type { TrailmapDb } from '../db/db';
 import { enqueuePageEnrichment } from '../enrichment/enqueue';
 import { siteKey } from '../privacy/policy';
@@ -34,7 +35,7 @@ export const hostMatches = (url: string | undefined, host: string) => {
 export async function forgetCascade(db: TrailmapDb, input: ForgetInput): Promise<ForgetResult> {
   const { kind, now, newId } = input;
   const tables = [db.visits, db.queries, db.pages, db.highlights, db.notes, db.edges, db.jobs, db.sentToModel,
-    db.expeditions, db.corrections];
+    db.expeditions, db.corrections, db.concepts, db.conceptEvidence];
   return db.transaction('rw', tables, async () => {
     const visits = (await db.visits.bulkGet(input.visitIds)).filter((v) => v !== undefined);
     const visitIds = visits.map(({ id }) => id);
@@ -62,39 +63,49 @@ export async function forgetCascade(db: TrailmapDb, input: ForgetInput): Promise
     await db.highlights.bulkDelete([...highlights]);
     const pagesDeleted = await db.pages.where('canonicalUrl').anyOf(urls).delete();
 
-    const audit = await db.sentToModel.where('canonicalUrl').anyOf(urls).primaryKeys();
+    const audit = [...new Set([
+      ...await db.sentToModel.where('canonicalUrl').anyOf(urls).primaryKeys(),
+      ...await db.sentToModel.filter((row) => !!row.visitIds?.some((id) => gone.has(id)) ||
+        !!row.canonicalUrls?.some((url) => orphans.has(url))).primaryKeys(),
+    ])];
     await db.sentToModel.bulkDelete(audit);
 
-    const jobs = await db.jobs.filter(({ payload }) => orphans.has(payload.canonicalUrl) || gone.has(payload.visitId)).primaryKeys();
+    const jobs = await db.jobs.filter(({ payload }) => 'canonicalUrl' in payload &&
+      (orphans.has(payload.canonicalUrl) || gone.has(payload.visitId))).primaryKeys();
     await db.jobs.bulkDelete(jobs);
+    let replacedJobs = 0;
     for (const url of survivors) {
       const page = await db.pages.get(url);
       if (!page) continue;
       const remaining = (await db.visits.where('canonicalUrl').equals(url).sortBy('startedAt')).reverse();
       const replacement = remaining[0]!;
       const changes: Partial<typeof page> = {};
-      if (page.sourceVisitId && gone.has(page.sourceVisitId)) changes.sourceVisitId = replacement.id;
-      if (page.enrichmentVisitId && gone.has(page.enrichmentVisitId)) changes.enrichmentVisitId = replacement.id;
+      const enrichmentSource = page.enrichmentSourceVisitId ?? page.sourceVisitId;
+      const sourceGone = !!page.sourceVisitId && gone.has(page.sourceVisitId);
+      if (sourceGone) changes.sourceVisitId = replacement.id;
+      if ((page.enrichmentVisitId && gone.has(page.enrichmentVisitId)) || (enrichmentSource && gone.has(enrichmentSource))) {
+        // Another Visit to the same Page doesn't retroactively supply the old inference.
+        Object.assign(changes, {
+          enrichedAt: null, summary: null, takeaways: [], pageKind: null, answersQuestion: undefined,
+          enrichmentVisitId: undefined, enrichmentSourceVisitId: undefined, enrichmentSourceUrl: undefined,
+          conceptMentions: undefined, relationMentions: undefined,
+        } satisfies Partial<typeof page>);
+      }
+      if (sourceGone || changes.enrichedAt === null) {
+        replacedJobs += await db.jobs.filter(({ kind, payload }) => 'canonicalUrl' in payload && payload.canonicalUrl === url &&
+          (kind === 'page_enrichment' || changes.enrichedAt === null)).delete();
+      }
       if (Object.keys(changes).length) await db.pages.update(url, changes);
       const engaged = remaining.find((v) => v.engagement !== 'bounced' && !v.privacyBlocked);
       if (engaged) await enqueuePageEnrichment(db, engaged, now(), { ...page, ...changes });
     }
 
-    const nodeIds = new Set([...visitIds, ...queryIds, ...forgottenExpeditions, ...urls]);
+    const { removedConceptIds, removedJobs, evidenceVisits } = await forgetConceptEvidence(db, gone, urls, now());
+    const nodeIds = new Set([...visitIds, ...queryIds, ...forgottenExpeditions, ...urls, ...removedConceptIds]);
     const notes = await db.notes.where('nodeId').anyOf([...nodeIds]).primaryKeys();
     await db.notes.bulkDelete(notes);
 
-    let edgesTouched = 0;
-    for (const edge of await db.edges.toArray()) {
-      const evidence = edge.evidence.filter((id) => !gone.has(id));
-      if (nodeIds.has(edge.from) || nodeIds.has(edge.to) || (evidence.length === 0 && edge.evidence.length > 0)) {
-        await db.edges.delete(edge.id);
-        edgesTouched++;
-      } else if (evidence.length !== edge.evidence.length) {
-        await db.edges.update(edge.id, { evidence });
-        edgesTouched++;
-      }
-    }
+    const edgesTouched = await forgetEdgeEvidence(db, nodeIds, gone, evidenceVisits);
 
     for (const id of forgottenExpeditions) {
       await db.expeditions.delete(id);
@@ -118,7 +129,7 @@ export async function forgetCascade(db: TrailmapDb, input: ForgetInput): Promise
       id: newId(), at: now(), kind, targetIds: [], after: null,
       before: {
         visits: visitIds.length, pages: pagesDeleted, queries: queryIds.size, highlights: highlights.size,
-        notes: notes.length, jobs: jobs.length, auditRows: audit.length, edges: edgesTouched,
+        notes: notes.length, jobs: jobs.length + replacedJobs + removedJobs, auditRows: audit.length, edges: edgesTouched, concepts: removedConceptIds.length,
         expeditions: forgottenExpeditions.length,
       },
     });

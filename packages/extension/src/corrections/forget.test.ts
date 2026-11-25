@@ -145,5 +145,5 @@ test('a Page that survives a forgotten Visit is queued for enrichment again from
   await db.pages.update('https://secret.example/s', { enrichedAt: null, sourceUrl: 'https://secret.example/s' });
   await corrections().forgetExpedition('e1');
   const jobs = await db.jobs.toArray();
-  expect(jobs.filter((job) => job.payload.canonicalUrl === 'https://secret.example/s').map((job) => job.payload.visitId)).toEqual(['s2']);
+  expect(jobs.flatMap(({ payload }) => 'canonicalUrl' in payload && payload.canonicalUrl === 'https://secret.example/s' ? [payload.visitId] : [])).toEqual(['s2']);
 });
