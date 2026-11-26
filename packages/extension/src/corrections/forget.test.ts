@@ -209,3 +209,14 @@ test('a surviving independent capture can still be queued for enrichment', async
   const jobs = await db.jobs.toArray();
   expect(jobs.flatMap(({ payload }) => 'canonicalUrl' in payload && payload.canonicalUrl === 'https://secret.example/s' ? [payload.visitId] : [])).toEqual(['s2']);
 });
+
+test('Forget Site also removes imported history Visits and stored URLs never keep session tokens', async () => {
+  await db.visits.bulkPut([
+    visit('history:1', 'secret.example', { imported: true, tabId: -1, engagement: 'bounced', expeditionId: null, url: 'https://secret.example/p?sid=abc#x' }),
+    visit('history:2', 'keep.example', { imported: true, tabId: -1, engagement: 'bounced', expeditionId: null, url: 'https://keep.example/p?utm_source=x&topic=1' }),
+  ]);
+  expect((await db.visits.get('history:2'))?.url).toBe('https://keep.example/p?topic=1');
+  expect((await db.visits.get('history:1'))?.url).toBe('https://secret.example/p');
+  await corrections().forgetSite('secret.example');
+  expect((await db.visits.toArray()).map(({ id }) => id)).toEqual(['history:2']);
+});
