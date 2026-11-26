@@ -7,8 +7,18 @@ import { LlmFailure } from './provider';
 
 const providers = { chatgpt: openAiProvider, anthropic: anthropicProvider, ollama: ollamaProvider };
 
-export function complete(ctx: CompanionContext, request: LlmCompletion) {
-  return providers[request.provider ?? 'chatgpt'](ctx).complete(request);
+export async function complete(ctx: CompanionContext, request: LlmCompletion) {
+  const provider = request.provider ?? 'chatgpt';
+  try {
+    return await providers[provider](ctx).complete(request);
+  } catch (error) {
+    const failure = error instanceof LlmFailure ? error : undefined;
+    const code = failure?.code ?? 'internal';
+    const reason = failure?.reason ?? code;
+    const status = failure?.status;
+    ctx.log(`llm.complete failed provider=${provider} code=${code} reason=${reason}${status === undefined ? '' : ` status=${status}`}`);
+    throw error;
+  }
 }
 
 export async function modelCatalog(ctx: CompanionContext) {

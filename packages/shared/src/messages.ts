@@ -11,7 +11,7 @@
  * The protocol carries account status, never ChatGPT credentials.
  */
 import { z } from 'zod';
-import { LlmCompletion, LlmErrorCode, LlmModel, LlmOutput, ModelDispatch, ProviderCatalogStatus, ProviderModel } from './llm';
+import { LlmCompletion, LlmErrorCode, LlmModel, LlmOutput, ModelAttemptResult, ModelDispatch, ProviderCatalogStatus, ProviderModel } from './llm';
 
 /** The Native Messaging host name, shared by the install manifest and `chrome.runtime.connectNative`. */
 export const NATIVE_HOST_NAME = 'com.trailmap.companion';
@@ -119,6 +119,7 @@ export const CompanionEvent = z.discriminatedUnion('name', [
   z.object({ type: z.literal('event'), name: z.literal('auth.changed') }),
   z.object({ type: z.literal('event'), name: z.literal('auth.failed'), message: z.string() }),
   ModelDispatch.extend({ type: z.literal('event'), name: z.literal('llm.dispatch'), auditId: z.uuid(), id: z.uuid() }),
+  z.object({ type: z.literal('event'), name: z.literal('llm.dispatchFinished'), auditId: z.uuid(), id: z.uuid(), result: ModelAttemptResult }),
   /** Sent just before the companion exits on an error it cannot recover from. */
   z.object({ type: z.literal('event'), name: z.literal('companion.fatal'), message: z.string() }),
 ]);

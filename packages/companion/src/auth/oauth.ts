@@ -16,7 +16,7 @@ const tokenResponse = z.object({
 });
 
 export class OAuthError extends Error {
-  constructor(readonly code: string | undefined) {
+  constructor(readonly code: string | undefined, readonly status?: number) {
     super('The ChatGPT token request failed');
   }
 }
@@ -77,7 +77,7 @@ export class OpenAiOAuth {
     const body: unknown = await response.json();
     if (!response.ok) {
       const failure = z.object({ error: z.string() }).safeParse(body);
-      throw new OAuthError(failure.data?.error);
+      throw new OAuthError(failure.data?.error, response.status);
     }
     return tokenResponse.parse(body);
   }

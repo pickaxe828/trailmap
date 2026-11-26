@@ -10,6 +10,7 @@ export const LlmErrorCode = z.enum([
   'invalid_output',
   'provider_rejected',
   'dispatch_cancelled',
+  'api_key_missing',
   'invalid_api_key',
   'provider_rate_limited',
   'provider_unreachable',
@@ -54,6 +55,15 @@ export const ModelDispatch = z.object({
   input: z.array(z.object({ role: z.enum(['user', 'assistant']), content: z.string() })),
 });
 export type ModelDispatch = z.infer<typeof ModelDispatch>;
+
+export const RAW_MODEL_OUTPUT_MAX_BYTES = 32 * 1024;
+export const ModelAttemptResult = z.discriminatedUnion('outcome', [
+  z.object({ outcome: z.literal('succeeded'), output: LlmOutput }),
+  z.object({ outcome: z.literal('failed'), errorCode: LlmErrorCode.or(z.literal('internal')),
+    output: z.string().refine((text) => new TextEncoder().encode(text).length <= RAW_MODEL_OUTPUT_MAX_BYTES).optional() }),
+  z.object({ outcome: z.literal('cancelled'), errorCode: z.literal('dispatch_cancelled') }),
+]);
+export type ModelAttemptResult = z.infer<typeof ModelAttemptResult>;
 
 export const LlmModel = z.object({ slug: z.string().min(1).max(200), displayName: z.string().min(1) });
 export type LlmModel = z.infer<typeof LlmModel>;
