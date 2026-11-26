@@ -6,6 +6,8 @@ import { useCompanionStatus } from '../../companion/useCompanionStatus';
 import { ProviderSettings } from '../../llm/ProviderSettings';
 import { ChatGptConnection } from '../../ui/ChatGptConnection';
 import { SentToModelLog } from './SentToModelLog';
+import { ExportSettings } from '../../vault/ExportSettings';
+import { VaultSettings } from '../../vault/VaultSettings';
 
 /** Onboarding tab, opened on first install. Placeholder: later tickets add the privacy screen. */
 export function App() {
@@ -37,9 +39,11 @@ export function App() {
         </Text>
       </VStack>
       {companion.state === 'connected' && <ChatGptConnection />}
-      <VStack gap={3}>
+      <VStack gap={3} id="settings">
         <Heading level={2}>Settings</Heading>
         <ProviderSettings />
+        <VaultSettings companion={companion} />
+        <ExportSettings />
         <SentToModelLog />
       </VStack>
     </VStack>

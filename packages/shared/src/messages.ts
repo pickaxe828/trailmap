@@ -16,6 +16,10 @@ import { LlmCompletion, LlmErrorCode, LlmModel, LlmOutput, ModelDispatch, Provid
 /** The Native Messaging host name, shared by the install manifest and `chrome.runtime.connectNative`. */
 export const NATIVE_HOST_NAME = 'com.trailmap.companion';
 
+export const VaultFolder = z.object({ id: z.string(), path: z.string() });
+export type VaultFolder = z.infer<typeof VaultFolder>;
+export const VAULT_PICKER_TIMEOUT_MS = 130_000;
+
 export const CompanionRequest = z.discriminatedUnion('type', [
   z.object({ type: z.literal('companion.hello'), id: z.string() }),
   z.object({ type: z.literal('auth.signIn'), id: z.string() }),
@@ -26,6 +30,10 @@ export const CompanionRequest = z.discriminatedUnion('type', [
   LlmCompletion.extend({ type: z.literal('llm.complete'), id: z.string() }),
   z.object({ type: z.literal('llm.models'), id: z.string() }),
   z.object({ type: z.literal('llm.dispatchAck'), id: z.string(), dispatchId: z.uuid(), allow: z.boolean() }),
+  // Omitted path opens the picker; null turns off syncing.
+  z.object({ type: z.literal('vault.setFolder'), id: z.string(), path: z.string().min(1).nullable().optional() }),
+  z.object({ type: z.literal('vault.write'), id: z.string(), folderId: z.string(), path: z.string(), markdown: z.string() }),
+  z.object({ type: z.literal('vault.remove'), id: z.string(), folderId: z.string(), path: z.string(), sha256: z.string().regex(/^[a-f0-9]{64}$/) }),
 ]);
 export type CompanionRequest = z.infer<typeof CompanionRequest>;
 export type CompanionRequestType = CompanionRequest['type'];
@@ -43,6 +51,9 @@ export const ErrorCode = z.enum([
   'auth_unavailable',
   'auth_required',
   'plan_usage_disabled',
+  'vault_invalid_folder',
+  'vault_unsafe_path',
+  'vault_unavailable',
   ...LlmErrorCode.options,
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
@@ -89,6 +100,9 @@ export const CompanionResponse = z.discriminatedUnion('type', [
   z.object({ type: z.literal('llm.complete'), id: z.string(), output: LlmOutput }),
   z.object({ type: z.literal('llm.models'), id: z.string(), models: z.array(ProviderModel.or(LlmModel)), providers: z.array(ProviderCatalogStatus).optional() }),
   z.object({ type: z.literal('llm.dispatchAck'), id: z.string() }),
+  z.object({ type: z.literal('vault.setFolder'), id: z.string(), folder: VaultFolder.nullable(), cancelled: z.literal(true).optional() }),
+  z.object({ type: z.literal('vault.write'), id: z.string() }),
+  z.object({ type: z.literal('vault.remove'), id: z.string() }),
   CompanionError,
 ]);
 export type CompanionResponse = z.infer<typeof CompanionResponse>;
