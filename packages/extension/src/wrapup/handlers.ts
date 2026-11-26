@@ -4,6 +4,7 @@ import { CompanionRequestError } from '../companion/client';
 import type { TrailmapDb } from '../db/db';
 import { jobId, enqueueJob, JOB_PRIORITY, type JobHandlers, type JobResult } from '../jobs/queue';
 import { requestModel } from '../llm/dispatch';
+import { dismissed } from '../journal/suggestions';
 import type { ModelRoute } from '../llm/settings';
 import { eligibleMetadata, maySendToModel, type RecordingSettings } from '../privacy/policy';
 import { modelSources } from '../privacy/sources';
@@ -128,22 +129,22 @@ export function wrapUpHandlers(
         if (settings.paused || await waitingOnPages(s, settings)) return 'waiting' as const;
         const built = buildWrapUpInput(s, settings);
         if (built) return { text: JSON.stringify(built.input), urls: built.provenance.canonicalUrls,
-          visitIds: built.provenance.visitIds, value: built.sameDayIds };
-        // Nothing can leave the machine, but a closed Expedition still needs a title and kind.
+          visitIds: built.provenance.visitIds, value: { sameDayIds: built.sameDayIds, local: false } };
+        // Nothing can leave the machine. Give it a local title without guessing the kind.
         const root = s.visits.find(({ id }) => id === s.expedition.rootVisitId);
         const source = eligibleMetadata(root, settings) ? root : undefined;
         const title = (source && (oneLine(source.title) || URL.parse(source.url)?.hostname)) || 'Browsing Expedition';
-        const localOutput = { title: title.split(' ').slice(0, 8).join(' '), driving_question: '', kind: 'errand', merge_with: [] };
+        const localOutput = { title: title.split(' ').slice(0, 8).join(' '), driving_question: '', kind: 'unclassified' as const, merge_with: [] };
         const provenance = modelSources(source ? [source] : []);
         return { text: JSON.stringify(localOutput), urls: provenance.canonicalUrls, visitIds: provenance.visitIds,
-          value: new Map<string, string>(), localOutput };
+          value: { sameDayIds: new Map<string, string>(), local: true }, localOutput };
       };
       const result = await run(job, 'expedition_wrap_up', wrapUpInstructions, 'expedition_wrap_up', wrapUpSchema, prepare, expeditionId, route);
       if ('early' in result) return result.early;
-      const parsed = ExpeditionWrapUp.safeParse(result.output);
+      const { sameDayIds, local } = result.prepared.value;
+      const parsed = (local ? ExpeditionWrapUp.extend({ kind: z.literal('unclassified') }) : ExpeditionWrapUp).safeParse(result.output);
       if (!parsed.success) throw new CompanionRequestError('invalid_output', 'Invalid Expedition wrap-up.');
       const wrapUp = parsed.data;
-      const sameDayIds = result.prepared.value;
       return { commit: async () => {
         const current = await db.expeditions.get(expeditionId);
         if (!current || current.endedAt !== endedAt || !await result.stillCurrent()) return 'discard';
@@ -153,20 +154,28 @@ export function wrapUpHandlers(
           if (target && !wanted.has(target)) wanted.set(target, oneLine(reason));
         }
         const existing = await db.expeditions.bulkGet([...wanted.keys()]);
-        const mergeSuggestions: MergeSuggestion[] = [...wanted].filter((_, i) => existing[i])
+        const mergeSuggestions: MergeSuggestion[] = [...wanted].filter(([id], i) => existing[i] &&
+          !dismissed(current, { kind: 'expedition', id }, existing[i]))
           .map(([target, reason]) => ({ expeditionId: target, reason }));
         const title = oneLine(wrapUp.title).slice(0, 120);
         const question = oneLine(wrapUp.driving_question);
+        const kind = current.kindOverride ? current.kind : wrapUp.kind;
         const patch: Partial<Expedition> = {
-          kind: wrapUp.kind, wrappedUpAt: now(), mergeSuggestions,
+          kind, wrappedUpAt: now(), mergeSuggestions,
           wrapUpSource: { visitIds: result.prepared.visitIds, canonicalUrls: result.prepared.urls },
           drivingQuestion: question || current.drivingQuestion,
         };
         if (!current.userEdited && title) patch.title = title; // A renamed Expedition keeps the user's title.
-        if (wrapUp.kind === 'errand') Object.assign(patch, { threadId: null, threadSignature: undefined, threadSuggestion: undefined });
+        if (kind !== 'learning') Object.assign(patch, {
+          threadId: null, threadSignature: undefined, threadSuggestion: undefined,
+          fieldNotes: null, notesSource: undefined, unreadStops: undefined, notesWrittenAt: undefined, unseenNotes: undefined,
+        });
         await db.expeditions.update(expeditionId, patch);
-        if (wrapUp.kind === 'errand' && current.threadId) await refreshThread(db, current.threadId, now(), true);
-        if (wrapUp.kind === 'learning') {
+        if (kind !== 'learning' && current.threadId) await refreshThread(db, current.threadId, now(), true);
+        const alreadyQueued = current.kindOverride && await db.jobs.filter(({ kind, status, payload }) =>
+          kind === 'field_notes' && (status === 'pending' || status === 'leased') &&
+          'expeditionId' in payload && payload.expeditionId === expeditionId && 'endedAt' in payload && payload.endedAt === endedAt).first();
+        if (kind === 'learning' && (!current.kindOverride || (current.fieldNotes === null && !alreadyQueued))) {
           await enqueueJob(db, {
             kind: 'field_notes', key: JSON.stringify([expeditionId, endedAt, job.payload.revision]),
             priority: JOB_PRIORITY.fieldNotes, payload: job.payload,
@@ -181,7 +190,7 @@ export function wrapUpHandlers(
         const s = await load(expeditionId, endedAt, false);
         const settings = getSettings();
         const { expedition } = s ?? {};
-        if (!s || !expedition || expedition.kind !== 'learning' || expedition.wrappedUpAt === undefined ||
+        if (!s || !expedition || expedition.kind !== 'learning' || (expedition.wrappedUpAt === undefined && !expedition.kindOverride) ||
           (expedition.fieldNotes !== null && expedition.userEdited)) return;
         if (settings.paused || await waitingOnPages(s, settings)) return 'waiting' as const;
         const built = buildFieldNotesInput(s, settings);

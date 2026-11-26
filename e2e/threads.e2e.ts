@@ -87,7 +87,7 @@ test('a one-tap suggestion groups two sessions; detaching restores their Expedit
   }));
   await seed(setup, { expeditions });
   const journal = await openExtensionPage('journal.html');
-  const suggestion = journal.getByRole('button', { name: 'Part of Replica clocks?' });
+  const suggestion = journal.getByRole('button', { name: 'Add: Part of Replica clocks?' });
   await expect(suggestion).toBeVisible();
   await journal.screenshot({ path: process.env.PROOF_DIR ? join(process.env.PROOF_DIR, 'suggestion.png') : info.outputPath('suggestion.png') });
   await suggestion.click();
@@ -98,9 +98,40 @@ test('a one-tap suggestion groups two sessions; detaching restores their Expedit
   await expect(journal.getByRole('link', { name: 'Clock drift' })).toBeVisible();
   await expect(journal.getByRole('link', { name: 'Replica clocks' })).toBeVisible();
   await expect(journal.getByText('2 sessions')).toHaveCount(0);
-  await expect(journal.getByRole('button', { name: 'Part of Replica clocks?' })).toHaveCount(0);
+  await expect(journal.getByText('Part of Replica clocks?')).toHaveCount(0);
   await expect.poll(async () => (await readCapture('corrections')).sort((a, b) => a.at - b.at).map(({ kind }) => kind))
-    .toEqual(['thread-attach', 'thread-detach']);
+    .toEqual(['journal-start', 'thread-detach']);
+});
+
+test('marking an expedition as learning generates field notes; marking it not learning clears them', async ({
+  context, openExtensionPage,
+}, info) => {
+  const panel = await openExtensionPage('sidepanel.html');
+  await signInToMockChatGpt(context, await openExtensionPage('settings.html#model-providers'));
+  const at = Date.now() - 86_400_000;
+  const canonicalUrl = 'https://learn.test/replicated-lists';
+  await seed(panel, {
+    expeditions: [{ id: 'learn', rootVisitId: 'visit', title: 'Replicated lists', kind: 'unclassified',
+      startedAt: at, endedAt: at + 1000, drivingQuestion: null, fieldNotes: null, userEdited: false, threadId: null }],
+    visits: [{ id: 'visit', startedAt: at, expeditionId: 'learn', url: canonicalUrl, canonicalUrl, title: 'Replicated lists',
+      tabId: 1, parentVisitId: null, transition: 'typed', engagement: 'read', activeMs: 80_000, scrollDepth: 1 }],
+    pages: [{ canonicalUrl, sourceUrl: canonicalUrl, text: 'Article text', textHash: 'fixture',
+      summary: 'Replicas track deletions with tombstones.', takeaways: [], embedding: null, pageKind: 'article', enrichedAt: at }],
+  });
+  const journal = await openExtensionPage('journal.html');
+  await expect(journal.getByText('Mark as learning?', { exact: true })).toBeVisible();
+  await journal.getByRole('button', { name: 'Select', exact: true }).click();
+  await journal.getByRole('checkbox', { name: 'Select Replicated lists' }).check();
+  await journal.getByRole('button', { name: 'Mark as learning', exact: true }).click();
+  await expect(journal.getByText('New field notes')).toBeVisible({ timeout: 30_000 });
+  await journal.getByRole('heading', { name: 'Replicated lists' }).click();
+  const finding = journal.getByText(/A tombstone records/);
+  await expect(finding).toBeVisible();
+  await journal.screenshot({ path: process.env.PROOF_DIR ? join(process.env.PROOF_DIR, 'learning.png') : info.outputPath('learning.png') });
+  await journal.getByRole('button', { name: 'Mark as not learning' }).click();
+  await expect(finding).toHaveCount(0);
+  await journal.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(finding).toBeVisible();
 });
 
 async function seed(page: BrowserPage, rows: { expeditions: Expedition[]; visits?: Visit[]; pages?: Page[];

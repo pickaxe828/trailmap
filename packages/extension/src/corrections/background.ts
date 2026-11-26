@@ -1,5 +1,7 @@
 import type { VisitRecorder } from '../capture/recorder';
 import type { TrailmapDb } from '../db/db';
+import { createJournalCorrections } from '../journal/corrections';
+import { journalMessage } from '../journal/messages';
 import type { RecordingSettings } from '../privacy/policy';
 import { createCorrections } from './corrections';
 import { isCorrectionRequest } from './messages';
@@ -13,8 +15,21 @@ export function startCorrections(
 ) {
   const options = { db, now: Date.now, newId: () => crypto.randomUUID() };
   const service = createCorrectionService({ db, corrections: createCorrections(options), recorder, privacy });
+  const organise = createJournalCorrections(options);
   chrome.runtime.onMessage.addListener((input: unknown, sender, reply) => {
-    if (!isCorrectionRequest(input) || !sender.url) return;
+    if (!sender.url) return;
+    const journal = journalMessage.safeParse(input);
+    if (journal.success) {
+      const source = URL.parse(sender.url);
+      if (!source) return;
+      source.search = '';
+      source.hash = '';
+      if (source.href !== chrome.runtime.getURL('/journal.html') &&
+        !(source.href === chrome.runtime.getURL('/expedition.html') && ['classify', 'undo'].includes(journal.data.input.action))) return;
+      organise(journal.data.input).then(reply, () => reply(null));
+      return true;
+    }
+    if (!isCorrectionRequest(input)) return;
     if (sender.url !== chrome.runtime.getURL('/sidepanel.html')) {
       const source = URL.parse(sender.url);
       if (!source) return;

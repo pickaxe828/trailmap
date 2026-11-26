@@ -54,6 +54,16 @@ test('a possible match suggests a previous session without attaching either', as
   expect(await db.threads.count()).toBe(0);
 });
 
+test('thread matching skips a dismissed target even when it is the strongest match', async () => {
+  await match(expedition('first', 'Replicated lists', 2));
+  const threadId = (await match(expedition('second', 'Replicated list deletes', 1)))!.threadId!;
+  expect(threadId).toBeTruthy();
+  const result = await match({ ...expedition('third', 'Replicated list GC', 0),
+    dismissedSuggestions: [{ kind: 'thread', id: threadId }] });
+  expect(result).toMatchObject({ threadId: null });
+  expect(result?.threadSuggestion).toBeUndefined();
+});
+
 test('a shared top concept makes a borderline embedding strong', async () => {
   const shared = { name: 'Tombstone', kind: 'concept' as const, embedding: null, gloss: 'A deletion marker' };
   await db.concepts.add({ id: 'concept', ...shared, aliases: [], exposure: 2, firstSeen: 0 });

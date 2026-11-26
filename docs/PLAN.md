@@ -122,7 +122,7 @@ The rule: **nothing requires your action.** Every button is a correction or an e
 | `Visit` | url, canonicalUrl, title, tabId, parentVisitId, transition (link / typed / search / new-tab / back), startedAt, activeMs, scrollDepth, engagement (`bounced` / `skimmed` / `read`), expeditionId |
 | `Page` | canonicalUrl, extracted text (capped), textHash, summary, takeaways[], embedding, pageKind, enrichedAt |
 | `Query` | engine, q, at, expeditionId (search queries become *question* nodes) |
-| `Expedition` | title, drivingQuestion, kind (`learning` / `errand`), startedAt, endedAt, fieldNotes (Markdown), userEdited, threadId |
+| `Expedition` | title, drivingQuestion, kind (`learning` / `errand` / `unclassified`), startedAt, endedAt, fieldNotes (Markdown), userEdited, threadId |
 | `Thread` | title, question, status (`active` / `dormant` / `done`), lastActiveAt, livingNote (Markdown), centroid embedding, conceptIds |
 | `Concept` | name, aliases[], kind (concept / person / tool / work / event / place), gloss, embedding, exposure score, firstSeen |
 | `Edge` | from, to, type, weight, evidence: visitIds[] |
@@ -163,10 +163,10 @@ Rules, in order:
 1. **Lineage wins.** A visit reached by link, or opened from another tab, joins its parent's expedition.
 2. **New roots** are typed URLs, new searches and bookmarks. Embed the root's title or query and compare it with the centroids of expeditions open in the last 2 h. Join the best match if cosine is above about 0.6; otherwise start a new expedition. Several expeditions can run in parallel tabs at once.
 3. **Close rules.** An expedition closes when it has had neither a new Visit nor active reading time for 20 minutes. Starting a new expedition also closes other open expeditions that have been inactive for at least 10 minutes. Both thresholds are adjustable in recording Settings and take effect without reloading. Browser startup and service-worker wake close expeditions left open from a previous browser session; waking the worker does not close still-active expeditions from the current session. Thirty minutes of computer idle or a screen lock closes every open expedition. **Wrap up** closes just the selected expedition now. Record `endedAt` at the last known activity, not at the time of the check. One close alarm tracks the earliest pending deadline.
-4. **On close,** queue one durable wrap-up job in the same transaction as the close. One LLM pass gives the expedition a title, states its driving question, classifies it as `learning` or `errand`, and suggests merges with same-day expeditions on the same topic.
-5. **Manual fixes** are first-class: merge, split here, or drag a page to another expedition. Log every correction so the thresholds can be tuned later.
+4. **On close,** queue one durable wrap-up job in the same transaction as the close. One LLM pass gives the expedition a title, states its driving question, classifies it as **Learning** or **Not learning** (stored as `errand`), and suggests merges with same-day expeditions on the same topic. If there is nothing eligible to send, use a local title and leave it unclassified; the Journal offers **Mark as learning?**. Wrap-up skips dismissed pairs and respects manual classifications.
+5. **Manual fixes** are first-class: merge, split here, drag a page to another expedition, or change the learning classification. Marking a closed expedition as learning queues missing field notes and thread matching; marking it as not learning clears field notes and detaches it from its thread. Log every correction; Journal organising actions can be undone as a unit.
 
-Errand expeditions (shopping, admin) collapse into the Journal and stay out of the Atlas.
+**Not learning** expeditions (shopping, admin) go into **Other browsing**, collapsed by default in the Journal, and stay out of the Atlas.
 
 ### 4.4 Enrich each page (one LLM call per read or skimmed page, structured JSON output)
 Input: title, URL, Readability text capped at about 3k tokens, any highlights (marked as important), the expedition's driving question, and the parent page's title. The last two tell the model *why* you came to this page.
@@ -206,7 +206,7 @@ An expedition is one sitting. When you come back to a topic days later, that sit
 
 - **Matching, when an expedition closes.** Compare it with threads active in the last 60 days. Use an embedding of its title, question and top concepts, plus how many concepts it shares with each thread.
   - **Strong match:** attach it automatically.
-  - **Possible match:** show a one-tap "Part of *CRDTs*?" suggestion on the expedition's Journal card. Not a pop-up.
+  - **Possible match:** show a compact **Part of *CRDTs*?** chip on the expedition's Journal card, with **Add** and **Dismiss**. Matching skips dismissed expedition–target pairs, even for strong matches.
   - **No match:** the expedition stays on its own. It becomes a thread only when a second session joins, so one-off lookups don't clutter the Journal.
 - **Picking up where you left off.** When a new search or page matches a dormant thread, the side panel shows:
   - "Picking up: *CRDTs* (last session 4 days ago)";
@@ -218,7 +218,7 @@ An expedition is one sitting. When you come back to a topic days later, that sit
 - **On the graph:**
   - The **thread page** lays its sessions out on a timeline, each with its own trail. Lines connect sessions where you revisited a page or a concept came up again.
   - In the **Atlas**, each concept is already a single node that gathers evidence from every session, whenever it happened. Filtering by thread highlights that thread's part of the map.
-- **Corrections:** attach or detach an expedition, merge or split threads, rename a thread, or mark it done. Errand expeditions never join threads.
+- **Corrections:** use selection mode or drag a closed learning expedition onto another card to propose starting a thread or adding to an existing one. On the thread page, detach a session, merge or split threads, rename a thread, or mark it done. Only closed learning expeditions can join threads.
 
 ## 5. Views
 
@@ -228,13 +228,16 @@ An expedition is one sitting. When you come back to a topic days later, that sit
    - Each node is a card with favicon, title and a one-line summary. Opacity shows engagement.
    - Search queries appear as question nodes.
    - Bounced pages collapse into "+4 skipped". Unread branches are dashed.
-   - The field notes sit in a pane on the right and can be edited.
+   - The field notes sit in a pane on the right and can be edited. The header exposes **Mark as learning** or **Mark as not learning**, with Undo.
 3. **Atlas** (full tab): the concept graph across all time.
    - Force layout. Colour shows the community (Louvain clusters); size shows exposure.
    - Clicking a concept opens a card with its gloss, the pages that taught it, the expeditions it appeared in, and its neighbours.
    - A time slider replays the graph growing, which is a satisfying "look how much I've learned" moment.
    - **Never show the whole hairball by default.** Show the top N concepts and cull labels.
 4. **Journal:** thread and expedition cards, newest first, plus a weekly digest. A thread card opens the **thread page**: sessions on a timeline, plus the living note (§4.7).
+   - **Select** (or Shift/⌘-click a card) shows checkboxes. An action bar shows the count, Start thread, Add to thread, Merge into one expedition, Mark as learning/not learning, and Cancel (also Esc). Closed expeditions merge into the earliest selected expedition; selecting a thread for merge includes its sessions.
+   - Dropping an expedition onto another card opens a small menu for the eligible thread and merge actions. Every drop action is also available through keyboard-operable selection. There are no repeated per-card attach links.
+   - Suggestions sit on the cards: thread suggestions have Add/Dismiss; **Same topic as …?** appears on both expedition cards with Merge/Dismiss. Dismissing either side persists across reloads and later wrap-ups. The Journal offers Undo after applying an organising action.
 5. **Search and Ask:** hybrid keyword and semantic search over pages, concepts and notes. "Ask" answers from your own pages and cites them.
 
 **Export:** continuous sync to an **Obsidian vault**. The companion (§6.1) writes the files, and only inside the folder you choose. Each expedition and each concept gets its own note, with `[[wikilinks]]` and frontmatter. Obsidian's graph view then becomes a second view for free. Markdown zip and JSON dump exports are also available.

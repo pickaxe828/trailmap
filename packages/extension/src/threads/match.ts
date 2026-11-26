@@ -3,6 +3,7 @@ import { readExpeditionTopConcepts } from '../concepts/read';
 import type { TrailmapDb } from '../db/db';
 import { cosine, quantize, type Embedder } from '../embeddings/embedder';
 import { enqueueJob, JOB_PRIORITY, type JobHandlers } from '../jobs/queue';
+import { dismissed } from '../journal/suggestions';
 import { bySessionTime, isClosedLearning, newThread, refreshThread, sessionEnd, THREAD_WINDOW } from './model';
 
 type Signature = NonNullable<Expedition['threadSignature']>;
@@ -39,10 +40,12 @@ export function matchThread(db: TrailmapDb, embedder: Embedder, now: () => numbe
       const session = await db.expeditions.get(expeditionId);
       if (!session || !isClosedLearning(session) || !session.fieldNotes?.trim() || session.notesWrittenAt !== notesWrittenAt) return;
       const threads = session.threadId || session.threadAutoExcluded ? [] : await db.threads.where('lastActiveAt')
-        .between(earliest, at, true, true).filter((thread) => thread.status !== 'done' && !!thread.centroid).toArray();
+        .between(earliest, at, true, true).filter((thread) => thread.status !== 'done' && !!thread.centroid &&
+          !dismissed(session, { kind: 'thread', id: thread.id })).toArray();
       const singles = session.threadId || session.threadAutoExcluded ? [] : await db.expeditions.where('endedAt')
         .between(earliest, at, true, true).filter((other) => isClosedLearning(other) && bySessionTime(other, session) < 0 &&
-          !other.threadId && !other.threadAutoExcluded && !!other.fieldNotes?.trim()).toArray();
+          !other.threadId && !other.threadAutoExcluded && !!other.fieldNotes?.trim() &&
+          !dismissed(session, { kind: 'expedition', id: other.id }, other)).toArray();
       const toEmbed = [session, ...singles.filter((other) => !other.threadSignature)];
       return { session, singles, threads, descriptions: await Promise.all(toEmbed.map((e) => describe(db, e))) };
     });

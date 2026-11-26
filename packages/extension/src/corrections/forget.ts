@@ -182,9 +182,11 @@ export async function forgetCascade(db: TrailmapDb, input: ForgetInput): Promise
       await db.expeditions.update(id, { threadSignature: undefined, threadSuggestion: undefined });
       if (threadId) threadIds.add(threadId);
     }
+    const survivingThreads = new Set<string>();
     for (const id of threadIds) {
       await refreshThread(db, id, now(), true);
-      if (!await db.threads.get(id)) await db.notes.where('nodeId').equals(id).delete();
+      if (await db.threads.get(id)) survivingThreads.add(id);
+      else await db.notes.where('nodeId').equals(id).delete();
     }
     for (const session of invalidSignatures) {
       if (!session.fieldNotes || !session.threadId || !await db.threads.get(session.threadId)) continue;
@@ -196,9 +198,20 @@ export async function forgetCascade(db: TrailmapDb, input: ForgetInput): Promise
       (suggestion.kind === 'thread' ? threadIds.has(suggestion.id) : affected.has(suggestion.id)))
       .modify({ threadSuggestion: undefined });
 
+    await db.expeditions.filter(({ dismissedSuggestions }) => !!dismissedSuggestions?.some(({ kind, id }) =>
+      kind === 'expedition' ? nodeIds.has(id) : threadIds.has(id) && !survivingThreads.has(id)))
+      .modify((session) => {
+        session.dismissedSuggestions = session.dismissedSuggestions?.filter(({ kind, id }) => kind === 'expedition'
+          ? !nodeIds.has(id) : !threadIds.has(id) || survivingThreads.has(id));
+      });
     const logIds = [...new Set([...nodeIds, ...affected, ...threadIds, ...(input.targetIds ?? [])])];
     const logged = await db.corrections.where('targetIds').anyOf(logIds).primaryKeys();
-    await db.corrections.bulkDelete([...new Set(logged)]);
+    const undoSources = await db.corrections.filter(({ kind, before }) => {
+      if (!kind.startsWith('journal-') || !before || typeof before !== 'object' || !('sourceUrls' in before)) return false;
+      const { sourceUrls } = before as { sourceUrls: string[] };
+      return sourceUrls.some((url) => orphans.has(url) || invalidated.has(url) || fromForgottenHost(url));
+    }).primaryKeys();
+    await db.corrections.bulkDelete([...new Set([...logged, ...undoSources])]);
 
     if (audit.length) {
       await db.sentToModel.add({
