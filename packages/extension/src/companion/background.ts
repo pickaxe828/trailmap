@@ -34,7 +34,8 @@ export function startCompanion(): void {
   });
 
   companion.onEvent((event) => {
-    if (event.name === 'llm.dispatch') return; // Contains Page text; handled only by the dispatch guard.
+    // Both events can contain Page text; only the worker's audit handler needs them.
+    if (event.name === 'llm.dispatch' || event.name === 'llm.dispatchFinished') return;
     void chrome.runtime.sendMessage({ type: COMPANION_EVENT, event }).catch(() => {});
   });
 

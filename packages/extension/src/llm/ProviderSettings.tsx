@@ -21,7 +21,8 @@ function statusText(catalog: Catalog, provider: LlmProviderId, keySet: boolean |
     case 'not_signed_in': return 'Not signed in';
     case 'plan_usage_not_granted': return 'Plan usage off';
     case 'not_eligible': return 'Account not eligible';
-    case 'invalid_api_key': return keySet ? 'Key saved · not accepted' : 'API key not available';
+    case 'api_key_missing': return 'No key saved';
+    case 'invalid_api_key': return 'Key saved · not accepted';
     case 'provider_rate_limited': return 'Rate limited · try again later';
     case 'provider_quota_exceeded': return 'Check billing or spend limits';
     case 'provider_unreachable': return 'Not reachable';

@@ -14,6 +14,7 @@ import { matchThread } from '../threads/match';
 import { wrapUpHandlers } from '../wrapup/handlers';
 import { fieldNotesWritten } from '../wrapup/hooks';
 import { JobQueue } from './queue';
+import { isModelJob, RETRY_MODEL_JOBS } from './types';
 
 const ALARM = 'trailmap.jobs';
 
@@ -30,6 +31,7 @@ export function startJobs(db: TrailmapDb, ready: Promise<void>, getSettings: () 
   }, [db.pages, db.expeditions, db.visits, db.concepts, db.conceptEvidence, db.edges, db.threads, db.highlights, db.queries]);
   const client = getCompanionClient();
   let pumping = false;
+  let retryRequested = false;
   function kick() {
     if (pumping || !client.supportsModelAudit) return;
     pumping = true;
@@ -44,11 +46,31 @@ export function startJobs(db: TrailmapDb, ready: Promise<void>, getSettings: () 
       while (client.supportsModelAudit && !getSettings().paused) {
         const routes = await readModelRoutes();
         // Use one snapshot for claim, dispatch and ChatGPT hold accounting.
-        if (!await queue.runNext(({ kind }) => kind === 'concept_resolution' || kind === 'thread_match'
-          ? undefined : routes[llmTaskGroup(kind)])) break;
+        if (!await queue.runNext(({ kind }) => isModelJob(kind) ? routes[llmTaskGroup(kind)] : undefined)) break;
       }
-    }).catch(() => {}).finally(() => { pumping = false; });
+    }).catch(() => {}).finally(() => {
+      pumping = false;
+      if (retryRequested) {
+        retryRequested = false;
+        kick();
+      }
+    });
   }
+  chrome.runtime.onMessage.addListener((message, sender, respond) => {
+    const kind: unknown = message?.kind;
+    if (message?.type !== RETRY_MODEL_JOBS || !isModelJob(kind) || sender.id !== chrome.runtime.id ||
+      sender.url?.split(/[?#]/, 1)[0] !== chrome.runtime.getURL('/settings.html')) return;
+    void ready.then(async () => {
+      const route = (await readModelRoutes())[llmTaskGroup(kind)];
+      const queued = await queue.retryNow(kind, route);
+      if (queued) {
+        if (pumping) retryRequested = true;
+        else kick();
+      }
+      respond({ queued });
+    }).catch(() => respond({ queued: 0 }));
+    return true;
+  });
   chrome.alarms.onAlarm.addListener(({ name }) => { if (name === ALARM) kick(); });
   void chrome.alarms.create(ALARM, { periodInMinutes: 0.5 });
   // Start fresh jobs promptly while awake; correctness depends only on indexed

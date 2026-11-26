@@ -61,7 +61,7 @@ export function enrichPage(db: TrailmapDb, getSettings: () => RecordingSettings,
     let output: unknown;
     try {
       ({ output } = await request(db, { task: 'page_enrichment', instructions, input, schema, schemaName: 'page_enrichment' }, {
-        canonicalUrl: payload.canonicalUrl,
+        canonicalUrl: payload.canonicalUrl, jobId: job.id,
         ...provenance,
         tables: [...sources, db.jobs],
         allow: async () => {

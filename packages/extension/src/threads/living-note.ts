@@ -48,7 +48,7 @@ export function updateLivingNote(db: TrailmapDb, getSettings: () => RecordingSet
     let output: unknown;
     try {
       ({ output } = await request(db, { task: 'living_note', schemaName: 'living_note', input: prepared.input, instructions, schema }, {
-        expeditionId: prepared.nextId, ...prepared.provenance, tables,
+        expeditionId: prepared.nextId, jobId: job.id, ...prepared.provenance, tables,
         allow: async () => {
           const lease = (await db.jobs.get(job.id))?.lease;
           return !!lease && lease.token === job.lease?.token && lease.until > now() && await unchanged();

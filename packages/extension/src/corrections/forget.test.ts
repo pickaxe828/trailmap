@@ -146,7 +146,7 @@ test('forgetting a session removes its contribution from a surviving thread and 
   await db.visits.bulkAdd(sessions.map((id) => visit(id, 'learn.example', { expeditionId: id })));
   await db.threads.add({ id: threadId, title: SECRET, question: SECRET, status: 'active', lastActiveAt: 3,
     livingNote: SECRET, centroid: null, conceptIds: [], notedExpeditionIds: sessions });
-  await db.sentToModel.add({ id: 'living', task: 'living_note', at: 5, provider: 'fixture', model: 'fixture', instructions: 'Update',
+  await db.sentToModel.add({ id: 'living', task: 'living_note', at: 5, provider: 'fixture', model: 'fixture', instructions: 'Update', outcome: 'succeeded', finishedAt: 6, output: { markdown: 'secret old note' },
     input: [{ role: 'user', content: SECRET }], expeditionId: 'third', visitIds: sessions });
 
   await corrections().forgetExpedition('forgotten');

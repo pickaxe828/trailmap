@@ -105,7 +105,7 @@ export function wrapUpHandlers(
     let output: unknown;
     try {
       ({ output } = await request(db, { task, instructions, input: prepared.text, schema, schemaName }, {
-        expeditionId, canonicalUrls: prepared.urls, visitIds: prepared.visitIds, tables: [...sources, db.jobs],
+        expeditionId, jobId: job.id, canonicalUrls: prepared.urls, visitIds: prepared.visitIds, tables: [...sources, db.jobs],
         allow: async () => {
           const current = await db.jobs.get(job.id);
           if (!current?.lease || current.lease.token !== job.lease?.token || current.lease.until <= now()) return false;
@@ -145,7 +145,7 @@ export function wrapUpHandlers(
       const parsed = (local ? ExpeditionWrapUp.extend({ kind: z.literal('unclassified') }) : ExpeditionWrapUp).safeParse(result.output);
       if (!parsed.success) throw new CompanionRequestError('invalid_output', 'Invalid Expedition wrap-up.');
       const wrapUp = parsed.data;
-      return { commit: async () => {
+      return { localOnly: local ? true : undefined, commit: async () => {
         const current = await db.expeditions.get(expeditionId);
         if (!current || current.endedAt !== endedAt || !await result.stillCurrent()) return 'discard';
         const wanted = new Map<string, string>();

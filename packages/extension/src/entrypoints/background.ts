@@ -5,6 +5,7 @@ import { startCorrections } from '../corrections/background';
 import { forgetCascade } from '../corrections/forget';
 import { startJobs } from '../jobs/background';
 import { startPageSummary } from '../llm/background';
+import { recoverModelAttempts } from '../llm/dispatch';
 import { startSegmentation } from '../segmentation/background';
 import { startCompanion } from '../companion/background';
 import { createRecordingPrivacy } from '../privacy/background';
@@ -30,6 +31,7 @@ export default defineBackground(() => {
   // Capture (docs/PLAN.md §4.1). Listeners must be registered synchronously here;
   // the recorder restores its state from `chrome.storage.session` before handling any of them.
   const db = openTrailmapDb();
+  void recoverModelAttempts(db).catch(() => {});
   let unseenNotes = 0;
   const privacy = createRecordingPrivacy(() => unseenNotes, (host) => forgetCascade(db, {
     kind: 'forget-site', host, denied: host === undefined, targetIds: host ? [`site:${host}`] : [],
