@@ -1,4 +1,4 @@
-import type { Expedition } from '@trailmap/shared';
+import type { Expedition, Thread } from '@trailmap/shared';
 
 export type NoteLink = { path: string; title: string };
 export type MarkdownNote = NoteLink & { markdown: string };
@@ -9,7 +9,7 @@ export async function sha256(text: string): Promise<string> {
 }
 
 /** Titles can change; note paths and incoming wikilinks should not. */
-export async function notePath(kind: 'expedition' | 'concept', id: string): Promise<string> {
+export async function notePath(kind: 'expedition' | 'concept' | 'thread', id: string): Promise<string> {
   return `trailmap-${kind}-${await sha256(id)}.md`;
 }
 
@@ -27,6 +27,16 @@ export function frontmatter(fields: Record<string, string | string[] | null>): s
   return `---\n${lines.join('\n')}\n---\n`;
 }
 
+const headingTitle = (title: string) => title.replace(/\s+/g, ' ').trim().replace(/[\\`*_{}\[\]<>#~&]/g, '\\$&');
+
+export function renderThreadNote(thread: Thread, sessions: readonly NoteLink[]): string {
+  const metadata = frontmatter({ title: thread.title, aliases: [thread.title], kind: 'thread', question: thread.question,
+    lastActiveAt: new Date(thread.lastActiveAt).toISOString() });
+  const sections = [`# ${headingTitle(thread.title) || 'Thread'}`, thread.livingNote,
+    sessions.length ? `## Sessions\n\n${sessions.map((session) => `- ${wikilink(session)}`).join('\n')}` : ''];
+  return `${metadata}\n${sections.flatMap((section) => section?.trimEnd() || []).join('\n\n')}\n`;
+}
+
 export function renderExpeditionNote(
   expedition: Expedition, sourceUrls: readonly string[], concepts: readonly NoteLink[], notes: readonly string[] = [],
 ): string {
@@ -38,7 +48,7 @@ export function renderExpeditionNote(
     kind: expedition.kind,
     sourceUrls: [...new Set(sourceUrls)],
   });
-  const title = expedition.title.replace(/\s+/g, ' ').trim().replace(/[\\`*_{}\[\]<>#~&]/g, '\\$&');
+  const title = headingTitle(expedition.title);
   const sections = [title ? `# ${title}` : '# Expedition', expedition.fieldNotes,
     notes.length ? `## Notes\n\n${notes.join('\n\n')}` : '',
     concepts.length ? `## Concepts\n\n${concepts.map((concept) => `- ${wikilink(concept)}`).join('\n')}` : ''];

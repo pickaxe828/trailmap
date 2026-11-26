@@ -1,8 +1,10 @@
+import type { Expedition } from '@trailmap/shared';
 import { canonicalizeUrl } from '../capture/canonical';
 import { renderConceptNote } from '../concepts/note';
 import { readConceptEvidenceBatch, readVisibleConcepts } from '../concepts/read';
 import type { TrailmapDb } from '../db/db';
-import { frontmatter, notePath, renderExpeditionNote, type MarkdownNote, type NoteLink } from './notes';
+import { bySessionTime, isClosedLearning } from '../threads/model';
+import { frontmatter, notePath, renderExpeditionNote, renderThreadNote, type MarkdownNote, type NoteLink } from './notes';
 
 const append = <K, V>(map: Map<K, V[]>, key: K, value: V) => {
   const values = map.get(key);
@@ -18,13 +20,13 @@ function exportUrl(raw: string): string | undefined {
 
 /** The vault and ZIP share this projection. Observe its source tables from the background, not model job hooks. */
 export async function readMarkdownNotes(db: TrailmapDb): Promise<MarkdownNote[]> {
-  const { expeditions, visits, notes, concepts, evidence } = await db.transaction('r',
-    [db.expeditions, db.visits, db.concepts, db.conceptEvidence, db.pages, db.notes], async () => {
-      const [expeditions, visits, notes, concepts] = await Promise.all([
-        db.expeditions.toArray(), db.visits.toArray(), db.notes.toArray(), readVisibleConcepts(db),
+  const { expeditions, visits, notes, concepts, evidence, threads } = await db.transaction('r',
+    [db.expeditions, db.visits, db.concepts, db.conceptEvidence, db.pages, db.notes, db.threads], async () => {
+      const [expeditions, visits, notes, concepts, threads] = await Promise.all([
+        db.expeditions.toArray(), db.visits.toArray(), db.notes.toArray(), readVisibleConcepts(db), db.threads.toArray(),
       ]);
       const evidence = await readConceptEvidenceBatch(db, concepts.map(({ id }) => id));
-      return { expeditions, visits, notes, concepts, evidence };
+      return { expeditions, visits, notes, concepts, evidence, threads };
     });
   const urls = new Map<string, string[]>();
   const manual = new Map<string, string[]>();
@@ -58,7 +60,18 @@ export async function readMarkdownNotes(db: TrailmapDb): Promise<MarkdownNote[]>
     title: expedition.title,
     markdown: renderExpeditionNote(expedition, urls.get(expedition.id) ?? [], links.get(expedition.id) ?? [], manual.get(expedition.id)),
   })));
-  return [...conceptNotes, ...expeditionNotes];
+  const byExpedition = new Map(expeditions.map(({ id }, i) => [id, expeditionNotes[i]!]));
+  const sessionsByThread = new Map<string, Expedition[]>();
+  for (const expedition of expeditions) {
+    if (expedition.threadId && isClosedLearning(expedition)) append(sessionsByThread, expedition.threadId, expedition);
+  }
+  const threadNotes = await Promise.all(threads.map(async (thread) => ({
+    path: await notePath('thread', thread.id),
+    title: thread.title,
+    markdown: renderThreadNote(thread, (sessionsByThread.get(thread.id) ?? []).sort(bySessionTime)
+      .map(({ id }) => byExpedition.get(id)!)),
+  })));
+  return [...conceptNotes, ...expeditionNotes, ...threadNotes];
 }
 
 /** Dump IndexedDB (not extension preferences or companion credentials), representing vectors as arrays. */
