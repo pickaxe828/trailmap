@@ -1,8 +1,18 @@
+import type { BrowserContext, Page } from '@playwright/test';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
-import { test as base } from './fixtures';
+import { expect, test as base } from './fixtures';
+
+export async function signInToMockChatGpt(context: BrowserContext, setup: Page) {
+  const opened = context.waitForEvent('page');
+  await setup.getByRole('button', { name: 'Continue with ChatGPT' }).click();
+  const callback = await opened;
+  await expect(callback.getByText('Signed in. You can close this tab.')).toBeVisible();
+  await expect(setup.getByText('Signed in as reader@example.test · plan usage on')).toBeVisible();
+  return callback;
+}
 
 const script = fileURLToPath(new URL('./mock-page-summary.ts', import.meta.url));
 export const test = base.extend<{ mockOrigin: string }>({

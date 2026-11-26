@@ -7,6 +7,7 @@ import { VStack } from '@astryxdesign/core/VStack';
 import { useCallback } from 'react';
 import type { TrailmapDb } from '../../db/db';
 import { useJournalData } from '../../journal/data';
+import { RecordingControls } from '../../privacy/RecordingControls';
 import { readPickingUp } from '../../threads/picking-up';
 import { useLiveTrail } from '../../trail/useLiveTrail';
 import { AiNotesStatus } from './AiNotesStatus';
@@ -15,7 +16,6 @@ import { CompanionStatus } from './CompanionStatus';
 import { FieldNotes } from './FieldNotes';
 import { PageNotes } from './PageNotes';
 import { PickingUpCard } from './PickingUpCard';
-import { RecordingControls } from './RecordingControls';
 import { useCurrentVisitId } from './corrections-client';
 
 /** Live open expeditions and the remaining Visits from today. */
@@ -48,8 +48,8 @@ export function App() {
       {trail && <FieldNotes expeditions={trail.finished} />}
       {trail && <PageNotes pages={trail.pageNotes} />}
       <HStack gap={2} wrap="wrap">
-        <Link href={chrome.runtime.getURL('/onboarding.html#settings')} target="_blank">Settings</Link>
-        <Link href={chrome.runtime.getURL('/onboarding.html#sent-to-model')} target="_blank">Sent-to-model log</Link>
+        <Link href={chrome.runtime.getURL('/settings.html')} target="_blank">Settings</Link>
+        <Link href={chrome.runtime.getURL('/settings.html#sent-to-model')} target="_blank">Sent-to-model log</Link>
       </HStack>
       {trail && trail.open.length === 0 && trail.today.length === 0 && (
         <Text type="supporting">Your trail will appear here as you browse.</Text>

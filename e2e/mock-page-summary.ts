@@ -5,9 +5,14 @@ type Inference = {
   stream?: boolean; store?: boolean; text?: { format: { name: string } };
 };
 const calls: Inference[] = [];
+let planErrorCleared = false;
 const mock = startMockOAuth(async (request) => {
   const path = new URL(request.url).pathname;
   if (path === '/test/calls') return Response.json(calls);
+  if (path === '/test/clear-plan-error' && request.method === 'POST') {
+    planErrorCleared = true;
+    return new Response(null, { status: 204 });
+  }
   if (request.headers.get('authorization') !== 'Bearer mock-access-0') return new Response(null, { status: 401 });
   if (path === '/v1/models' && request.method === 'GET') {
     return Response.json({ models: [{ slug: 'fixture-model', display_name: 'Fixture Model', visibility: 'list' }] });
@@ -46,8 +51,14 @@ const mock = startMockOAuth(async (request) => {
   }
   if (text.startsWith('{')) {
     const source = JSON.parse(text) as { url: string };
-    if (new URL(source.url).hostname === 'limit.test') {
-      return Response.json({ error: { code: 'subscription_sharing_usage_limit_exceeded' } }, { status: 429 });
+    if (!planErrorCleared) {
+      const host = new URL(source.url).hostname;
+      if (host === 'limit.test') {
+        return Response.json({ error: { code: 'subscription_sharing_usage_limit_exceeded' } }, { status: 429 });
+      }
+      if (host === 'ineligible.test') {
+        return Response.json({ error: { code: 'subscription_sharing_user_not_eligible' } }, { status: 403 });
+      }
     }
     // Exercise all outbound attempts, including exact fallback instructions
     // and the prior assistant response sent in the repair message.

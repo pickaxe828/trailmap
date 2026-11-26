@@ -117,9 +117,12 @@ export const test = base.extend<Fixtures & Options, WorkerFixtures>({
   },
 
   companionEnv: async ({ companionDataDir }, use) => {
-    // Provider discovery must never probe an actual local Ollama instance in tests.
+    // Even default fixtures cannot call a real model API. Suites that drive a
+    // provider override these loopback endpoints with its mock API.
+    const origin = `http://127.0.0.1:${FIXTURE_PORT}`;
     await use({ TRAILMAP_COMPANION_DATA_DIR: companionDataDir, TRAILMAP_SECRET_STORE: 'file',
-      TRAILMAP_OLLAMA_BASE_URL: `http://127.0.0.1:${FIXTURE_PORT}` });
+      TRAILMAP_OPENAI_AUTH_BASE_URL: origin, TRAILMAP_OPENAI_BASE_URL: `${origin}/v1`,
+      TRAILMAP_ANTHROPIC_BASE_URL: `${origin}/v1`, TRAILMAP_OLLAMA_BASE_URL: origin });
   },
 
   installCompanion: async ({ userDataDir }, use) => {

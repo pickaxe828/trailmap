@@ -1,43 +1,26 @@
-import { StatusDot } from '@astryxdesign/core/StatusDot';
+import { Banner } from '@astryxdesign/core/Banner';
+import { Button } from '@astryxdesign/core/Button';
 import { Text } from '@astryxdesign/core/Text';
-import { Link } from '@astryxdesign/core/Link';
-import { HStack } from '@astryxdesign/core/HStack';
 import { VStack } from '@astryxdesign/core/VStack';
-import { ChatGptConnection } from '../../ui/ChatGptConnection';
 import { SETUP_INSTRUCTIONS_PATH } from '../../companion/status';
 import { useCompanionStatus } from '../../companion/useCompanionStatus';
 import { SummarizePage } from './SummarizePage';
 
-/** Whether the companion (the local helper for AI features and Obsidian sync) is connected. Everything else works without it. */
 export function CompanionStatus() {
   const status = useCompanionStatus();
-
+  if (status.state === 'connecting') return <Text role="status" type="supporting">Checking companion…</Text>;
   if (status.state === 'connected') {
     return (
       <VStack gap={2}>
-        <HStack gap={2} align="center">
-          <StatusDot variant="success" label="Companion connected" />
-          <Text>Companion connected</Text>
-        </HStack>
-        <ChatGptConnection />
+        <Text role="status" type="supporting">Companion connected</Text>
         <SummarizePage />
       </VStack>
     );
   }
-
-  const checking = status.state === 'connecting';
   return (
-    <VStack gap={1}>
-      <HStack gap={2} align="center">
-        <StatusDot variant={checking ? 'neutral' : 'warning'} label="Companion not connected" />
-        <Text>Companion not connected</Text>
-      </HStack>
-      <Text type="supporting">
-        Recording works without it; AI notes and Obsidian sync need it.{' '}
-        <Link href={chrome.runtime.getURL(SETUP_INSTRUCTIONS_PATH)} target="_blank">
-          Set up the companion
-        </Link>
-      </Text>
-    </VStack>
+    <Banner status="warning" title="Companion not connected"
+      description="Trails still work. AI notes and Obsidian sync need the companion."
+      endContent={<Button label="Fix connection" variant="secondary" size="sm" href={SETUP_INSTRUCTIONS_PATH}
+        target="_blank" rel="noopener noreferrer" />} />
   );
 }

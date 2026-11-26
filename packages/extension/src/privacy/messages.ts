@@ -8,6 +8,7 @@ export type RecordingRequest = { type: typeof RECORDING_MESSAGE } & (
   | { action: 'status'; tabId?: number }
   | { action: 'set-pause'; paused: boolean }
   | { action: 'set-site'; tabId: number; host: string; skip: boolean }
+  | { action: 'edit-skip-list'; site: string; skip: boolean }
 );
 
 export type RecordingStatus = {
@@ -23,6 +24,7 @@ export function isRecordingRequest(value: unknown): value is RecordingRequest {
     case 'status': return request.tabId === undefined || Number.isInteger(request.tabId);
     case 'set-pause': return typeof request.paused === 'boolean';
     case 'set-site': return Number.isInteger(request.tabId) && typeof request.host === 'string' && typeof request.skip === 'boolean';
+    case 'edit-skip-list': return typeof request.site === 'string' && typeof request.skip === 'boolean';
     default: return false;
   }
 }

@@ -3,10 +3,10 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { expect, seedCapture, test as base } from './fixtures';
-import { test } from './model-fixtures';
+import { signInToMockChatGpt, test } from './model-fixtures';
 
 base('Obsidian sync waits for the companion, but both settings exports download', async ({ openExtensionPage }, info) => {
-  const settings = await openExtensionPage('onboarding.html#settings');
+  const settings = await openExtensionPage('settings.html#obsidian');
   await expect(settings.getByText('Obsidian sync is waiting for the companion.')).toBeVisible();
   await expect(settings.getByRole('button', { name: 'Save vault folder' })).toBeDisabled();
   await settings.screenshot({ path: join(process.env.PROOF_DIR ?? info.outputDir, 'sync-waiting.png') });
@@ -40,7 +40,7 @@ base.describe('with the installed companion', () => {
         threadId: 'replicas', startedAt: at + i * 1000 - 4000, endedAt: at + i * 1000 - 3000, drivingQuestion: null,
         fieldNotes: i === 0 ? null : `Notes for ${title}` })),
     });
-    const settings = await openExtensionPage('onboarding.html#settings');
+    const settings = await openExtensionPage('settings.html#obsidian');
     await settings.getByRole('textbox', { name: 'Obsidian vault folder path' }).fill(vault);
     await settings.getByRole('button', { name: 'Save vault folder' }).click();
     const hash = (id: string) => createHash('sha256').update(id).digest('hex');
@@ -64,7 +64,7 @@ test.describe('with the installed companion and a mock model', () => {
   }, info) => {
     const vault = join(companionDataDir, 'test-vault');
     await mkdir(vault);
-    const settings = await openExtensionPage('onboarding.html#settings');
+    const settings = await openExtensionPage('settings.html#obsidian');
     const folder = settings.getByRole('textbox', { name: 'Obsidian vault folder path' });
     await expect(folder).toBeEnabled();
     await folder.fill(join(vault, 'missing'));
@@ -75,9 +75,7 @@ test.describe('with the installed companion and a mock model', () => {
     await expect(settings.getByText('Obsidian sync is up to date.')).toBeVisible();
 
     const panel = await openExtensionPage('sidepanel.html');
-    const callback = context.waitForEvent('page');
-    await panel.getByRole('button', { name: 'Continue with ChatGPT' }).click();
-    await expect((await callback).getByText('Signed in. You can close this tab.')).toBeVisible();
+    await signInToMockChatGpt(context, settings);
     const article = await context.newPage();
     await article.goto(fixtureUrl('learn.test', '/content/article.html'));
     await expect.poll(async () => (await readCapture('pages')).some(({ text }) => text.length > 0)).toBe(true);

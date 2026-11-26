@@ -7,9 +7,9 @@ import { TextInput } from '@astryxdesign/core/TextInput';
 import { VStack } from '@astryxdesign/core/VStack';
 import { ANTHROPIC_DEFAULT_MODELS, LLM_PROVIDER_NAMES, LlmProviderId, type LlmTaskGroup } from '@trailmap/shared';
 import { useEffect, useState } from 'react';
-import type { ResponseFor } from '../companion/client';
+import type { CompanionStatus, ResponseFor } from '../companion/client';
 import { onCompanionEvent, requestCompanion } from '../companion/relay';
-import { useCompanionStatus } from '../companion/useCompanionStatus';
+import { ChatGptConnection } from '../ui/ChatGptConnection';
 import { onModelRoutesChanged, readModelRoutes, saveModelRoute, type ModelRoutes } from './settings';
 
 type Catalog = ResponseFor<'llm.models'>;
@@ -36,8 +36,7 @@ function statusText(catalog: Catalog, provider: LlmProviderId, keySet: boolean |
 }
 
 /** Standalone Settings section; credentials are only held in the input until sent to the companion. */
-export function ProviderSettings({ headingLevel = 3 }: { headingLevel?: 2 | 3 }) {
-  const companion = useCompanionStatus();
+export function ProviderSettings({ companion }: { companion: CompanionStatus }) {
   const connected = companion.state === 'connected';
   const [catalog, setCatalog] = useState<Catalog>();
   const [key, setKey] = useState('');
@@ -119,7 +118,7 @@ export function ProviderSettings({ headingLevel = 3 }: { headingLevel?: 2 | 3 })
     };
     return (
       <VStack gap={1}>
-        <Heading level={headingLevel === 2 ? 3 : 4}>{title}</Heading>
+        <Heading level={3}>{title}</Heading>
         <Selector label={`${title} provider`} options={choices} value={route.provider} onChange={(value) => {
           const provider = LlmProviderId.parse(value);
           const available = modelsFor(provider);
@@ -135,14 +134,18 @@ export function ProviderSettings({ headingLevel = 3 }: { headingLevel?: 2 | 3 })
 
   return (
     <VStack as="section" id="model-providers" gap={3}>
-      <Heading level={headingLevel}>Model providers</Heading>
+      <Heading level={2}>Model providers</Heading>
       <Text type="supporting" as="p">Eligible browsing text goes to the chosen provider. Ollama runs locally. Use separate models for Page extraction and for notes and merge decisions.</Text>
       {!connected && <Text role="status">Connect the companion to set up model providers.</Text>}
       {connected && (
         <VStack gap={2} hAlign="start">
+          <ChatGptConnection />
           {catalog && LlmProviderId.options.map((provider) => (
             <Text as="p" key={provider}>{LLM_PROVIDER_NAMES[provider]}: {statusText(catalog, provider, keySet)}</Text>
           ))}
+          {catalog?.providers?.find(({ provider, error }) => provider === 'ollama' && error === 'provider_unreachable') && (
+            <Text type="supporting">Start Ollama on this computer, install a local model, then refresh providers.</Text>
+          )}
           {!catalog && !catalogError && <Text role="status">Checking model providers…</Text>}
           {catalogError && <Text role="alert">{catalogError}</Text>}
           {(keySet !== undefined || catalog) && (

@@ -1,5 +1,7 @@
+import { join } from 'node:path';
+import { DB_NAME } from '../packages/extension/src/db/db';
 import { expect } from './fixtures';
-import { test } from './model-fixtures';
+import { signInToMockChatGpt, test } from './model-fixtures';
 
 const ARTICLE = '/content/article.html';
 
@@ -46,9 +48,7 @@ test('queued Page notes survive a worker restart, filter at dispatch, and log ev
 
   installCompanion();
   await panel.reload();
-  const callback = context.waitForEvent('page');
-  await panel.getByRole('button', { name: 'Continue with ChatGPT' }).click();
-  await expect((await callback).getByText('Signed in. You can close this tab.')).toBeVisible();
+  await signInToMockChatGpt(context, await openExtensionPage('settings.html#model-providers'));
   await expect(panel.getByText('Tombstones retain deletion history across replicas.')).toBeVisible();
   await expect(panel.getByText('A tombstone records that an item was deleted.')).toBeVisible();
   await expect(panel.getByText('Replicas can process updates out of order.')).toBeVisible();
@@ -89,24 +89,78 @@ test('queued Page notes survive a worker restart, filter at dispatch, and log ev
   await log.screenshot({ path: testInfo.outputPath('sent-to-model.png') });
 });
 
-test('a usage limit shows why automatic Page notes paused but capture continues', async ({
-  context, openExtensionPage, fixtureUrl, readCapture, installCompanion,
+test('a plan usage limit pauses ChatGPT notes but not capture; a successful probe clears the banner', async ({
+  context, openExtensionPage, fixtureUrl, readCapture, installCompanion, mockOrigin,
 }, testInfo) => {
   installCompanion();
   const panel = await openExtensionPage('sidepanel.html');
   await panel.setViewportSize({ width: 400, height: 660 });
-  const callback = context.waitForEvent('page');
-  await panel.getByRole('button', { name: 'Continue with ChatGPT' }).click();
-  await expect((await callback).getByText('Signed in. You can close this tab.')).toBeVisible();
+  await signInToMockChatGpt(context, await openExtensionPage('settings.html#model-providers'));
   const page = await context.newPage();
   await page.goto(fixtureUrl('limit.test', ARTICLE));
   await expect.poll(async () => (await readCapture('pages')).length).toBe(1);
   await page.locator('#highlight').selectText();
-  const banner = panel.getByText('ChatGPT jobs paused until your plan limit resets. Browsing is still recorded.');
+  const banner = panel.getByText('ChatGPT plan limit reached');
   await expect(banner).toBeVisible({ timeout: 40_000 });
+  await expect(panel.getByText('AI notes using ChatGPT are paused until your limit resets. Browsing is still recorded.')).toBeVisible();
   await expect(panel.getByRole('link', { name: 'ChatGPT usage settings' })).toBeVisible();
-  await panel.screenshot({ path: testInfo.outputPath('ai-notes-paused.png') });
+  await panel.screenshot({ path: process.env.PROOF_DIR
+    ? join(process.env.PROOF_DIR, 'ai-notes-paused.png') : testInfo.outputPath('ai-notes-paused.png') });
   const next = fixtureUrl('learn.test', '/trail/start.html');
   await page.goto(next);
   await expect.poll(async () => (await readCapture('visits')).some(({ url }) => url === next)).toBe(true);
+
+  expect((await fetch(mockOrigin + '/test/clear-plan-error', { method: 'POST' })).status).toBe(204);
+  // Make the real retry due without a 30-minute wait. Only the queue can clear the hold.
+  await panel.evaluate(async (dbName) => {
+    const request = indexedDB.open(dbName);
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction('queueHolds', 'readwrite');
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+        const store = tx.objectStore('queueHolds');
+        const read = store.get('ai');
+        read.onsuccess = () => store.put({ ...read.result, retryAt: 0 });
+      });
+    } finally {
+      db.close();
+    }
+    await chrome.alarms.create('trailmap.jobs', { when: Date.now() + 1000 });
+  }, DB_NAME);
+  await expect(panel.getByText('Tombstones retain deletion history across replicas.')).toBeVisible();
+  await expect(banner).toHaveCount(0);
+});
+
+test('an ineligible ChatGPT account is offered other providers until an eligible sign-in', async ({
+  context, openExtensionPage, fixtureUrl, readCapture, installCompanion, mockOrigin,
+}, info) => {
+  installCompanion();
+  const panel = await openExtensionPage('sidepanel.html');
+  await panel.setViewportSize({ width: 400, height: 660 });
+  await signInToMockChatGpt(context, await openExtensionPage('settings.html#model-providers'));
+  const page = await context.newPage();
+  await page.goto(fixtureUrl('ineligible.test', ARTICLE));
+  await expect.poll(async () => (await readCapture('pages')).length).toBe(1);
+  await page.locator('#highlight').selectText();
+  const banner = panel.getByText('ChatGPT account not eligible');
+  await expect(banner).toBeVisible({ timeout: 40_000 });
+  await expect(panel.getByText(/Anthropic API key or.*Ollama/)).toBeVisible();
+  await panel.screenshot({ path: process.env.PROOF_DIR
+    ? join(process.env.PROOF_DIR, 'not-eligible.png') : info.outputPath('not-eligible.png') });
+  const providerTab = context.waitForEvent('page');
+  await panel.getByRole('link', { name: 'Choose another provider' }).click();
+  const settings = await providerTab;
+  await expect(settings).toHaveURL(/\/settings\.html#model-providers$/);
+  await expect(settings.getByRole('heading', { name: 'Model providers' })).toBeVisible();
+
+  expect((await fetch(mockOrigin + '/test/clear-plan-error', { method: 'POST' })).status).toBe(204);
+  await settings.getByRole('button', { name: 'Sign out' }).click();
+  await signInToMockChatGpt(context, settings);
+  await expect(panel.getByText('Tombstones retain deletion history across replicas.')).toBeVisible();
+  await expect(banner).toHaveCount(0);
 });

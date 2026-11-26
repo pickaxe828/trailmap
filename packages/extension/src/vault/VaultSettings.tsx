@@ -9,7 +9,7 @@ import { useEffect, useState } from 'react';
 import { CompanionRequestError, type CompanionStatus } from '../companion/client';
 import { setVaultFolder, VAULT_FOLDER_KEY, VAULT_SYNC_KEY, type VaultSyncStatus } from './settings';
 
-export function VaultSettings({ companion }: { companion: CompanionStatus }) {
+export function VaultSettings({ companion, headingLevel = 3 }: { companion: CompanionStatus; headingLevel?: 2 | 3 }) {
   const [folder, setFolder] = useState<VaultFolder | null>();
   const [sync, setSync] = useState<VaultSyncStatus>();
   const [path, setPath] = useState('');
@@ -57,8 +57,8 @@ export function VaultSettings({ companion }: { companion: CompanionStatus }) {
 
   const enterPath = () => { if (path.trim()) void select(path.trim()); };
   return (
-    <VStack as="section" gap={2} aria-label="Obsidian sync">
-      <Heading level={3}>Obsidian sync</Heading>
+    <VStack as="section" id="obsidian" gap={2} aria-label="Obsidian sync">
+      <Heading level={headingLevel}>Obsidian sync</Heading>
       <Text type="supporting">Keep a Markdown copy of each Expedition and visible Concept in your vault. Edits in Obsidian do not update Trailmap.</Text>
       <Text role="status">{status}</Text>
       {folder && <Text type="supporting">Vault: {folder.path}</Text>}

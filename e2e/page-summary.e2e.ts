@@ -1,5 +1,5 @@
 import { expect } from './fixtures';
-import { test } from './model-fixtures';
+import { signInToMockChatGpt, test } from './model-fixtures';
 
 test.use({ companionInstalled: true });
 
@@ -8,10 +8,7 @@ test('summarizes the active Page from captured text in the side panel', async ({
 }, testInfo) => {
   const panel = await openExtensionPage('sidepanel.html');
   await panel.setViewportSize({ width: 360, height: 720 });
-  const callback = context.waitForEvent('page');
-  await panel.getByRole('button', { name: 'Continue with ChatGPT' }).click();
-  await expect((await callback).getByText('Signed in. You can close this tab.')).toBeVisible();
-  await expect(panel.getByText('Signed in as reader@example.test · plan usage on')).toBeVisible();
+  await signInToMockChatGpt(context, await openExtensionPage('settings.html#model-providers'));
 
   const article = await context.newPage();
   await article.goto(fixtureUrl('learn.test', '/content/article.html'));

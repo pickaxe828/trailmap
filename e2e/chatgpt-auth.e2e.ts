@@ -3,6 +3,7 @@ import { once } from 'node:events';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { expect, test as base } from './fixtures';
+import { signInToMockChatGpt } from './model-fixtures';
 
 const script = fileURLToPath(new URL('../packages/companion/src/auth/mock-oauth.ts', import.meta.url));
 const test = base.extend<{ oauthOrigin: string }>({
@@ -33,35 +34,24 @@ const test = base.extend<{ oauthOrigin: string }>({
 
 test.use({ companionInstalled: true });
 
-test('sign in from the side panel and sign out from onboarding', async ({
+test('sign in from both Settings and onboarding using the same ChatGPT connection', async ({
   context, openExtensionPage, readVisits,
 }, testInfo) => {
   await context.route(/^https:\/\/(auth\.openai\.com|api\.openai\.com|chatgpt\.com)\//, (route) => route.abort());
-  const panel = await openExtensionPage('sidepanel.html');
-  await panel.setViewportSize({ width: 360, height: 720 });
+  const settings = await openExtensionPage('settings.html#model-providers');
   const onboarding = await openExtensionPage('onboarding.html');
-  const signIn = panel.getByRole('button', { name: 'Continue with ChatGPT' });
-  await expect(signIn).toBeEnabled();
-  await panel.screenshot({ path: testInfo.outputPath('side-panel-sign-in.png') });
+  await onboarding.getByRole('button', { name: 'Next: AI notes' }).click();
+  await onboarding.getByRole('button', { name: 'Next: Model providers' }).click();
 
-  const opened = context.waitForEvent('page');
-  await signIn.click();
-  const callback = await opened;
-  await expect(callback.getByText('Signed in. You can close this tab.')).toBeVisible();
+  const callback = await signInToMockChatGpt(context, settings);
   const signedIn = 'Signed in as reader@example.test · plan usage on';
-  await expect(panel.getByText(signedIn)).toBeVisible();
   await expect(onboarding.getByText(signedIn)).toBeVisible();
   await callback.screenshot({ path: testInfo.outputPath('sign-in-callback.png') });
-  await panel.screenshot({ path: testInfo.outputPath('side-panel-signed-in.png') });
-  await onboarding.screenshot({ path: testInfo.outputPath('onboarding-signed-in.png') });
   expect((await readVisits()).some(({ url }) => /\/api\/accounts\/authorize|\/auth\/callback/.test(url))).toBe(false);
 
   await onboarding.getByRole('button', { name: 'Sign out' }).click();
-  await expect(signIn).toBeEnabled();
-  const signInFromOnboarding = onboarding.getByRole('button', { name: 'Continue with ChatGPT' });
-  await expect(signInFromOnboarding).toBeEnabled();
-  const reopened = context.waitForEvent('page');
-  await signInFromOnboarding.click();
-  await expect((await reopened).getByText('Signed in. You can close this tab.')).toBeVisible();
-  await expect(panel.getByText(signedIn)).toBeVisible();
+  await expect(settings.getByRole('button', { name: 'Continue with ChatGPT' })).toBeEnabled();
+  await signInToMockChatGpt(context, onboarding);
+  await expect(settings.getByText(signedIn)).toBeVisible();
+  await onboarding.screenshot({ path: testInfo.outputPath('onboarding-signed-in.png') });
 });

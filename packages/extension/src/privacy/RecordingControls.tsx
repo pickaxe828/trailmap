@@ -4,15 +4,15 @@ import { Switch } from '@astryxdesign/core/Switch';
 import { Text } from '@astryxdesign/core/Text';
 import { VStack } from '@astryxdesign/core/VStack';
 import { useEffect, useState } from 'react';
-import { PASSWORD_STATUS_CHANGED, RECORDING_MESSAGE, type RecordingRequest, type RecordingStatus } from '../../privacy/messages';
-import { RECORDING_SETTINGS_KEY } from '../../privacy/settings';
+import { PASSWORD_STATUS_CHANGED, RECORDING_MESSAGE, type RecordingRequest, type RecordingStatus } from './messages';
+import { RECORDING_SETTINGS_KEY } from './settings';
 
-async function currentStatus(): Promise<RecordingStatus | undefined> {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+async function currentStatus(activeSite: boolean): Promise<RecordingStatus | undefined> {
+  const [tab] = activeSite ? await chrome.tabs.query({ active: true, currentWindow: true }) : [];
   return chrome.runtime.sendMessage({ type: RECORDING_MESSAGE, action: 'status', tabId: tab?.id } satisfies RecordingRequest);
 }
 
-export function RecordingControls() {
+export function RecordingControls({ activeSite = true }: { activeSite?: boolean }) {
   const [status, setStatus] = useState<RecordingStatus>();
   const [failed, setFailed] = useState(false);
 
@@ -20,7 +20,7 @@ export function RecordingControls() {
     let requestId = 0;
     const refresh = () => {
       const id = ++requestId;
-      void currentStatus().then((next) => {
+      void currentStatus(activeSite).then((next) => {
         if (id === requestId && next) setStatus(next);
       }).catch(() => {
         if (id === requestId) setFailed(true);
@@ -35,11 +35,13 @@ export function RecordingControls() {
     const passwordChanged = (message: { type?: string }) => {
       if (message?.type === PASSWORD_STATUS_CHANGED) refresh();
     };
-    chrome.tabs.onActivated.addListener(refresh);
-    chrome.tabs.onUpdated.addListener(tabUpdated);
-    chrome.windows.onFocusChanged.addListener(refresh);
+    if (activeSite) {
+      chrome.tabs.onActivated.addListener(refresh);
+      chrome.tabs.onUpdated.addListener(tabUpdated);
+      chrome.windows.onFocusChanged.addListener(refresh);
+      chrome.runtime.onMessage.addListener(passwordChanged);
+    }
     chrome.storage.onChanged.addListener(storageChanged);
-    chrome.runtime.onMessage.addListener(passwordChanged);
     refresh();
     return () => {
       requestId++;
@@ -49,7 +51,7 @@ export function RecordingControls() {
       chrome.storage.onChanged.removeListener(storageChanged);
       chrome.runtime.onMessage.removeListener(passwordChanged);
     };
-  }, []);
+  }, [activeSite]);
 
   async function change(request: RecordingRequest) {
     setFailed(false);
@@ -65,10 +67,12 @@ export function RecordingControls() {
   const label = paused ? 'Recording paused' : site?.state === 'skipped' ? 'Site is skipped' : 'Recording is on';
   return (
     <VStack gap={2}>
-      <HStack gap={2} align="center">
-        <StatusDot variant={paused ? 'warning' : site?.skipped ? 'neutral' : 'success'} label={label} />
-        <Text>{label}</Text>
-      </HStack>
+      {activeSite && (
+        <HStack gap={2} align="center">
+          <StatusDot variant={paused ? 'warning' : site?.skipped ? 'neutral' : 'success'} label={label} />
+          <Text>{label}</Text>
+        </HStack>
+      )}
       <Switch size="sm" label="Record browsing" value={!paused}
         description={paused ? 'Recording resumes on the next navigation.' : undefined}
         changeAction={(checked) => change({ type: RECORDING_MESSAGE, action: 'set-pause', paused: !checked })} />

@@ -37,16 +37,19 @@ test.describe('without the companion', () => {
   test('the side panel says Companion not connected and links to setup instructions; recording is unaffected', async ({
     context,
     openExtensionPage,
-  }) => {
+  }, info) => {
     const page = await openExtensionPage('sidepanel.html');
+    await page.setViewportSize({ width: 400, height: 660 });
     await expect(page.getByText('Companion not connected')).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText('Recording is on')).toBeVisible();
 
+    await page.screenshot({ path: process.env.PROOF_DIR
+      ? join(process.env.PROOF_DIR, 'companion-missing.png') : info.outputPath('companion-missing.png') });
     const setup = context.waitForEvent('page');
-    await page.getByRole('link', { name: 'Set up the companion' }).click();
+    await page.getByRole('link', { name: 'Fix connection' }).click();
     const instructions = await setup;
     await expect(instructions.getByRole('heading', { name: 'Set up the companion' })).toBeVisible();
-    expect(instructions.url()).toMatch(/\/onboarding\.html#companion$/);
+    expect(instructions.url()).toMatch(/\/settings\.html#companion$/);
   });
 
   test('the status goes live when the companion appears later, without reloading anything', async ({
@@ -59,5 +62,7 @@ test.describe('without the companion', () => {
     installCompanion();
 
     await expect(page.getByText('Companion connected')).toBeVisible({ timeout: 25_000 });
+    await expect(page.getByText('Companion not connected')).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'Fix connection' })).toHaveCount(0);
   });
 });
