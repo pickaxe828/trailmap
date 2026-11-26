@@ -60,3 +60,74 @@ test('Wrap up titles the Expedition, writes field notes with citations and loose
   await expect.poll(badge).not.toBe('1');
   await panel.screenshot({ path: testInfo.outputPath('wrap-up.png') });
 });
+
+test.describe('automatic wrap-up', () => {
+  test.use({ controlledCaptureClock: true });
+
+  test('Expedition inactivity writes field notes while the computer stays active', async ({
+    context, openExtensionPage, fixtureUrl, readCapture, serviceWorker,
+  }, testInfo) => {
+    const settings = await openExtensionPage('settings.html');
+    await signInToMockChatGpt(context, settings);
+    const research = await context.newPage();
+    await research.goto(fixtureUrl('learn.test', '/content/article.html'));
+    await expect.poll(async () => (await readCapture('pages')).some(({ text }) => text.length > 0)).toBe(true);
+    await research.locator('#highlight').selectText();
+    await expect.poll(async () => (await readCapture('visits')).find(({ url }) => url === research.url())?.engagement).toBe('read');
+    await expect.poll(async () => (await readCapture('expeditions')).length).toBe(1);
+    const [first] = await readCapture('expeditions');
+    const worker = await serviceWorker();
+    const advance = (ms: number) => worker.evaluate((ms) => {
+      return (globalThis as typeof globalThis & { captureTestTime: number }).captureTestTime += ms;
+    }, ms);
+    const closeAlarm = 'trailmap.expedition-close';
+    const deadline = () => worker.evaluate(async (name) => (await chrome.alarms.get(name))?.scheduledTime, closeAlarm);
+    const fireAlarm = () => worker.evaluate(async (name) => {
+      await chrome.alarms.create(name, { when: new Date().getTime() + 100 });
+    }, closeAlarm);
+
+    await expect.poll(deadline).toBe(first!.startedAt + 20 * 60_000);
+    // The same page is still being read, so the original deadline must not close it.
+    const readingAt = await advance(20 * 60_000);
+    await fireAlarm();
+    await expect.poll(deadline).toBe(readingAt + 20 * 60_000);
+    expect((await readCapture('expeditions')).find(({ id }) => id === first!.id)?.endedAt).toBeNull();
+
+    const unrelated = await context.newPage();
+    await unrelated.goto(fixtureUrl('unrelated.test', '/trail/other.html'));
+    await expect.poll(async () => (await readCapture('expeditions')).length).toBe(2);
+
+    await settings.bringToFront();
+    const inactivity = settings.getByLabel('Expedition inactivity');
+    await expect(inactivity).toHaveValue('20');
+    const topicSwitch = settings.getByLabel('Topic switch');
+    await expect(topicSwitch).toHaveValue('10');
+    await topicSwitch.fill('9');
+    await topicSwitch.press('Tab');
+    await inactivity.fill('2');
+    await inactivity.press('Tab');
+    await expect.poll(deadline).toBe(readingAt + 2 * 60_000);
+    await settings.reload();
+    await expect(inactivity).toHaveValue('2');
+    await expect(topicSwitch).toHaveValue('9');
+    await settings.locator('#privacy').screenshot({ path: testInfo.outputPath('expedition-recording-settings.png') });
+
+    await unrelated.bringToFront();
+    const unrelatedTabId = (await readCapture('visits')).find(({ url }) => url === unrelated.url())?.tabId;
+    expect(unrelatedTabId).toBeDefined();
+    await expect.poll(() => worker.evaluate(async () => {
+      const { 'trailmap.recorderState': state } = await chrome.storage.session.get('trailmap.recorderState') as {
+        'trailmap.recorderState'?: { focusedWindowId: number; activeTabByWindow: Record<number, number> };
+      };
+      return state?.activeTabByWindow[state.focusedWindowId];
+    })).toBe(unrelatedTabId);
+    await advance(2 * 60_000);
+    await fireAlarm();
+    await expect.poll(async () => (await readCapture('expeditions')).find(({ id }) => id === first!.id), { timeout: 60_000 })
+      .toMatchObject({ endedAt: readingAt, fieldNotes: expect.stringContaining('## Key ideas') });
+    expect((await readCapture('expeditions')).find(({ id }) => id !== first!.id)?.endedAt).toBeNull();
+
+    const panel = await openExtensionPage('sidepanel.html');
+    await expect(panel.getByRole('heading', { name: 'Field notes' })).toBeVisible();
+  });
+});

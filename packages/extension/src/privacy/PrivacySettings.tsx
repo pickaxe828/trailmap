@@ -2,18 +2,22 @@ import { Button } from '@astryxdesign/core/Button';
 import { Collapsible } from '@astryxdesign/core/Collapsible';
 import { Heading } from '@astryxdesign/core/Heading';
 import { HStack } from '@astryxdesign/core/HStack';
+import { NumberInput } from '@astryxdesign/core/NumberInput';
 import { Text } from '@astryxdesign/core/Text';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import { VStack } from '@astryxdesign/core/VStack';
 import { useEffect, useState, type SubmitEvent } from 'react';
+import { MAX_EXPEDITION_MINUTES, MIN_EXPEDITION_MINUTES } from '../segmentation/config';
 import { DENIED_HOSTS } from './default-deny-list';
 import { RECORDING_MESSAGE, type RecordingRequest } from './messages';
 import { RecordingControls } from './RecordingControls';
-import { readRecordingSettings, RECORDING_SETTINGS_KEY } from './settings';
+import { expeditionCloseSettings, readRecordingSettings, RECORDING_SETTINGS_KEY, type ExpeditionThreshold } from './settings';
 
 export function PrivacySettings() {
   const [input, setInput] = useState('');
   const [hosts, setHosts] = useState<string[]>();
+  const [thresholds, setThresholds] = useState<ReturnType<typeof expeditionCloseSettings>>();
+  const [thresholdError, setThresholdError] = useState(false);
   const [readFailed, setReadFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
@@ -23,7 +27,12 @@ export function PrivacySettings() {
     const read = () => {
       const current = ++revision;
       void readRecordingSettings().then(
-        ({ skippedHosts }) => { if (revision === current) { setHosts(skippedHosts); setReadFailed(false); } },
+        (settings) => {
+          if (revision !== current) return;
+          setHosts(settings.skippedHosts);
+          setThresholds(expeditionCloseSettings(settings));
+          setReadFailed(false);
+        },
         () => { if (revision === current) setReadFailed(true); },
       );
     };
@@ -34,6 +43,18 @@ export function PrivacySettings() {
     read();
     return () => { revision++; chrome.storage.onChanged.removeListener(changed); };
   }, []);
+
+  async function saveThreshold(threshold: ExpeditionThreshold, minutes: number) {
+    setThresholdError(false);
+    try {
+      const saved = await chrome.runtime.sendMessage({
+        type: RECORDING_MESSAGE, action: 'set-expedition-threshold', threshold, minutes,
+      } satisfies RecordingRequest);
+      if (!saved) throw new Error();
+    } catch {
+      setThresholdError(true);
+    }
+  }
 
   async function edit(site: string, skip: boolean) {
     setBusy(true);
@@ -62,6 +83,18 @@ export function PrivacySettings() {
       <Text as="p">Trailmap keeps a local record of the pages you visit, the links you follow, reading time, page text, search queries, and text you select or copy.</Text>
       <Text as="p" type="supporting">Private sites are skipped by default. If you enable a cloud model, eligible browsing content is sent to that provider to write notes. Ollama processes it on this computer.</Text>
       <RecordingControls activeSite={false} />
+      <VStack gap={2}>
+        <Heading level={3}>Automatic Expedition close</Heading>
+        <NumberInput label="Expedition inactivity" units="minutes" min={MIN_EXPEDITION_MINUTES} max={MAX_EXPEDITION_MINUTES}
+          description="Close an Expedition after this long without a new Visit or reading time."
+          isIntegerOnly isWheelEnabled={false} isDisabled={!thresholds} value={thresholds?.expeditionInactivityMinutes}
+          onChange={(minutes) => void saveThreshold('expeditionInactivityMinutes', minutes)} />
+        <NumberInput label="Topic switch" units="minutes" min={MIN_EXPEDITION_MINUTES} max={MAX_EXPEDITION_MINUTES}
+          description="When a new Expedition starts, close others inactive for at least this long."
+          isIntegerOnly isWheelEnabled={false} isDisabled={!thresholds} value={thresholds?.topicSwitchMinutes}
+          onChange={(minutes) => void saveThreshold('topicSwitchMinutes', minutes)} />
+        {thresholdError && <Text role="alert">Could not save the Expedition close setting.</Text>}
+      </VStack>
       <Collapsible trigger="Default skip list" defaultIsOpen={false}>
         <VStack gap={2} paddingBlockEnd={2}>
           <Text as="p">Trailmap skips password pages, private networks and local sites, checkout and payment pages, and common mail, calendar, chat and banking subdomains.</Text>
@@ -90,7 +123,7 @@ export function PrivacySettings() {
             ))}
           </VStack>
         )}
-        {readFailed && <Text role="alert">Could not read your skipped sites.</Text>}
+        {readFailed && <Text role="alert">Could not read your recording settings.</Text>}
         {error && <Text role="alert">{error}</Text>}
       </VStack>
     </VStack>

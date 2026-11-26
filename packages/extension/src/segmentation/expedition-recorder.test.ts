@@ -39,6 +39,74 @@ test('a restarted ExpeditionRecorder assigns pending Visits and incorporates lin
   expect(await db.expeditions.count()).toBe(1);
 });
 
+test('previous-session Expeditions close at last reading time on wake, without closing current-session Expeditions or duplicating jobs', async () => {
+  await db.visits.put({ ...root, activeMs: 2000, lastActiveAt: 9000 });
+  await new ExpeditionRecorder({ db, embedder, now: () => 9000 }).sync();
+  const current = { ...root, id: 'current', title: 'Indoor gardening', startedAt: 11_000 };
+  await db.visits.put(current);
+  const options = { db, embedder, now: () => 12_000 };
+  for (let wake = 0; wake < 2; wake++) {
+    const recorder = new ExpeditionRecorder(options);
+    await recorder.recover(10_000);
+    await recorder.sync();
+  }
+  expect(await db.expeditions.get('expedition:root')).toMatchObject({ endedAt: 9000 });
+  expect(await db.expeditions.get('expedition:current')).toMatchObject({ endedAt: null });
+  expect((await db.jobs.toArray()).map(({ kind, payload }) => [kind, payload])).toEqual([
+    ['expedition_wrap_up', { expeditionId: 'expedition:root', endedAt: 9000, revision: 0 }],
+  ]);
+});
+
+test('the startup sweep includes a pending linked Visit in the previous Expedition before closing it', async () => {
+  await db.visits.put(root);
+  await new ExpeditionRecorder({ db, embedder, now: () => 1000 }).sync();
+  await db.visits.put({ ...root, id: 'pending', parentVisitId: root.id, transition: 'link', startedAt: 8000 });
+  const recorder = new ExpeditionRecorder({ db, embedder, now: () => 10_000 });
+  await recorder.recover(10_000);
+  expect(await db.expeditions.toArray()).toMatchObject([{ id: 'expedition:root', endedAt: 8000 }]);
+  expect((await db.visits.get('pending'))?.expeditionId).toBe('expedition:root');
+});
+
+test('a startup sweep leaves current-session reading alone until capture can checkpoint it', async () => {
+  await db.visits.put(root);
+  await new ExpeditionRecorder({ db, embedder, now: () => 1000 }).sync();
+  const recorder = new ExpeditionRecorder({ db, embedder, now: () => 30 * 60_000 });
+  await recorder.recover(1000);
+  expect(await db.expeditions.get('expedition:root')).toMatchObject({ endedAt: null });
+  expect(await db.jobs.count()).toBe(0);
+});
+
+test('starting a new topic closes the older inactive Expedition but leaves a recently read one open', async () => {
+  const minute = 60_000;
+  let now = 3 * minute;
+  let topicSwitchMs = 15 * minute;
+  const recorder = new ExpeditionRecorder({ db, embedder: {
+    async embed(texts) {
+      return texts.map((text) => text === root.title ? Float32Array.of(1, 0, 0)
+        : text === 'Indoor gardening' ? Float32Array.of(0, 1, 0) : Float32Array.of(0, 0, 1));
+    },
+  }, now: () => now, timing: () => ({ inactivityMs: 20 * minute, topicSwitchMs }) });
+  await db.visits.bulkPut([
+    { ...root, startedAt: minute },
+    { ...root, id: 'garden', title: 'Indoor gardening', startedAt: 3 * minute },
+  ]);
+  await recorder.sync();
+
+  // Reading in the garden continued even though it received no new Visits.
+  await db.visits.update('garden', { lastActiveAt: 11 * minute, activeMs: minute });
+  now = 12 * minute;
+  topicSwitchMs = 10 * minute;
+  await db.visits.put({ ...root, id: 'bread', title: 'Sourdough baking', startedAt: now });
+  await recorder.sync();
+
+  expect(await db.expeditions.get('expedition:root')).toMatchObject({ endedAt: minute });
+  expect(await db.expeditions.get('expedition:garden')).toMatchObject({ endedAt: null });
+  expect(await db.expeditions.get('expedition:bread')).toMatchObject({ endedAt: null });
+  expect((await db.jobs.toArray()).map(({ payload }) => payload)).toEqual([
+    { expeditionId: 'expedition:root', endedAt: minute, revision: 0 },
+  ]);
+});
+
 test('closing at the idle deadline ends every open Expedition once and a later link starts a new one', async () => {
   const second = { ...root, id: 'other-root', title: 'Indoor gardening', tabId: 2, startedAt: 2000 };
   const closed: (string | undefined)[][] = [];
@@ -57,7 +125,7 @@ test('closing at the idle deadline ends every open Expedition once and a later l
 
   expect(closed).toEqual([[second.id, root.id]]);
   const expeditions = await db.expeditions.toArray();
-  expect(expeditions.find(({ rootVisitId }) => rootVisitId === root.id)?.endedAt).toBe(1_802_000);
+  expect(expeditions.find(({ rootVisitId }) => rootVisitId === root.id)?.endedAt).toBe(root.startedAt);
   expect(expeditions.find(({ rootVisitId }) => rootVisitId === link.id)?.endedAt).toBeNull();
 });
 
@@ -86,7 +154,7 @@ test('closing queues one wrap-up per Expedition in the closure, and Wrap up clos
   await recorder.sync();
   await recorder.close(4000, 'expedition:other-root');
   expect((await db.jobs.toArray()).map(({ kind, payload }) => [kind, payload])).toEqual([
-    ['expedition_wrap_up', { expeditionId: 'expedition:other-root', endedAt: 4000, revision: 0 }],
+    ['expedition_wrap_up', { expeditionId: 'expedition:other-root', endedAt: second.startedAt, revision: 0 }],
   ]);
   expect((await db.expeditions.get('expedition:root'))!.endedAt).toBeNull();
   await recorder.close(6000);

@@ -59,6 +59,7 @@ type PendingVisit = {
   parentVisitId: string | null;
   startedAt: number;
   activeMs: number;
+  lastActiveAt?: number;
   title: string;
 };
 
@@ -134,6 +135,11 @@ export class VisitRecorder {
     });
   }
 
+  /** Checkpoint reading time before evaluating Expedition deadlines. */
+  flushActiveTime(): Promise<void> {
+    return this.enqueue(async () => {});
+  }
+
   subscribe(listener: (change: VisitChange) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
@@ -204,12 +210,15 @@ export class VisitRecorder {
     const tabId = this.accruingTabId();
     if (tabId === undefined) return;
     const visit = this.current.get(tabId);
-    if (visit) await this.updateEngagement(visit, { activeMs: visit.activeMs + now - last });
+    if (visit) await this.updateEngagement(visit, { activeMs: visit.activeMs + now - last, lastActiveAt: now });
     const pending = this.pending.get(tabId);
-    if (pending) pending.activeMs += now - last;
+    if (pending) {
+      pending.activeMs += now - last;
+      pending.lastActiveAt = now;
+    }
   }
 
-  private async updateEngagement(visit: Visit, changes: Partial<Pick<Visit, 'activeMs' | 'scrollDepth'>>, interacted = false) {
+  private async updateEngagement(visit: Visit, changes: Partial<Pick<Visit, 'activeMs' | 'lastActiveAt' | 'scrollDepth'>>, interacted = false) {
     const engagement = scoreEngagement(changes.activeMs ?? visit.activeMs, changes.scrollDepth ?? visit.scrollDepth,
       interacted || visit.engagement === 'read');
     const { db, now } = this.options;
@@ -282,7 +291,7 @@ export class VisitRecorder {
     else await this.createVisit(pending);
   }
 
-  private async createVisit({ event, transition, parentVisitId, startedAt, activeMs, title }: PendingVisit) {
+  private async createVisit({ event, transition, parentVisitId, startedAt, activeMs, lastActiveAt, title }: PendingVisit) {
     const search = parseSearchQuery(event.url);
     const visit: Visit = {
       id: this.options.newId(),
@@ -295,6 +304,7 @@ export class VisitRecorder {
       transition: search && !parentVisitId && transition !== 'new-tab' ? 'search' : transition,
       startedAt,
       activeMs,
+      lastActiveAt,
       scrollDepth: 0,
       engagement: scoreEngagement(activeMs, 0),
       expeditionId: null,

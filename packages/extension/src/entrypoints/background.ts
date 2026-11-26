@@ -46,9 +46,9 @@ export default defineBackground(() => {
     onPasswordStatusChanged: privacy.onPasswordStatusChanged,
     newId: () => crypto.randomUUID(),
   });
-  const expeditions = startSegmentation(db, recorder);
-  startHistoryImport(expeditions, privacy);
   recorder.start();
+  const expeditions = startSegmentation(db, recorder, privacy.getSettings);
+  startHistoryImport(expeditions, privacy);
   privacy.start(recorder);
   startCorrections(db, recorder, privacy);
   startThreadCorrections(db);

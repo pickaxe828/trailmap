@@ -32,7 +32,10 @@ test('two related sittings become one Journal thread with both trails and an inc
     id: `evidence-${id}`, conceptId: concept.id, visitId: id, canonicalUrl, startedAt, name: concept.name, kind: concept.kind,
     gloss: concept.gloss, role: 'explains', embedding: null,
   }));
-  await seed(panel, { expeditions, visits, pages, concepts: [concept], conceptEvidence });
+  // Seed one sitting at a time: automatic closure would otherwise wrap up
+  // both historical fixtures before the test can observe the first one alone.
+  await seed(panel, { expeditions: [expeditions[0]!], visits: [visits[0]!], pages,
+    concepts: [concept], conceptEvidence: [conceptEvidence[0]!] });
 
   const wrapUp = (expeditionId: string) => panel.evaluate((id) =>
     chrome.runtime.sendMessage({ type: 'trailmap.wrapUp', expeditionId: id }), expeditionId);
@@ -42,6 +45,7 @@ test('two related sittings become one Journal thread with both trails and an inc
   await expect(journal.getByRole('link', { name: 'CRDT replication basics' })).toBeVisible();
   await expect(journal.getByText('2 sessions')).toHaveCount(0);
 
+  await seed(panel, { expeditions: [expeditions[1]!], visits: [visits[1]!], conceptEvidence: [conceptEvidence[1]!] });
   await wrapUp('session-1');
   await expect(journal.getByText('2 sessions')).toBeVisible({ timeout: 30_000 });
   await expect(journal.getByRole('link', { name: 'CRDT replication deletes' })).toHaveCount(0);
