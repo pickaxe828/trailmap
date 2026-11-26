@@ -82,9 +82,15 @@ test('queued Page notes survive a worker restart, filter at dispatch, and log ev
   }
   const entries = log.getByRole('button', { name: /ChatGPT plan/ });
   await expect(entries).toHaveCount(3);
+  await expect(entries.nth(0)).toContainText('Succeeded');
+  await expect(entries.nth(1)).toContainText('Failed: invalid_output');
+  await expect(entries.nth(2)).toContainText('Failed: provider_rejected');
+  const visibleParagraph = (text: string) => log.getByRole('paragraph').and(log.getByText(text, { exact: true }));
+  await entries.nth(1).click();
+  await expect(visibleParagraph('This fixture reply needs repair.')).toBeVisible();
   await entries.first().click();
-  await expect(log.getByText(attempts[2]!.instructions, { exact: true })).toBeVisible();
-  await expect(log.getByText(attempts[2]!.input[1]!.content, { exact: true })).toBeVisible();
+  await expect(visibleParagraph(attempts[2]!.instructions)).toBeVisible();
+  await expect(visibleParagraph(attempts[2]!.input[1]!.content)).toBeVisible();
   await entries.first().click();
   await log.screenshot({ path: testInfo.outputPath('sent-to-model.png') });
 });

@@ -125,7 +125,7 @@ test('saves the key and uses independent model choices from Settings', async ({
 
   await panel.getByRole('button', { name: /^Wrap up expedition/ }).click();
   await expect.poll(async () => (await readCapture('expeditions'))[0]?.fieldNotes).toContain(mockNotes);
-  for (const [entry, model] of [[/Anthropic · page summary/, 'fixture-claude'], [/Ollama · field notes/, 'gemma:notes']] as const) {
+  for (const [entry, model] of [[/Anthropic · Page summary/, 'fixture-claude'], [/Ollama · Field notes/, 'gemma:notes']] as const) {
     const trigger = settings.getByRole('button', { name: entry });
     await trigger.click();
     const controls = await trigger.getAttribute('aria-controls');

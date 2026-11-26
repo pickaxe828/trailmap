@@ -14,6 +14,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useJournalData } from '../../journal/data';
 import { planOrganisation, type OrganisationPlan } from '../../journal/organise';
 import { useJournalCorrection } from '../../journal/useJournalCorrection';
+import { ModelJobAttention } from '../../ui/ModelJobAttention';
 import { readJournalResearch } from '../../threads/read';
 import { ExpeditionCard } from './ExpeditionCard';
 import { JournalSearch } from './JournalSearch';
@@ -106,6 +107,7 @@ export function App() {
       content={(
         <LayoutContent padding={6} role="main">
           <VStack gap={6}>
+            <ModelJobAttention />
             <JournalSearch>
               {!result && <Text>Loading your Journal…</Text>}
               {result?.error && <Text role="alert">Could not load the Journal. Try reloading the page.</Text>}

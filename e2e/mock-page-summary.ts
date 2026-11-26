@@ -6,11 +6,16 @@ type Inference = {
 };
 const calls: Inference[] = [];
 let planErrorCleared = false;
+let failWrapUp = false;
 const mock = startMockOAuth(async (request) => {
   const path = new URL(request.url).pathname;
   if (path === '/test/calls') return Response.json(calls);
   if (path === '/test/clear-plan-error' && request.method === 'POST') {
     planErrorCleared = true;
+    return new Response(null, { status: 204 });
+  }
+  if (path === '/test/wrap-up-failure' && request.method === 'POST') {
+    failWrapUp = (await request.text()) === 'on';
     return new Response(null, { status: 204 });
   }
   if (request.headers.get('authorization') !== 'Bearer mock-access-0') return new Response(null, { status: 401 });
@@ -26,6 +31,9 @@ const mock = startMockOAuth(async (request) => {
     const { livingNote, fieldNotes } = JSON.parse(text) as { livingNote: string | null; fieldNotes: string };
     if (body.model !== 'fixture-model' || !fieldNotes.includes('A tombstone records')) return new Response(null, { status: 400 });
     return stream(JSON.stringify({ markdown: livingNote ? 'Both sessions support the revised conclusion.' : 'The first session explains tombstones.' }));
+  }
+  if (task === 'expedition_wrap_up' && failWrapUp) {
+    return Response.json({ error: { code: 'subscription_sharing_usage_unavailable', message: 'private provider detail' } }, { status: 503 });
   }
   if (task === 'expedition_wrap_up' || task === 'field_notes') {
     // Wrap-up inputs carry Page notes, never Page text.
