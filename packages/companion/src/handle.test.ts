@@ -12,6 +12,7 @@ test('answers companion.hello with its version', async () => {
     type: 'companion.hello',
     id: 'a1',
     version: COMPANION_VERSION,
+    modelProviders: true,
   });
 });
 

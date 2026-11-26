@@ -43,6 +43,18 @@ test('audited inference never sends Page text to an older companion', async () =
   expect(transport.latest.sent).toEqual([{ type: 'companion.hello', id: 'id1' }]);
 });
 
+test('a companion that predates provider selection cannot silently send Ollama prompts to ChatGPT', async () => {
+  client.start();
+  transport.latest.receive({ type: 'companion.hello', id: 'id1', version: '9.9.9', modelAudit: true });
+  const reply = client.request('llm.complete', {
+    provider: 'ollama', task: 'page_enrichment', auditId: crypto.randomUUID(), input: 'Page text', instructions: 'Summarize.',
+    schema: {}, schemaName: 'page_enrichment',
+  });
+  client.stop(); // Settle an incorrectly forwarded request too, so this test does not wait for a timer.
+  await expect(reply).rejects.toMatchObject({ code: 'not_connected' });
+  expect(transport.latest.sent).toEqual([{ type: 'companion.hello', id: 'id1' }]);
+});
+
 test('request() sends a typed request and resolves with the matching response', async () => {
   connect();
   const reply = client.request('companion.hello', {});

@@ -1,3 +1,4 @@
+import { llmTaskGroup } from '@trailmap/shared';
 import { liveQuery } from 'dexie';
 import { getCompanionClient } from '../companion/background';
 import { resolveConcepts } from '../concepts/resolve';
@@ -5,6 +6,7 @@ import { decideConceptMerges } from '../concepts/verdicts';
 import type { TrailmapDb } from '../db/db';
 import { getEmbedder } from '../embeddings/background';
 import { enrichPage } from '../enrichment/handler';
+import { onModelRoutesChanged, readModelRoutes } from '../llm/settings';
 import type { RecordingSettings } from '../privacy/policy';
 import { updateLivingNote } from '../threads/living-note';
 import { threadNotesWritten } from '../threads/hooks';
@@ -36,10 +38,15 @@ export function startJobs(db: TrailmapDb, ready: Promise<void>, getSettings: () 
       if (hold?.reason === 'not_signed_in' || hold?.reason === 'plan_usage_not_granted') {
         // Auth may have committed just before a worker crash or after a stale
         // model attempt saw the old account state. Recover without sending text.
-        const { signedIn, planUsage } = await client.request('auth.status', {});
-        if (signedIn && planUsage) await queue.accountChanged();
+        const account = await client.request('auth.status', {}).catch(() => undefined);
+        if (account?.signedIn && account.planUsage) await queue.accountChanged();
       }
-      while (client.supportsModelAudit && !getSettings().paused && await queue.runNext()) { /* drain ready jobs */ }
+      while (client.supportsModelAudit && !getSettings().paused) {
+        const routes = await readModelRoutes();
+        // Use one snapshot for claim, dispatch and ChatGPT hold accounting.
+        if (!await queue.runNext(({ kind }) => kind === 'concept_resolution' || kind === 'thread_match'
+          ? undefined : routes[llmTaskGroup(kind)])) break;
+      }
     }).catch(() => {}).finally(() => { pumping = false; });
   }
   chrome.alarms.onAlarm.addListener(({ name }) => { if (name === ALARM) kick(); });
@@ -48,6 +55,7 @@ export function startJobs(db: TrailmapDb, ready: Promise<void>, getSettings: () 
   // rows and the alarm, not on observing any particular in-memory event.
   liveQuery(() => db.jobs.where('status').equals('pending').count()).subscribe({ next: (count) => { if (count) kick(); } });
   client.subscribe(() => kick());
+  onModelRoutesChanged(kick);
   client.onEvent((event) => {
     if (event.name === 'auth.completed') void queue.accountChanged(true).then(kick).catch(() => {});
   });

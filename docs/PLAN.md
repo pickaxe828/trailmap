@@ -300,9 +300,9 @@ Keep it as a fallback only, in case OpenAI ever accepts custom schemes and loopb
 | Message | What it does |
 |---|---|
 | `auth.signIn` / `auth.status` / `auth.signOut` | Open an authorize URL, read the account status, or end the session (§7.1). The companion pushes `auth.completed` when sign-in succeeds. Tokens stay in the companion. |
-| `keys.set` | Saves an Anthropic API key to the Keychain. The extension never stores the key. |
-| `llm.models` | Lists displayable models as `{ models: [{ slug, displayName }] }` from the current provider. |
-| `llm.complete` | Takes `{ task, model?, instructions, input, schema, schemaName }`. The prompt and input are strings; pass a JSON Schema 2020-12 object (e.g. from Zod). Returns `{ output }` only after validation, or a typed error from §7.1. |
+| `keys.set` / `keys.status` | Saves the Anthropic API key to the companion's secret store and reports whether a key is saved. The extension does not persist the key; the companion never returns it. |
+| `llm.models` | Lists displayable `{ provider, slug, displayName }` models from all connected providers. Reports provider status separately so an unavailable provider doesn't hide the other catalogs. |
+| `llm.complete` | Takes `{ provider?, task, model?, instructions, input, schema, schemaName }`. The prompt and input are strings; pass a JSON Schema 2020-12 object (e.g. from Zod). Returns `{ output }` only after validation, or a typed error. |
 | `vault.write` | Writes a Markdown file, only inside the chosen Obsidian folder |
 
 - **No general-purpose commands.** There is nothing like "fetch any URL" or "read any file", so a bug in the extension can't turn the companion into a general proxy. Every incoming message is checked against the shared Zod schemas.

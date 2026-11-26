@@ -117,7 +117,9 @@ export const test = base.extend<Fixtures & Options, WorkerFixtures>({
   },
 
   companionEnv: async ({ companionDataDir }, use) => {
-    await use({ TRAILMAP_COMPANION_DATA_DIR: companionDataDir, TRAILMAP_SECRET_STORE: 'file' });
+    // Provider discovery must never probe an actual local Ollama instance in tests.
+    await use({ TRAILMAP_COMPANION_DATA_DIR: companionDataDir, TRAILMAP_SECRET_STORE: 'file',
+      TRAILMAP_OLLAMA_BASE_URL: `http://127.0.0.1:${FIXTURE_PORT}` });
   },
 
   installCompanion: async ({ userDataDir }, use) => {
