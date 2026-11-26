@@ -16,7 +16,7 @@ function isAtlasVisit(visit: Visit, expeditions: ReadonlyMap<string, Expedition>
 
 /** Errands cannot make a Concept visible, increase its exposure, or support an Atlas Edge. */
 export function readAtlas(db: TrailmapDb) {
-  return db.transaction('r', [db.concepts, db.conceptEvidence, db.visits, db.edges, db.expeditions], async () => {
+  return db.transaction('r', [db.concepts, db.conceptEvidence, db.visits, db.edges, db.expeditions, db.threads], async () => {
     const { concepts, edges } = await readVisibleConceptGraph(db);
     const rows = await db.conceptEvidence.where('conceptId').anyOf(concepts.map(({ id }) => id)).toArray();
     const semantic = edges.filter(({ type }) => ConceptRelationType.safeParse(type).success);
@@ -41,7 +41,17 @@ export function readAtlas(db: TrailmapDb) {
         ? [scoped] : [];
     });
     const visibleIds = new Set(visible.map(({ id }) => id));
-    return { concepts: visible, edges: semantic.flatMap((edge) => {
+    const threads = (await db.threads.toArray()).map(({ id, title }) => ({ id, title, conceptIds: new Set<string>() }));
+    const byThread = new Map(threads.map((thread) => [thread.id, thread.conceptIds]));
+    for (const id of visibleIds) {
+      for (const { visitId } of byConcept.get(id) ?? []) {
+        const expeditionId = allowed.get(visitId)?.expeditionId;
+        const threadId = expeditionId && expeditions.get(expeditionId)?.threadId;
+        if (threadId) byThread.get(threadId)?.add(id);
+      }
+    }
+    threads.sort((a, b) => a.title.localeCompare(b.title) || a.id.localeCompare(b.id));
+    return { concepts: visible, threads, edges: semantic.flatMap((edge) => {
       if (!visibleIds.has(edge.from) || !visibleIds.has(edge.to)) return [];
       const { observed, verdicts } = edgeSupport(edge);
       const scoped = withEdgeSupport(edge, observed.filter((id) => allowed.has(id)),

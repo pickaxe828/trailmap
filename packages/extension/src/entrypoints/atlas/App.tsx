@@ -2,6 +2,7 @@ import { AppShell } from '@astryxdesign/core/AppShell';
 import { Card } from '@astryxdesign/core/Card';
 import { Heading } from '@astryxdesign/core/Heading';
 import { HStack } from '@astryxdesign/core/HStack';
+import { Selector } from '@astryxdesign/core/Selector';
 import { Slider } from '@astryxdesign/core/Slider';
 import { Text } from '@astryxdesign/core/Text';
 import { TopNav, TopNavHeading, TopNavItem } from '@astryxdesign/core/TopNav';
@@ -10,7 +11,7 @@ import { VStack } from '@astryxdesign/core/VStack';
 import { useMemo, useState } from 'react';
 import { AtlasMap } from '../../atlas/AtlasMap';
 import { readAtlas } from '../../atlas/data';
-import { buildAtlasGraph, isConceptShown, topConceptIds } from '../../atlas/graph';
+import { buildAtlasGraph, isConceptInScope, isConceptShown, topConceptIds } from '../../atlas/graph';
 import { conceptNameKey } from '../../concepts/evidence';
 import { useJournalData } from '../../journal/data';
 import { ConceptCard } from './ConceptCard';
@@ -21,8 +22,8 @@ const numberFormat = new Intl.NumberFormat();
 type AtlasData = Awaited<ReturnType<typeof readAtlas>>;
 type ConceptMatch = SearchableItem & { terms: string[]; firstSeen: number };
 
-function AtlasView({ concepts, edges }: AtlasData) {
-  const { graph, byId, top, dates, matches } = useMemo(() => {
+function AtlasView({ concepts, edges, threads }: AtlasData) {
+  const { graph, byId, dates, matches } = useMemo(() => {
     const graph = buildAtlasGraph(concepts, edges);
     const byId = new Map(concepts.map((concept) => [concept.id, concept]));
     const matches: ConceptMatch[] = graph.nodes().map((id) => {
@@ -30,18 +31,22 @@ function AtlasView({ concepts, edges }: AtlasData) {
       return { id, label: name, terms: [name, ...aliases].map(conceptNameKey), firstSeen };
     });
     const dates = [...new Set(concepts.map(({ firstSeen }) => firstSeen))].sort((a, b) => a - b);
-    return { graph, byId, top: topConceptIds(graph), dates, matches };
+    return { graph, byId, dates, matches };
   }, [concepts, edges]);
   const [replayAt, setReplayAt] = useState<number>();
   const [selection, setSelection] = useState<string>();
+  const [threadId, setThreadId] = useState('');
+  const thread = threads.find(({ id }) => id === threadId);
+  const scope = thread?.conceptIds;
+  const top = useMemo(() => topConceptIds(graph, undefined, scope), [graph, scope]);
   const replayIndex = replayAt === undefined ? dates.length - 1 : Math.max(0, dates.findLastIndex((date) => date <= replayAt));
   const cutoff = dates[replayIndex]!;
   const concept = selection ? byId.get(selection) : undefined;
-  const selected = concept && concept.firstSeen <= cutoff ? concept : undefined;
-  const filter = useMemo(() => ({ top, cutoff, focused: selected?.id }), [top, cutoff, selected?.id]);
+  const selected = concept && isConceptInScope(concept.id, concept.firstSeen, { cutoff, scope }) ? concept : undefined;
+  const filter = useMemo(() => ({ top, cutoff, scope, focused: selected?.id }), [top, cutoff, scope, selected?.id]);
   const shown = matches.filter(({ id, firstSeen }) => isConceptShown(id, firstSeen, filter)).length;
   const neighbours = selected ? graph.neighbors(selected.id).map((id) => byId.get(id)!)
-    .filter(({ firstSeen }) => firstSeen <= cutoff).sort((a, b) => a.name.localeCompare(b.name)) : [];
+    .filter(({ id, firstSeen }) => isConceptInScope(id, firstSeen, filter)).sort((a, b) => a.name.localeCompare(b.name)) : [];
   const searchSource = useMemo<SearchSource<ConceptMatch>>(() => ({
     search(query) {
       const key = conceptNameKey(query);
@@ -49,14 +54,14 @@ function AtlasView({ concepts, edges }: AtlasData) {
       const exact: ConceptMatch[] = [];
       const partial: ConceptMatch[] = [];
       for (const match of matches) {
-        if (match.firstSeen > cutoff) continue;
+        if (!isConceptInScope(match.id, match.firstSeen, { cutoff, scope })) continue;
         if (match.terms.includes(key)) exact.push(match);
         else if (match.terms.some((term) => term.includes(key))) partial.push(match);
       }
       return [...exact, ...partial].slice(0, 10);
     },
-    bootstrap: () => matches.filter(({ firstSeen }) => firstSeen <= cutoff).slice(0, 5),
-  }), [cutoff, matches]);
+    bootstrap: () => matches.filter(({ id, firstSeen }) => isConceptInScope(id, firstSeen, { cutoff, scope })).slice(0, 5),
+  }), [cutoff, matches, scope]);
 
   return (
     <VStack gap={4} className="min-h-0 grow">
@@ -66,6 +71,13 @@ function AtlasView({ concepts, edges }: AtlasData) {
             value={matches.find(({ id }) => id === selected?.id) ?? null} onChange={(item) => setSelection(item?.id)}
             debounceMs={0} hasEntriesOnFocus emptySearchText="No matching concepts" />
         </VStack>
+        {threads.length > 0 && (
+          <VStack className="min-w-0 grow basis-64">
+            <Selector label="Filter by thread" width="100%" hasSearch={threads.length > 8}
+              options={[{ value: '', label: 'All threads' }, ...threads.map(({ id, title }) => ({ value: id, label: title }))]}
+              value={thread?.id ?? ''} onChange={(id) => { setThreadId(id); setSelection(undefined); }} />
+          </VStack>
+        )}
         <VStack className="min-w-0 grow basis-64">
           <Slider label="Replay by date" min={0} max={Math.max(1, dates.length - 1)} value={replayIndex} valueDisplay="text"
             isDisabled={dates.length === 1} formatValue={(index) => dateFormat.format(dates[index] ?? dates[0])}
