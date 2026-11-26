@@ -168,7 +168,10 @@ export function openAiProvider(ctx: CompanionContext): LlmProvider {
 }
 
 async function readResponse(response: Response, touch: () => void, requestId?: string): Promise<string> {
-  if (!response.body || response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase() !== 'text/event-stream') {
+  // We always ask for `text/event-stream`. ChatGPT's safety-buffered responses (`x-codex-safety-buffering-enabled`)
+  // arrive as a valid SSE body with no Content-Type at all, so only a *declared* non-stream type is rejected.
+  const declared = response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase();
+  if (!response.body || (declared !== undefined && declared !== 'text/event-stream')) {
     throw unavailable(requestId);
   }
   let text = '';

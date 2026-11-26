@@ -51,13 +51,17 @@ function frame(type: string, fields = {}) {
 }
 
 function stream(...frames: string[]) {
+  return streamWith({ 'content-type': 'text/event-stream' }, ...frames);
+}
+
+function streamWith(headers: Record<string, string>, ...frames: string[]) {
   const bytes = new TextEncoder().encode(': keepalive\r\n\r\n' + frames.join(''));
   // Every byte arrives separately so UTF-8, CRLF and SSE frames all cross chunk boundaries.
   let i = 0;
   return new Response(new ReadableStream({ pull(controller) {
     if (i === bytes.length) controller.close();
     else controller.enqueue(bytes.subarray(i, ++i));
-  } }), { headers: { 'content-type': 'text/event-stream' } });
+  } }), { headers });
 }
 
 const completed = frame('response.completed', { response: { status: 'completed' } });
@@ -76,6 +80,20 @@ test('returns validated Page JSON from a split UTF-8 stream using a freshly rota
     model: 'mock-model', instructions: 'Summarize this Page.', input: [{ role: 'user', content: 'A stored Page about café design.' }],
     store: false, stream: true, text: { format: { type: 'json_schema', name: 'page_summary', strict: true, schema } },
   }]]);
+});
+
+test('accepts an event stream that ChatGPT sends without a Content-Type header', async () => {
+  // Observed 2026-11-27 with `x-codex-safety-buffering-enabled: true`: a valid SSE body, status 200, no Content-Type.
+  await signIn();
+  respond = () => streamWith({ 'x-codex-safety-buffering-enabled': 'true' },
+    frame('response.created'), delta('{"summary":"A café"}'), completed);
+  expect(await complete()).toEqual({ type: 'llm.complete', id: 'task', output: { summary: 'A café' } });
+});
+
+test('still treats a declared non-stream body as temporarily unavailable', async () => {
+  await signIn();
+  respond = () => new Response('{"summary":"not a stream"}', { headers: { 'content-type': 'application/json' } });
+  expect(await complete()).toMatchObject({ type: 'error', code: 'usage_unavailable', retryAfterMs: 5_000 });
 });
 
 test('does not send audited source text when dispatch permission is withheld', async () => {
