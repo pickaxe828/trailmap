@@ -128,7 +128,7 @@ test('the Atlas Thread filter shows only Concepts with evidence in its sessions'
   await expect(atlas.getByRole('option', { name: 'No matching concepts' })).toBeVisible();
   await search.fill('CRDT');
   await atlas.getByRole('option', { name: 'CRDT', exact: true }).click();
-  await expect(atlas.getByRole('heading', { name: 'CRDT' })).toBeVisible();
+  await expect(atlas.getByRole('link', { name: 'Replication primer' })).toBeVisible();
   await atlas.screenshot({ path: process.env.PROOF_DIR ? join(process.env.PROOF_DIR, 'atlas-thread.png') : info.outputPath('atlas-thread.png') });
   await thread.click();
   await atlas.getByRole('option', { name: 'All threads' }).click();
