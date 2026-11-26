@@ -71,6 +71,18 @@ test('a usage limit holds the whole queue across restarts and probes later witho
   expect(ran).toEqual(['page', 'higher priority too']);
 });
 
+test('a ChatGPT plan hold does not block another provider or clear after that provider succeeds', async () => {
+  await enqueue('ChatGPT Page');
+  await worker(async () => { throw new CompanionRequestError('usage_limit_exceeded', 'limit'); }).runNext();
+  await enqueue('Ollama Page');
+  const ran: string[] = [];
+  const queue = worker(async (id) => { ran.push(id); });
+  const routeFor = ({ key }: { key: string }) => ({ provider: key === 'ChatGPT Page' ? 'chatgpt' : 'ollama' } as const);
+  expect(await queue.runNext(routeFor)).toBe(true);
+  expect(await queue.runNext(routeFor)).toBe(false);
+  expect(ran).toEqual(['Ollama Page']);
+});
+
 test('ineligibility stops the queue until the user successfully signs in again', async () => {
   await enqueue('page');
   const queue = worker(async () => { throw new CompanionRequestError('not_eligible', 'ineligible'); });

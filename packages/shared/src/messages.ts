@@ -11,7 +11,7 @@
  * The protocol carries account status, never ChatGPT credentials.
  */
 import { z } from 'zod';
-import { LlmCompletion, LlmErrorCode, LlmModel, LlmOutput, ModelDispatch } from './llm';
+import { LlmCompletion, LlmErrorCode, LlmModel, LlmOutput, ModelDispatch, ProviderCatalogStatus, ProviderModel } from './llm';
 
 /** The Native Messaging host name, shared by the install manifest and `chrome.runtime.connectNative`. */
 export const NATIVE_HOST_NAME = 'com.trailmap.companion';
@@ -25,6 +25,8 @@ export const CompanionRequest = z.discriminatedUnion('type', [
   z.object({ type: z.literal('auth.signIn'), id: z.string() }),
   z.object({ type: z.literal('auth.status'), id: z.string() }),
   z.object({ type: z.literal('auth.signOut'), id: z.string() }),
+  z.object({ type: z.literal('keys.set'), id: z.string(), provider: z.literal('anthropic'), key: z.string().trim().min(1).max(512).regex(/^[!-~]+$/) }),
+  z.object({ type: z.literal('keys.status'), id: z.string(), provider: z.literal('anthropic') }),
   LlmCompletion.extend({ type: z.literal('llm.complete'), id: z.string() }),
   z.object({ type: z.literal('llm.models'), id: z.string() }),
   z.object({ type: z.literal('llm.dispatchAck'), id: z.string(), dispatchId: z.uuid(), allow: z.boolean() }),
@@ -89,12 +91,14 @@ export const ChatGptStatus = z.object({
 export type ChatGptStatus = z.infer<typeof ChatGptStatus>;
 
 export const CompanionResponse = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('companion.hello'), id: z.string(), version: z.string(), modelAudit: z.literal(true).optional() }),
+  z.object({ type: z.literal('companion.hello'), id: z.string(), version: z.string(), modelAudit: z.literal(true).optional(), modelProviders: z.literal(true).optional() }),
   z.object({ type: z.literal('auth.signIn'), id: z.string(), url: z.url() }),
   ChatGptStatus.extend({ type: z.literal('auth.status'), id: z.string() }),
   z.object({ type: z.literal('auth.signOut'), id: z.string(), revocationConfirmed: z.boolean() }),
+  z.object({ type: z.literal('keys.set'), id: z.string(), keySet: z.boolean() }),
+  z.object({ type: z.literal('keys.status'), id: z.string(), keySet: z.boolean() }),
   z.object({ type: z.literal('llm.complete'), id: z.string(), output: LlmOutput }),
-  z.object({ type: z.literal('llm.models'), id: z.string(), models: z.array(LlmModel) }),
+  z.object({ type: z.literal('llm.models'), id: z.string(), models: z.array(ProviderModel.or(LlmModel)), providers: z.array(ProviderCatalogStatus).optional() }),
   z.object({ type: z.literal('llm.dispatchAck'), id: z.string() }),
   z.object({ type: z.literal('vault.setFolder'), id: z.string(), folder: VaultFolder.nullable(), cancelled: z.literal(true).optional() }),
   z.object({ type: z.literal('vault.write'), id: z.string() }),

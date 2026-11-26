@@ -1,6 +1,7 @@
 import type { Table } from 'dexie';
 import { CompanionRequestError } from '../companion/client';
 import type { TrailmapDb } from '../db/db';
+import type { ModelRoute } from '../llm/settings';
 import type { Job, JobKind, JobSpec, QueueHold } from './types';
 
 export { JOB_PRIORITY, type JobPriority } from './types';
@@ -13,7 +14,7 @@ const TRANSIENT_MAX_MS = 15 * 60_000;
 
 type JobDisposition = void | { retryAt: number } | 'discard';
 export type JobResult = JobDisposition | { commit: () => Promise<JobDisposition> };
-export type JobHandlers = { [K in JobKind]: (job: Job<K>) => Promise<JobResult> };
+export type JobHandlers = { [K in JobKind]: (job: Job<K>, route?: ModelRoute) => Promise<JobResult> };
 
 type JobChange = { job: Partial<Job>; hold?: QueueHold };
 type Attempt = { result: JobResult } | { error: unknown };
@@ -44,27 +45,28 @@ export class JobQueue {
   ) {}
 
   /** Runs at most one due job. False means there is no work this worker can claim now. */
-  async runNext(): Promise<boolean> {
+  async runNext(routeFor: (job: Job) => ModelRoute | undefined = () => ({ provider: 'chatgpt' })): Promise<boolean> {
     if (this.running) return false;
     this.running = true;
     try {
-      const job = await this.claim();
-      if (!job) return false;
+      const claimed = await this.claim(routeFor);
+      if (!claimed) return false;
+      const { job, route } = claimed;
       let attempt: Attempt;
       try {
-        attempt = { result: await this.run(job) };
+        attempt = { result: await this.run(job, route) };
       } catch (error) {
         attempt = { error };
       }
-      await this.finish(job, attempt);
+      await this.finish(job, attempt, route?.provider === 'chatgpt');
       return true;
     } finally {
       this.running = false;
     }
   }
 
-  private run<K extends JobKind>(job: Job<K>) {
-    return this.handlers[job.kind](job);
+  private run<K extends JobKind>(job: Job<K>, route?: ModelRoute) {
+    return this.handlers[job.kind](job, route);
   }
 
   /** A status check can recover a missed auth event, but cannot clear a provider ineligibility decision. */
@@ -76,26 +78,26 @@ export class JobQueue {
     });
   }
 
-  private async claim() {
+  private async claim(routeFor: (job: Job) => ModelRoute | undefined) {
     const { jobs, queueHolds } = this.db;
     return this.db.transaction('rw', jobs, queueHolds, async () => {
       const now = this.now();
       const hold = await queueHolds.get('ai');
-      if (hold && (hold.reason !== 'usage_limit_exceeded' || hold.retryAt > now)) return;
+      const planHeld = hold && (hold.reason !== 'usage_limit_exceeded' || hold.retryAt > now);
       const leased = await jobs.where('status').equals('leased').first();
       if (leased?.lease && leased.lease.until > now) return;
       if (leased) await jobs.update(leased.id, { status: 'pending', lease: undefined });
       const next = await jobs.where('[status+priority+createdAt]')
         .between(['pending', 0, -Infinity], ['pending', Infinity, Infinity])
-        .filter(({ availableAt }) => availableAt <= now).first();
+        .filter((job) => job.availableAt <= now && (!planHeld || routeFor(job)?.provider !== 'chatgpt')).first();
       if (!next) return;
       const job = { ...next, status: 'leased', lease: { token: crypto.randomUUID(), until: now + JOB_LEASE_MS } } as const;
       await jobs.put(job);
-      return job;
+      return { job, route: routeFor(job) };
     });
   }
 
-  private async finish(job: Job, attempt: Attempt) {
+  private async finish(job: Job, attempt: Attempt, usesChatGptPlan: boolean) {
     const { jobs, queueHolds } = this.db;
     await this.db.transaction('rw', [jobs, queueHolds, ...this.resultTables], async () => {
       const current = await jobs.get(job.id);
@@ -103,7 +105,7 @@ export class JobQueue {
       if (!current?.lease || current.lease.token !== job.lease?.token || current.lease.until <= this.now()) return;
       const hold = await queueHolds.get('ai');
       if ('error' in attempt) {
-        const change = failure(job, attempt.error, hold, this.now());
+        const change = failure(job, attempt.error, usesChatGptPlan ? hold : undefined, this.now());
         await jobs.update(job.id, { ...change.job, lease: undefined });
         if (change.hold) await queueHolds.put(change.hold);
         return;
@@ -116,7 +118,7 @@ export class JobQueue {
         return;
       }
       await jobs.update(job.id, { status: 'done', lease: undefined });
-      if (hold?.reason === 'usage_limit_exceeded') await queueHolds.delete('ai');
+      if (usesChatGptPlan && hold?.reason === 'usage_limit_exceeded') await queueHolds.delete('ai');
     });
   }
 }
@@ -135,6 +137,8 @@ function failure(job: Job, error: unknown, hold: QueueHold | undefined, now: num
       return { job: { status: 'pending' }, hold: { id: 'ai', reason: code } };
     case 'not_connected':
     case 'usage_unavailable':
+    case 'provider_unreachable':
+    case 'provider_rate_limited':
     case 'timeout': {
       const failures = job.failures + 1;
       const hint = error instanceof CompanionRequestError ? error.details?.retryAfterMs ?? 0 : 0;

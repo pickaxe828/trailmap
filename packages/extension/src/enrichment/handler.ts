@@ -37,7 +37,7 @@ export function enrichPage(db: TrailmapDb, getSettings: () => RecordingSettings)
     return input && { input: JSON.stringify(input), sourceUrl: page.sourceUrl, sourceVisitId: page.sourceVisitId };
   }
 
-  return async (job) => {
+  return async (job, route) => {
     const { payload } = job;
     const prepared = await db.transaction('r', sources, () => prepare(payload));
     if (prepared === 'waiting') return { retryAt: Date.now() + 5_000 };
@@ -55,7 +55,7 @@ export function enrichPage(db: TrailmapDb, getSettings: () => RecordingSettings)
           const latest = await prepare(payload);
           return !!latest && latest !== 'waiting' && latest.input === input && latest.sourceVisitId === sourceVisitId && latest.sourceUrl === sourceUrl;
         },
-      }));
+      }, route));
     } catch (error) {
       if (error instanceof CompanionRequestError && error.code === 'dispatch_cancelled') {
         return { retryAt: Date.now() + 30_000 };

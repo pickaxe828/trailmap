@@ -1,7 +1,8 @@
 import { ChatGptAuthError, getChatGptAuth } from './auth/auth';
 import type { SecretStore } from './secrets';
-import { openAiProvider } from './llm/openai';
+import { ANTHROPIC_KEY_ACCOUNT } from './llm/anthropic';
 import { LlmFailure } from './llm/provider';
+import { complete, modelCatalog } from './llm/providers';
 import { VaultError, type Vault } from './vault';
 import { CompanionRequest, type CompanionEvent, type CompanionRequestType, type CompanionResponse, type ErrorCode, type ModelDispatch } from '@trailmap/shared';
 
@@ -35,7 +36,7 @@ export type Handlers = {
 /** One entry per verb in `CompanionRequest`: adding a verb to the schema fails typecheck until it has a handler. */
 export const defaultHandlers: Handlers = {
   'companion.hello': (request, ctx) => ({
-    type: 'companion.hello', id: request.id, version: COMPANION_VERSION,
+    type: 'companion.hello', id: request.id, version: COMPANION_VERSION, modelProviders: true,
     ...(ctx.authorizeDispatch ? { modelAudit: true } : {}),
   }),
   'auth.signIn': async ({ id }, ctx) => ({ type: 'auth.signIn', id, url: await getChatGptAuth(ctx).signIn() }),
@@ -43,8 +44,13 @@ export const defaultHandlers: Handlers = {
   'auth.signOut': async ({ id }, ctx) => ({
     type: 'auth.signOut', id, revocationConfirmed: await getChatGptAuth(ctx).signOut(),
   }),
-  'llm.complete': async ({ id, type, ...request }, ctx) => ({ type, id, output: await openAiProvider(ctx).complete(request) }),
-  'llm.models': async ({ id, type }, ctx) => ({ type, id, models: await openAiProvider(ctx).models() }),
+  'keys.set': async ({ id, type, key }, ctx) => {
+    await ctx.secrets.set(ANTHROPIC_KEY_ACCOUNT, key);
+    return { type, id, keySet: true };
+  },
+  'keys.status': async ({ id, type }, ctx) => ({ type, id, keySet: !!await ctx.secrets.get(ANTHROPIC_KEY_ACCOUNT) }),
+  'llm.complete': async ({ id, type, ...request }, ctx) => ({ type, id, output: await complete(ctx, request) }),
+  'llm.models': async ({ id, type }, ctx) => ({ type, id, ...await modelCatalog(ctx) }),
   'llm.dispatchAck': ({ id, type, dispatchId, allow }, ctx) => {
     ctx.acknowledgeDispatch?.(dispatchId, allow);
     return { type, id };

@@ -23,7 +23,9 @@ export function SummarizePage() {
   return (
     <VStack gap={2} align="start">
       <Button label="Summarize this page" clickAction={summarize} />
-      <Text type="supporting">Sends this page’s captured text to OpenAI using your ChatGPT plan.</Text>
+      <Text type="supporting">Sends this page’s captured text to your extraction provider.{' '}
+        <Link href="/onboarding.html#model-providers" target="_blank">Model settings</Link>
+      </Text>
       {reply && (
         <section aria-live="polite">
           {reply.ok ? (

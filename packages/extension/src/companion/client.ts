@@ -85,6 +85,7 @@ export class CompanionClient {
 
   private _status: CompanionStatus = { state: 'disconnected' };
   private modelAudit = false;
+  private modelProviders = false;
   private readonly statusListeners = new Set<(status: CompanionStatus) => void>();
   private readonly eventListeners = new Set<(event: CompanionEvent) => void>();
 
@@ -154,6 +155,9 @@ export class CompanionClient {
     if (type === 'llm.complete' && 'auditId' in payload && !this.supportsModelAudit) {
       throw new CompanionRequestError('not_connected', 'Update the companion before requesting AI notes.');
     }
+    if (type === 'llm.complete' && 'provider' in payload && payload.provider && payload.provider !== 'chatgpt' && !this.modelProviders) {
+      throw new CompanionRequestError('not_connected', 'Update the companion before using the selected model provider.');
+    }
     const response = await this.send({ type, ...payload } as Omit<CompanionRequest, 'id'>);
     return response as ResponseFor<T>;
   }
@@ -196,6 +200,7 @@ export class CompanionClient {
       }
       this.failures = 0;
       this.modelAudit = result.modelAudit === true;
+      this.modelProviders = result.modelProviders === true;
       this.setStatus({ state: 'connected', version: result.version });
       const waiters = this.readyWaiters;
       this.readyWaiters = [];
