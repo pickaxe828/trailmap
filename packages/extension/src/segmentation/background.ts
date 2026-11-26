@@ -79,4 +79,5 @@ export function startSegmentation(db: TrailmapDb, recorder: VisitRecorder) {
   });
   observeIdle();
   sync();
+  return expeditions;
 }
