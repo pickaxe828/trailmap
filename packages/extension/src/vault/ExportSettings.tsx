@@ -44,8 +44,8 @@ export function ExportSettings() {
   }
 
   return (
-    <VStack as="section" gap={2} aria-label="Exports">
-      <Heading level={3}>Exports</Heading>
+    <VStack as="section" id="exports" gap={2} aria-label="Exports">
+      <Heading level={2}>Exports</Heading>
       <Text type="supporting">Exports work without the companion. The JSON dump includes browsing data and the model audit log.</Text>
       <HStack gap={2} wrap="wrap">
         <Button label="Export all as Markdown (zip)" isLoading={working === 'markdown'} isDisabled={working === 'json'}

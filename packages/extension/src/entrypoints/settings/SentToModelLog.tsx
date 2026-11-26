@@ -14,9 +14,6 @@ export function SentToModelLog() {
   const [limit, setLimit] = useState(PAGE_SIZE);
   const [entries, setEntries] = useState<SentToModel[]>();
   useEffect(() => {
-    if (location.hash === '#sent-to-model') document.getElementById('sent-to-model')?.scrollIntoView();
-  }, []);
-  useEffect(() => {
     const db = openTrailmapDb();
     const subscription = liveQuery(() => db.sentToModel.orderBy('at').reverse().limit(limit + 1).toArray())
       .subscribe({ next: setEntries });
@@ -25,7 +22,7 @@ export function SentToModelLog() {
 
   return (
     <VStack as="section" aria-labelledby="sent-to-model" gap={2}>
-      <Heading level={3} id="sent-to-model">Sent-to-model log</Heading>
+      <Heading level={2} id="sent-to-model">Sent-to-model log</Heading>
       <Text as="p">
         This log is stored in this browser. It records the exact text and provider for each model attempt, including retries and failed calls.
         Entries are written immediately before sending; a connection loss can prevent delivery.

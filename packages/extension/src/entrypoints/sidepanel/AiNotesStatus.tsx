@@ -1,4 +1,5 @@
 import { Banner } from '@astryxdesign/core/Banner';
+import { Button } from '@astryxdesign/core/Button';
 import { Link } from '@astryxdesign/core/Link';
 import { liveQuery } from 'dexie';
 import { useEffect, useState } from 'react';
@@ -15,15 +16,22 @@ export function AiNotesStatus() {
   if (!hold) return null;
   if (hold.reason === 'usage_limit_exceeded') {
     return <Banner status="warning"
-      title="ChatGPT jobs paused until your plan limit resets. Browsing is still recorded."
-      description={<Link href="https://chatgpt.com/settings/usage" target="_blank">ChatGPT usage settings</Link>} />;
+      title="ChatGPT plan limit reached"
+      description={(
+        <>
+          AI notes using ChatGPT are paused until your limit resets. Browsing is still recorded.{' '}
+          <Link href="https://chatgpt.com/settings/usage" target="_blank" rel="noopener noreferrer">ChatGPT usage settings</Link>
+        </>
+      )} />;
   }
   if (hold.reason === 'not_eligible') {
-    return <Banner status="warning" title="ChatGPT jobs stopped."
-      description="This ChatGPT account or workspace is not eligible for plan usage. Browsing is still recorded." />;
+    return <Banner status="warning" title="ChatGPT account not eligible"
+      description="This account or workspace can’t use ChatGPT plan usage. Try an Anthropic API key or a local Ollama model instead. Browsing is still recorded."
+      endContent={<Button label="Choose another provider" variant="secondary" size="sm" href="/settings.html#model-providers"
+        target="_blank" rel="noopener noreferrer" />} />;
   }
-  if (hold.reason === 'plan_usage_not_granted') {
-    return <Banner status="info" title="ChatGPT jobs are waiting for plan permission." />;
-  }
-  return <Banner status="info" title="Sign in with ChatGPT to resume ChatGPT jobs." />;
+  return <Banner status="info"
+    title={hold.reason === 'plan_usage_not_granted'
+      ? 'ChatGPT jobs are waiting for plan permission.' : 'Sign in with ChatGPT to resume ChatGPT jobs.'}
+    description={<Link href="/settings.html#model-providers" target="_blank" rel="noopener noreferrer">Open model settings</Link>} />;
 }

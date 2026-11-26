@@ -92,8 +92,16 @@ export function createRecordingPrivacy(unseenNotes: () => number = () => 0) {
         // Chrome resets per-tab action badges on navigation.
         if (change.url || change.status) void refreshBadge(tabId).catch(() => {});
       });
+      const panel = chrome.runtime.getURL('/sidepanel.html');
+      const settingsPages = new Set(['/onboarding.html', '/settings.html'].map((path) => chrome.runtime.getURL(path)));
       chrome.runtime.onMessage.addListener((input: unknown, sender, reply) => {
-        if (sender.url !== chrome.runtime.getURL('/sidepanel.html') || !isRecordingRequest(input)) return;
+        if (sender.id !== chrome.runtime.id || !isRecordingRequest(input)) return;
+        const page = sender.url?.split(/[?#]/, 1)[0];
+        if (!page) return;
+        const fromSettings = settingsPages.has(page);
+        if (page !== panel && !fromSettings) return;
+        if (input.action === 'edit-skip-list' && !fromSettings) return;
+        if (fromSettings && (input.action === 'set-site' || (input.action === 'status' && input.tabId !== undefined))) return;
         void (async () => {
           switch (input.action) {
             case 'status': return getStatus(input.tabId);
@@ -102,6 +110,14 @@ export function createRecordingPrivacy(unseenNotes: () => number = () => 0) {
               const { site } = await getStatus(input.tabId);
               if (!site?.editable || site.host !== input.host) return false;
               await setSiteSkipped(site.host, input.skip);
+              return true;
+            }
+            case 'edit-skip-list': {
+              const value = input.site.trim();
+              const url = URL.parse(value.includes('://') ? value : `https://${value}`);
+              const host = siteKey(url?.href);
+              if (!host || host.includes('*') || url?.username || url?.password) return false;
+              await setSiteSkipped(host, input.skip);
               return true;
             }
           }

@@ -10,7 +10,7 @@ import { LiveTrail } from './LiveTrail';
 import { CompanionStatus } from './CompanionStatus';
 import { FieldNotes } from './FieldNotes';
 import { PageNotes } from './PageNotes';
-import { RecordingControls } from './RecordingControls';
+import { RecordingControls } from '../../privacy/RecordingControls';
 
 /** Live open expeditions and the remaining Visits from today. */
 export function App() {
@@ -34,8 +34,8 @@ export function App() {
       {trail && <FieldNotes expeditions={trail.finished} />}
       {trail && <PageNotes pages={trail.pageNotes} />}
       <HStack gap={2} wrap="wrap">
-        <Link href={chrome.runtime.getURL('/onboarding.html#settings')} target="_blank">Settings</Link>
-        <Link href={chrome.runtime.getURL('/onboarding.html#sent-to-model')} target="_blank">Sent-to-model log</Link>
+        <Link href={chrome.runtime.getURL('/settings.html')} target="_blank">Settings</Link>
+        <Link href={chrome.runtime.getURL('/settings.html#sent-to-model')} target="_blank">Sent-to-model log</Link>
       </HStack>
       {trail && trail.open.length === 0 && trail.today.length === 0 && (
         <Text type="supporting">Your trail will appear here as you browse.</Text>
