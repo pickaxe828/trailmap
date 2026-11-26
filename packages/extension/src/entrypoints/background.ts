@@ -14,12 +14,18 @@ import { watchUnseenNotes } from '../wrapup/badge';
 import { startVaultSync } from '../vault/background';
 import { startHistoryImport } from '../history/background';
 import { startSearch } from '../search/background';
+import { configurePanelAction, isFirefox } from '../platform/browser';
 
-export default defineBackground(() => {
+export default defineBackground({
+  // ESM keeps the lazy Firefox model runtime and its WASM out of the startup bundle.
+  type: isFirefox ? 'module' : undefined,
+  main: start,
+});
+
+function start() {
   startCompanion();
 
-  // Clicking the toolbar icon opens the side panel.
-  void chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+  configurePanelAction();
 
   // First install: open the onboarding tab.
   chrome.runtime.onInstalled.addListener(({ reason }) => {
@@ -65,4 +71,4 @@ export default defineBackground(() => {
     void privacy.refreshBadges().catch(() => {});
   });
   void ensureTickAlarm();
-});
+}

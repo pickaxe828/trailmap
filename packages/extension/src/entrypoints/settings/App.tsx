@@ -7,6 +7,8 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { CompanionSetup } from '../../companion/CompanionSetup';
 import { useCompanionStatus } from '../../companion/useCompanionStatus';
 import { ProviderSettings } from '../../llm/ProviderSettings';
+import { LOCAL_EMBEDDINGS_UNAVAILABLE } from '../../embeddings/messages';
+import { isFirefox } from '../../platform/browser';
 import { PrivacySettings } from '../../privacy/PrivacySettings';
 import type { TrailmapDb } from '../../db/db';
 import { useJournalData } from '../../journal/data';
@@ -34,6 +36,29 @@ async function readExtractionFailures(db: TrailmapDb) {
   return count;
 }
 
+function LocalEmbeddingsNotice() {
+  const [unavailable, setUnavailable] = useState(false);
+  useEffect(() => {
+    let mounted = true;
+    const changed: Parameters<typeof chrome.storage.onChanged.addListener>[0] = (changes, area) => {
+      if (area === 'session' && LOCAL_EMBEDDINGS_UNAVAILABLE in changes) {
+        setUnavailable(changes[LOCAL_EMBEDDINGS_UNAVAILABLE]?.newValue === true);
+      }
+    };
+    chrome.storage.onChanged.addListener(changed);
+    void chrome.storage.session.get(LOCAL_EMBEDDINGS_UNAVAILABLE).then((stored) => {
+      if (mounted) setUnavailable(stored[LOCAL_EMBEDDINGS_UNAVAILABLE] === true);
+    }).catch(() => {});
+    return () => {
+      mounted = false;
+      chrome.storage.onChanged.removeListener(changed);
+    };
+  }, []);
+  return unavailable ? (
+    <Text as="p" role="status">Local embeddings could not run. Trailmap can still record Visits and search by keyword.</Text>
+  ) : null;
+}
+
 function CaptureDiagnostics() {
   const failures = useJournalData(readExtractionFailures);
   return (
@@ -41,6 +66,7 @@ function CaptureDiagnostics() {
       <Heading level={2}>Diagnostics</Heading>
       <Text as="p">AI Mode reply extraction failures: {failures?.data ?? (failures?.error ? 'Unavailable' : 'Loading…')}</Text>
       <Text as="p" type="supporting">Counts saved AI Mode questions whose replies could not be captured.</Text>
+      {isFirefox && <LocalEmbeddingsNotice />}
       <ModelJobs />
     </VStack>
   );

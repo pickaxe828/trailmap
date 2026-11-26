@@ -504,6 +504,14 @@ export class VisitRecorder {
     }
     if (!visit || !this.isRecordable(url) || !this.isRecordable(visit.canonicalUrl)) return;
     if (googleSearchSurface(url) && content.kind !== 'scroll') return;
+    if (content.kind === 'favicon') {
+      if (content.visitId === visit.id && visit.favicon !== content.icon) {
+        await db.visits.update(visit.id, { favicon: content.icon });
+        visit.favicon = content.icon;
+        this.emit({ type: 'updated', visit: { ...visit } });
+      }
+      return;
+    }
     if (content.kind === 'scroll') {
       if (content.depth <= visit.scrollDepth) return;
       await this.updateEngagement(visit, { scrollDepth: content.depth });

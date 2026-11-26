@@ -1,4 +1,5 @@
 import type { AiTurn, Highlight } from '@trailmap/shared';
+import { isCapturedIcon } from '../platform/browser';
 import { AI_ANSWER_LIMIT, AI_CITATION_LIMIT, AI_QUESTION_LIMIT, type AiAnswer } from './google-ai-mode';
 
 /** Messages a content script sends the background (intra-extension, so not in @trailmap/shared). */
@@ -29,6 +30,7 @@ export type PageContent = AiCapture
   | { kind: 'screen'; hasPassword: boolean }
   | { kind: 'probe'; canonicalLink?: string; sourceHash: string }
   | ({ kind: 'text'; visitId: string } & PageText)
+  | { kind: 'favicon'; visitId: string; icon: string }
   | { kind: 'scroll'; depth: number }
   | { kind: 'selection' }
   | { kind: 'highlight'; source: Highlight['source']; text: string; canonicalLink?: string };
@@ -44,6 +46,7 @@ export function isPageContentMessage(value: unknown): value is PageContentMessag
   if (message.type !== PAGE_CONTENT_MESSAGE || typeof message.pageUrl !== 'string') return false;
   if (message.kind === 'screen') return typeof message.hasPassword === 'boolean';
   if (message.kind === 'selection') return true;
+  if (message.kind === 'favicon') return typeof message.visitId === 'string' && isCapturedIcon(message.icon);
   if (message.kind === 'ai-submit' || message.kind === 'ai-result') {
     if (typeof message.turnId !== 'string' || !/^[\da-f-]{36}$/i.test(message.turnId)) return false;
     if (message.kind === 'ai-submit') {

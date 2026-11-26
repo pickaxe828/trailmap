@@ -37,11 +37,20 @@ test('install --user-data-dir writes a manifest for the pinned extension ID, uni
   expect(existsSync(manifest)).toBe(false);
 });
 
-test('install into every detected browser (HOME is temporary, so nothing real is touched)', async () => {
-  const chrome = process.platform === 'darwin' ? join(home, 'Library', 'Application Support', 'Google', 'Chrome') : join(home, '.config', 'google-chrome');
-  mkdirSync(chrome, { recursive: true });
-  const result = await cli('install', '--browser', 'chromium', '--binary', '/opt/trailmap-companion');
+test('default CLI install registers both families and reports Zen in the shared Mozilla location', async () => {
+  const mac = process.platform === 'darwin';
+  const support = join(home, 'Library', 'Application Support');
+  const chrome = mac ? join(support, 'Google', 'Chrome') : join(home, '.config', 'google-chrome');
+  const zen = mac ? join(support, 'zen') : join(home, '.zen');
+  const firefox = mac ? join(support, 'Firefox') : join(home, '.mozilla', 'firefox');
+  const geckoManifest = mac ? join(support, 'Mozilla', 'NativeMessagingHosts', 'com.trailmap.companion.json')
+    : join(home, '.mozilla', 'native-messaging-hosts', 'com.trailmap.companion.json');
+  for (const dir of [chrome, zen, firefox]) mkdirSync(dir, { recursive: true });
+  const result = await cli('install', '--binary', '/opt/trailmap-companion');
   expect(result.code).toBe(0);
+  expect(result.stdout).toContain(`Installed for Firefox / Zen`);
+  expect(result.stdout).toContain(geckoManifest);
+  expect(existsSync(geckoManifest)).toBe(true);
   expect(existsSync(join(chrome, 'NativeMessagingHosts', 'com.trailmap.companion.json'))).toBe(true);
 });
 

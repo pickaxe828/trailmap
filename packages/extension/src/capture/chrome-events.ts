@@ -16,6 +16,7 @@ import { WINDOW_ID_NONE } from './events';
 import { isPageContentMessage, isPageVisibilityMessage, OPEN_AI_CITATION } from './page-messages';
 import type { VisitRecorder } from './recorder';
 import type { RecorderState, RecorderStateStore } from './state-store';
+import { isActiveDocument } from '../platform/browser';
 
 const STORAGE_KEY = 'trailmap.recorderState';
 
@@ -59,7 +60,7 @@ function toNavigationEvent(d: CommittedDetails): NavigationEvent {
 
 async function passwordFrame(tabId: number, documentId: string, h: BrowserEventHandlers) {
   const frames = await chrome.webNavigation.getAllFrames({ tabId });
-  const byDocument = new Map(frames?.filter((frame) => frame.documentLifecycle === 'active').map((frame) => [frame.documentId, frame]));
+  const byDocument = new Map(frames?.filter((frame) => isActiveDocument(frame)).map((frame) => [frame.documentId, frame]));
   let frame = byDocument.get(documentId);
   while (frame?.parentDocumentId) frame = byDocument.get(frame.parentDocumentId);
   if (frame?.frameId === 0) await h.onPageContent({
@@ -119,7 +120,7 @@ export class ChromeEventSource implements BrowserEventSource {
       const tabId = sender.tab?.id;
       if (tabId === undefined) return;
       if (sender.frameId !== 0) {
-        if (sender.documentLifecycle === 'active' && sender.documentId && isPageContentMessage(message) &&
+        if (isActiveDocument(sender) && sender.documentId && isPageContentMessage(message) &&
           message.kind === 'screen' && message.hasPassword) {
           void passwordFrame(tabId, sender.documentId, h).then(() => respond(), () => respond());
           return true;
@@ -130,7 +131,7 @@ export class ChromeEventSource implements BrowserEventSource {
         void h.onPageVisibilityChanged({ tabId, visible: message.visible });
         return;
       }
-      if (!sender.url || sender.documentLifecycle !== 'active' || !isPageContentMessage(message)) return;
+      if (!sender.url || !isActiveDocument(sender) || !isPageContentMessage(message)) return;
       // Chrome can report the document's original sender URL after pushState.
       const senderOrigin = URL.parse(sender.url)?.origin;
       if (!senderOrigin || URL.parse(message.pageUrl)?.origin !== senderOrigin) return;

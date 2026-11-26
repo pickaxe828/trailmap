@@ -2,6 +2,7 @@ import { extractPageText, hasPasswordField, hashText, screenableRoots } from '..
 import { PAGE_CONTENT_MESSAGE, type PageContent, type PageContentMessage, type PageContentReply } from '../capture/page-messages';
 import { googleSearchSurface } from '../capture/search';
 import { watchAiMode } from '../capture/watch-ai-mode';
+import { captureFavicon, isFirefox, openOrClosedShadowRoot } from '../platform/browser';
 
 const EXTRACTION_DELAY_MS = 2_000;
 const SCROLL_INTERVAL_MS = 250;
@@ -41,7 +42,7 @@ export default defineContentScript({
   allFrames: true,
   main(ctx) {
     const shadowOf = (element: Element) => element.shadowRoot ?? (element.namespaceURI === 'http://www.w3.org/1999/xhtml'
-      ? chrome.dom?.openOrClosedShadowRoot(element as HTMLElement) ?? null : null);
+      ? openOrClosedShadowRoot(element as HTMLElement) : null);
     const findPassword = () => hasPasswordField(document, shadowOf);
 
     function watchPasswordFields(check: () => void, enabled: () => boolean) {
@@ -88,6 +89,7 @@ export default defineContentScript({
     let lastSelection = '';
     let maxDepth = 0;
     let reportedDepth = 0;
+    let favicon: Promise<string | undefined> | undefined;
 
     const screen = async (started: number) => {
       if (document.readyState === 'loading' || passwordDetected || generation !== started) return;
@@ -96,6 +98,14 @@ export default defineContentScript({
       if (generation === started && !passwordDetected) {
         admitted = !!reply;
         if (reply?.aiPending?.length) aiMode.resume(reply.aiPending);
+        if (isFirefox && reply?.visitId && !googleSearchSurface(location.href) && isPublic()) {
+          favicon ??= captureFavicon(new URL(location.href));
+          void favicon.then((icon) => {
+            if (icon && generation === started && isPublic()) {
+              return send({ kind: 'favicon', visitId: reply.visitId, icon });
+            }
+          });
+        }
       }
     };
 

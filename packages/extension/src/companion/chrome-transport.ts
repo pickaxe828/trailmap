@@ -1,5 +1,6 @@
 import { NATIVE_HOST_NAME } from '@trailmap/shared';
 import type { NativeConnection, NativeTransport } from './client';
+import { nativeDisconnectReason } from '../platform/browser';
 
 /**
  * The real browser behind `NativeTransport`. `connectNative` never throws for a missing host: it returns a
@@ -13,8 +14,7 @@ export const chromeTransport: NativeTransport = {
       send: (message) => port.postMessage(message),
       close: () => port.disconnect(),
       onMessage: (cb) => port.onMessage.addListener(cb),
-      // Reading lastError is required, or Chrome logs "Unchecked runtime.lastError".
-      onDisconnect: (cb) => port.onDisconnect.addListener(() => cb(chrome.runtime.lastError?.message)),
+      onDisconnect: (cb) => port.onDisconnect.addListener(() => cb(nativeDisconnectReason(port))),
     };
   },
 };

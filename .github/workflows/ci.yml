@@ -18,6 +18,8 @@ jobs:
       - run: bun run typecheck
       - run: bun run test
       - run: bun run build
+      - run: bun run build:firefox
+      - run: bun run lint:firefox
       - run: bun run build:companion
       # Playwright's Chromium (matches the pinned @playwright/test version).
       - run: bunx playwright install --with-deps chromium

@@ -154,6 +154,13 @@ test.each(['chromium', 'firefox', 'all'] as const)('--browser %s scopes install 
   expect(uninstallManifests(options)).toEqual(expected);
 });
 
+test('uninstall --browser firefox leaves installed Chromium manifests alone', () => {
+  mkdirs(support('Google', 'Chrome'), support('zen'));
+  installManifests({ env: mac(), binaryPath: BIN, extensionId: EXT });
+  expect(uninstallManifests({ env: mac(), browser: 'firefox' })).toEqual([manifestIn(support('Mozilla'))]);
+  expect(existsSync(manifestIn(support('Google', 'Chrome')))).toBe(true);
+});
+
 test('uninstall cleans up Gecko manifests after the last detected browser is removed', () => {
   const env = linux();
   const path = join(home, '.librewolf', 'native-messaging-hosts', 'com.trailmap.companion.json');

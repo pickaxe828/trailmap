@@ -251,14 +251,16 @@ An expedition is one sitting. When you come back to a topic days later, that sit
 | UI | React 19 + **[Astryx](https://github.com/meta/astryx)** (Meta's design system, in beta) for components, templates and theming. **Tailwind v4** for any custom styling, using the Tailwind classes Astryx maps to its design tokens. No hand-written CSS files and no hard-coded colours. | One system for components, theming and dark mode. The Astryx plugin and CLI give coding agents UX guidance. |
 | Storage | **IndexedDB via Dexie** (`unlimitedStorage`) | Simple and local. Brute-force cosine search is fine up to about 50k pages with int8 vectors; move to SQLite-WASM later if needed |
 | Text extraction | `@mozilla/readability` | Mature; it's the engine behind Firefox reader view |
-| Embeddings | **transformers.js** in an offscreen document, with a small model (e.g. all-MiniLM-L6-v2, 384-d) | Local, free, uses WebGPU with a WASM fallback |
+| Embeddings | **transformers.js**, MiniLM L6 v2 (384-d, q8, single-threaded WASM). Runs in an offscreen document on Chromium and the background event page on Firefox and Zen. | Local inference; ONNX Runtime and WASM are bundled. Only model data can download on a cold cache. |
 | Keyword search | MiniSearch, fused with vector results via RRF | Tiny and in-browser |
 | Graph data and algorithms | **graphology** (Louvain, metrics) | Shared by both views |
 | Trail view | **React Flow + elkjs** (layered layout) | Readable cards, good for DAG-shaped trails |
 | Atlas view | **Sigma.js** (WebGL) | Handles thousands of nodes smoothly. It draws on a canvas, so read node colours from Astryx's CSS variables at runtime to follow the theme and dark mode. |
-| Background work | Job queue persisted in IndexedDB, driven by `chrome.alarms`; heavy work runs in an offscreen document | The MV3 service worker can be killed at any time, so every job must be resumable and idempotent |
+| Background work | Job queue persisted in IndexedDB, driven by WebExtension alarms. Chromium uses a service worker; Gecko MV3 uses a non-persistent background document. | Either background context can unload, so jobs are resumable and idempotent. |
 | LLM | Provider interface with four providers: **Sign in with ChatGPT** (uses your plan), Anthropic API (your own key), Ollama (local), and Chrome's built-in on-device model where your hardware supports it. The first three run in the companion, so credentials never enter the browser. One shared output validator (Zod) checks every provider's JSON. | Lets you trade quality, cost and privacy per task |
 | Local companion | Native Messaging host written in TypeScript and compiled to one binary with `bun build --compile`. Lives in the same repo as the extension and shares its Zod message schemas. | See §6.1 |
+
+**Firefox and Zen.** WXT builds MV3 for Gecko 153+, using `sidebar_action` for the same React app. Firefox does not provide the Chromium favicon cache: the screened content script can store a bounded raster `/favicon.ico` for the Visit, without cookies, redirects or referrers. Extension pages render it locally. Gecko's document IDs preserve password screening, and the remaining session storage, alarms, idle, navigation, history and omnibox APIs are shared. The local embedding runtime loads lazily; capture and keyword search still work if it fails, with a notice in Settings → Diagnostics. Chrome's built-in language model is Chromium-only.
 
 **Project setup (first step of M0)**
 1. Run `bunx wxt@latest init` with the React template and Bun as the package manager.
@@ -275,20 +277,20 @@ An expedition is one sitting. When you come back to a topic days later, that sit
 
 Sign-in needs something that can receive a redirect and keep secrets safe, and an extension is bad at both. So Trailmap comes with a small **companion program that runs on your computer**. There is no hosted server.
 
-**How the extension talks to it: Chrome Native Messaging.** Not a custom URL scheme, and not a localhost web server.
+**How the extension talks to it: WebExtension Native Messaging.** Not a custom URL scheme, and not a localhost web server.
 - **Install:** the companion writes a small JSON manifest into the browser's `NativeMessagingHosts` folder. On macOS, Chrome's folder is `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/`. The manifest contains:
   - the name `com.trailmap.companion`;
   - the absolute path to the binary;
   - `"type": "stdio"`;
   - `"allowed_origins": ["chrome-extension://<trailmap-id>/"]`.
-- **Other browsers:** Brave, Edge, Arc and other Chromium browsers each have their own folder, so `trailmap-companion install` writes to every one it finds. Firefox works the same way but uses `allowed_extensions`, so a Firefox port isn't blocked.
-- **Connecting:** the extension calls `chrome.runtime.connectNative("com.trailmap.companion")`. Chrome starts the binary, and the two exchange length-prefixed JSON over stdin/stdout.
+- **Other browsers:** `trailmap-companion install` detects Chromium and Firefox-family browsers in the same run. Firefox and Zen use `allowed_extensions: ["trailmap@pickaxe828"]`, under `~/Library/Application Support/Mozilla/NativeMessagingHosts/` on macOS and `~/.mozilla/native-messaging-hosts/` on Linux. LibreWolf also has a separate manifest location. `--browser chromium|firefox|all` scopes both install and uninstall; `--user-data-dir` and `--mozilla-dir` override their respective families.
+- **Connecting:** the extension calls `runtime.connectNative("com.trailmap.companion")`. The browser starts the binary, and the two exchange length-prefixed JSON over stdin/stdout.
   - Messages go both ways.
   - No port is opened and the user sees no prompts.
-  - Only the extension ID listed in the manifest can connect.
-  - An open native connection also keeps the MV3 service worker alive.
+  - Only the extension ID listed in the manifest can connect. The host checks Chromium's origin or Gecko's manifest path and add-on ID as a second line of defence.
+  - An open native connection also keeps Chromium's MV3 service worker alive.
 - **Limits:** a message from the companion can be at most 1 MB. That's plenty for model output; split anything bigger into pages.
-- **During development,** set `key` in the extension manifest. Otherwise the ID of the unpacked extension changes and stops matching `allowed_origins`.
+- **Stable identities:** Chromium's manifest `key` pins the ID for `allowed_origins`; `browser_specific_settings.gecko.id` pins it for Firefox, Zen and unlisted AMO signing.
 
 **Why not a custom protocol handler (`trailmap://`)?**
 1. **OpenAI decides which redirect addresses it accepts,** and its docs show only loopback (`http://127.0.0.1:<port>/…`). A `trailmap://` redirect might be refused; you'd have to test it. Once there's a companion, loopback works anyway.
@@ -437,7 +439,7 @@ Before the stream opens, the response may carry a `detail` field. Use the HTTP s
 
 ## 11. Decisions for you
 
-1. **Browser:** Chromium only (Chrome, Arc, Brave, Edge, Phi), or Firefox too? This plan assumes Chromium first; WXT keeps Firefox cheap to add later.
+1. **Browser:** Chromium, Firefox and Zen, from the same WXT codebase. CI builds both targets and lints Firefox with `web-ext`. Use a temporary Firefox-family install for development or an AMO-signed unlisted XPI for everyday use.
 2. **LLM:** ChatGPT plan via sign-in (needs Plus or Pro), a Claude API key, fully local (Ollama), or a mix? Which model do you want for extraction, and which for notes?
 3. **Where notes live:** only inside the extension, or synced into Obsidian or Logseq?
 4. **Audience:** a personal tool, or something you'd publish? This changes how much polish, permission justification and store review you take on.
