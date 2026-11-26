@@ -3,7 +3,7 @@ import type { Page as BrowserPage } from '@playwright/test';
 import type { Concept, Expedition, Page, Visit } from '../packages/shared/src/domain';
 import type { ConceptEvidence } from '../packages/extension/src/concepts/evidence';
 import { expect } from './fixtures';
-import { test } from './model-fixtures';
+import { signInToMockChatGpt, test } from './model-fixtures';
 
 test.use({ companionInstalled: true });
 
@@ -11,9 +11,7 @@ test('two related sittings become one Journal thread with both trails and an inc
   context, openExtensionPage, readCapture, mockOrigin,
 }, info) => {
   const panel = await openExtensionPage('sidepanel.html');
-  const callback = context.waitForEvent('page');
-  await panel.getByRole('button', { name: 'Continue with ChatGPT' }).click();
-  await expect((await callback).getByText('Signed in. You can close this tab.')).toBeVisible();
+  await signInToMockChatGpt(context, await openExtensionPage('settings.html#model-providers'));
 
   const now = Date.now();
   const canonicalUrl = 'https://learn.test/replicated-lists';

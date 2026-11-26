@@ -63,10 +63,29 @@ const test = base.extend<{ localApi: string }>({
 
 test.use({ companionInstalled: true });
 
+test('onboarding can save an Anthropic key and select Ollama for notes', async ({ openExtensionPage }, info) => {
+  const onboarding = await openExtensionPage('onboarding.html');
+  await onboarding.getByRole('button', { name: 'Next: AI notes' }).click();
+  await onboarding.getByRole('button', { name: 'Next: Model providers' }).click();
+  await onboarding.getByLabel('Anthropic API key').fill(fakeKey);
+  await onboarding.getByRole('button', { name: 'Save API key' }).click();
+  await expect(onboarding.getByText('Anthropic: Connected · key saved')).toBeVisible();
+  for (const [field, option] of [['Extraction provider', 'Anthropic'], ['Notes provider', 'Ollama']]) {
+    await onboarding.getByRole('combobox', { name: field, exact: true }).click();
+    await onboarding.getByRole('option', { name: option, exact: true }).click();
+    await expect(onboarding.getByRole('combobox', { name: field, exact: true })).toHaveText(option!);
+  }
+  await onboarding.screenshot({ path: process.env.PROOF_DIR
+    ? join(process.env.PROOF_DIR, 'onboarding-providers.png') : info.outputPath('onboarding-providers.png'), fullPage: true });
+  await onboarding.getByRole('link', { name: 'Open Settings' }).click();
+  await expect(onboarding.getByRole('combobox', { name: 'Extraction provider', exact: true })).toHaveText('Anthropic');
+  await expect(onboarding.getByRole('combobox', { name: 'Notes provider', exact: true })).toHaveText('Ollama');
+});
+
 test('saves the key and uses independent model choices from Settings', async ({
   context, openExtensionPage, fixtureUrl, readCapture, companionDataDir,
 }, info) => {
-  const settings = await openExtensionPage('onboarding.html#model-providers');
+  const settings = await openExtensionPage('settings.html#model-providers');
   await settings.setViewportSize({ width: 820, height: 1000 });
   const key = settings.getByLabel('Anthropic API key');
   await expect(settings.getByText('Anthropic: No key saved')).toBeVisible();
