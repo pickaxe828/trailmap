@@ -9,7 +9,7 @@ const expedition = (id: string, title: string, startedAt: number, extra: Partial
   drivingQuestion: null, kind: 'learning', threadId: null, userEdited: false, fieldNotes: null, ...extra,
 });
 
-test('the Journal opens from the side panel and shows the newest Expeditions first, with errands collapsed', async ({ context, openExtensionPage }, info) => {
+test('the Journal opens from the side panel and shows the newest Expeditions first, with Other browsing collapsed', async ({ context, openExtensionPage }, info) => {
   const panel = await openExtensionPage('sidepanel.html');
   await seed(panel, { expeditions: [
     expedition('errand', 'Buy a desk lamp', start + 3_600_000, { kind: 'errand' }),
@@ -19,15 +19,15 @@ test('the Journal opens from the side panel and shows the newest Expeditions fir
   const [journal] = await Promise.all([context.waitForEvent('page'), panel.getByRole('link', { name: 'Open Journal' }).click({ timeout: 5000 })]);
   await expect(journal.getByRole('heading', { name: 'Journal', exact: true })).toBeVisible();
   await expect(journal.getByRole('heading', { level: 3 })).toHaveText(['Tombstones in CRDTs', 'Vector clocks']);
-  const errands = journal.getByRole('button', { name: /Errands/ });
-  await expect(errands).toHaveAttribute('aria-expanded', 'false');
+  const other = journal.getByRole('button', { name: /Other browsing/ });
+  await expect(other).toHaveAttribute('aria-expanded', 'false');
   await expect(journal.getByRole('link', { name: 'Buy a desk lamp' })).toBeHidden();
   await journal.screenshot({ path: process.env.PROOF_DIR ? join(process.env.PROOF_DIR, 'journal.png') : info.outputPath('journal.png') });
-  await errands.click();
+  await other.click();
   await expect(journal.getByRole('link', { name: 'Buy a desk lamp' })).toBeVisible();
 });
 
-test('Journal shows merge suggestions only for Expeditions that still exist', async ({ openExtensionPage }, info) => {
+test('dismissing an inline merge suggestion removes it from both cards across reload', async ({ openExtensionPage }, info) => {
   const setup = await openExtensionPage('sidepanel.html');
   await seed(setup, { expeditions: [
     expedition('source', 'Replicated lists', start, { mergeSuggestions: [
@@ -37,12 +37,77 @@ test('Journal shows merge suggestions only for Expeditions that still exist', as
     expedition('target', 'Delete markers', start + 1000),
   ] });
   const journal = await openExtensionPage('journal.html');
-  const suggestions = journal.getByRole('region', { name: 'Merge suggestions' });
-  await expect(suggestions.getByRole('link', { name: 'Replicated lists' })).toHaveAttribute('href', /\/expedition\.html\?id=source$/);
-  await expect(suggestions.getByRole('link', { name: 'Delete markers' })).toHaveAttribute('href', /\/expedition\.html\?id=target$/);
-  await expect(suggestions.getByText('Both sessions cover replicated deletes.')).toBeVisible();
-  await expect(journal.getByText('Stale suggestion')).toHaveCount(0);
+  await expect(journal.getByText('Same topic as Replicated lists?')).toBeVisible();
+  await expect(journal.getByText('Same topic as Delete markers?')).toBeVisible();
+  await expect(journal.getByRole('heading', { name: 'Merge suggestions' })).toHaveCount(0);
   await journal.screenshot({ path: process.env.PROOF_DIR ? join(process.env.PROOF_DIR, 'journal-merges.png') : info.outputPath('journal-merges.png') });
+  await journal.getByRole('button', { name: 'Dismiss: Same topic as Replicated lists?' }).click();
+  await expect(journal.getByRole('button', { name: 'Undo', exact: true })).toBeVisible();
+  await journal.reload();
+  await expect(journal.getByRole('link', { name: 'Replicated lists' })).toBeVisible();
+  await expect(journal.getByText(/Same topic as/)).toHaveCount(0);
+});
+
+test('select two cards to start a thread, then drop another expedition on it', async ({ openExtensionPage }, info) => {
+  const setup = await openExtensionPage('sidepanel.html');
+  await seed(setup, { expeditions: [expedition('a', 'Distributed clocks', start), expedition('b', 'Clock drift', start + 500),
+    expedition('c', 'Timestamps', start + 1000)] });
+  const journal = await openExtensionPage('journal.html');
+  await expect(journal.getByText('Attach to thread')).toHaveCount(0);
+  const select = journal.getByRole('button', { name: 'Select', exact: true });
+  await select.click();
+  for (const title of ['Distributed clocks', 'Clock drift']) {
+    const checkbox = journal.getByRole('checkbox', { name: `Select ${title}` });
+    await checkbox.focus();
+    await checkbox.press('Space');
+    await expect(checkbox).toBeChecked();
+  }
+  const bar = journal.getByRole('region', { name: 'Expedition selection' });
+  await expect(bar.getByText('2 selected')).toBeVisible();
+  await journal.screenshot({ path: process.env.PROOF_DIR ? join(process.env.PROOF_DIR, 'selection.png') : info.outputPath('selection.png') });
+  await bar.getByRole('button', { name: 'Start thread', exact: true }).click();
+  await expect(journal.getByText('2 sessions')).toBeVisible();
+  await journal.getByRole('heading', { name: 'Timestamps' }).dragTo(journal.getByRole('heading', { name: 'Distributed clocks' }), { timeout: 5000 });
+  const drop = journal.getByRole('dialog', { name: 'Organise dropped card' });
+  await expect(drop.getByRole('button', { name: 'Merge into one expedition' })).toBeVisible();
+  await journal.screenshot({ path: process.env.PROOF_DIR ? join(process.env.PROOF_DIR, 'drop-menu.png') : info.outputPath('drop-menu.png') });
+  await drop.getByRole('button', { name: 'Add to thread', exact: true }).click();
+  await expect(journal.getByText('3 sessions')).toBeVisible();
+  await journal.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(journal.getByText('2 sessions')).toBeVisible();
+  await expect(journal.getByRole('link', { name: 'Timestamps' })).toBeVisible();
+  await journal.getByRole('heading', { name: 'Timestamps' }).click({ modifiers: ['Shift'] });
+  await expect(journal.getByRole('checkbox', { name: 'Select Timestamps' })).toBeChecked();
+  await journal.keyboard.press('Escape');
+  await expect(select).toBeFocused();
+  await journal.getByRole('heading', { name: 'Timestamps' }).click({ modifiers: ['Meta'] });
+  await bar.getByRole('button', { name: 'Add to thread…' }).click();
+  await journal.getByRole('menuitem', { name: 'Distributed clocks' }).click();
+  await expect(journal.getByText('3 sessions')).toBeVisible();
+  const undo = journal.getByRole('button', { name: 'Undo', exact: true });
+  await undo.click();
+  await expect(journal.getByText('2 sessions')).toBeVisible();
+  await undo.click();
+  await expect(journal.getByText('2 sessions')).toHaveCount(0);
+  await expect(journal.getByRole('link', { name: 'Clock drift' })).toBeVisible();
+});
+
+test('a merge chip moves visits to the earliest expedition and Undo restores both cards', async ({ openExtensionPage, readCapture }) => {
+  const setup = await openExtensionPage('sidepanel.html');
+  const expeditions = [expedition('late', 'Replica deletion', start + 500, { rootVisitId: 'late-visit',
+    mergeSuggestions: [{ expeditionId: 'early', reason: 'Same topic' }] }),
+  expedition('early', 'Replicated lists', start, { rootVisitId: 'early-visit' })];
+  await seed(setup, { expeditions, visits: expeditions.map(({ id, title, rootVisitId, startedAt }) => ({
+    id: rootVisitId!, title, startedAt, url: `https://learn.test/${id}`, canonicalUrl: `https://learn.test/${id}`,
+    expeditionId: id, tabId: 1, parentVisitId: null, transition: 'typed', activeMs: 0, scrollDepth: 0, engagement: 'bounced',
+  })) });
+  const journal = await openExtensionPage('journal.html');
+  await journal.getByRole('button', { name: 'Merge: Same topic as Replicated lists?' }).click({ timeout: 5000 });
+  await expect(journal.getByRole('link', { name: 'Replica deletion' })).toHaveCount(0);
+  expect((await readCapture('visits')).map(({ expeditionId }) => expeditionId)).toEqual(['early', 'early']);
+  await journal.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(journal.getByRole('link', { name: 'Replica deletion' })).toBeVisible();
+  expect((await readCapture('visits')).map(({ expeditionId }) => expeditionId)).toEqual(['early', 'late']);
 });
 
 test('opening field notes marks them seen and a Markdown edit survives reload', async ({ openExtensionPage, readCapture }) => {

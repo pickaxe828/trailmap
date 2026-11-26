@@ -122,7 +122,7 @@ test('Wrap up classifies and titles a read Visit without Page text, and handles 
   calls.length = 0;
   await drain(queue({ expedition_wrap_up: result }, calls));
   expect(calls).toEqual([]);
-  expect(await db.expeditions.get('expedition:v1')).toMatchObject({ title: 'Bounced fixture', kind: 'errand', wrappedUpAt: now });
+  expect(await db.expeditions.get('expedition:v1')).toMatchObject({ title: 'Bounced fixture', kind: 'unclassified', wrappedUpAt: now });
 });
 
 test('merge suggestions keep only real same-day Expeditions and are stored for the Journal', async () => {
@@ -136,6 +136,19 @@ test('merge suggestions keep only real same-day Expeditions and are stored for t
   await q.runNext();
   expect(JSON.parse(calls[0]!.input).sameDay).toEqual([{ id: 'e1', title: 'CRDT basics', drivingQuestion: null }]);
   expect((await db.expeditions.get('expedition:v1'))!.mergeSuggestions).toEqual([{ expeditionId: 'expedition:other', reason: 'Same topic' }]);
+});
+
+test('wrap-up respects manual classification and never offers a dismissed pair again', async () => {
+  await seed({ kind: 'errand', kindOverride: true });
+  const other = 'expedition:other';
+  await db.expeditions.put(expedition({ id: other, rootVisitId: 'o', title: 'CRDT basics', startedAt: 500, endedAt: 800,
+    dismissedSuggestions: [{ kind: 'expedition', id: 'expedition:v1' }] }));
+  await db.visits.put(visit('o', 'basics.test', { expeditionId: other, startedAt: 500 }));
+  const calls: Call[] = [];
+  await drain(queue({ expedition_wrap_up: { ...wrapUp, merge_with: [{ id: 'e1', reason: 'Same topic' }] } }, calls));
+  expect(JSON.parse(calls[0]!.input).sameDay).toEqual([]);
+  expect(calls.map(({ task }) => task)).toEqual(['expedition_wrap_up']);
+  expect(await db.expeditions.get('expedition:v1')).toMatchObject({ kind: 'errand', mergeSuggestions: [] });
 });
 
 test('a wrap-up audit includes the selected stop and all sources behind same-day context', async () => {

@@ -7,7 +7,7 @@ import type { Expedition } from '@trailmap/shared';
 import { expeditionHref, formatExpeditionDate } from '../../journal/links';
 
 export function ExpeditionCard({ expedition }: { expedition: Expedition }) {
-  const { id, title, startedAt, endedAt, drivingQuestion, unseenNotes, imported } = expedition;
+  const { id, title, startedAt, endedAt, drivingQuestion, unseenNotes, imported, kind } = expedition;
   return (
     <ClickableCard label={title} href={expeditionHref(id)} padding={4} height="100%">
       <VStack gap={2}>
@@ -19,6 +19,7 @@ export function ExpeditionCard({ expedition }: { expedition: Expedition }) {
         </HStack>
         <Heading level={3}>{title}</Heading>
         {drivingQuestion && drivingQuestion !== title && <Text type="supporting" maxLines={2}>{drivingQuestion}</Text>}
+        {endedAt !== null && kind !== 'unclassified' && <Text type="label">{kind === 'learning' ? 'Learning' : 'Not learning'}</Text>}
       </VStack>
     </ClickableCard>
   );

@@ -1,6 +1,7 @@
 import type { Expedition, FieldNotesDraft, Highlight, Page, Query, Visit } from '@trailmap/shared';
 import { googleSearchSurface } from '../capture/search';
 import { cap } from '../enrichment/input';
+import { dismissed } from '../journal/suggestions';
 import { eligibleMetadata as allowed, maySendToModel, recordingState, type RecordingSettings } from '../privacy/policy';
 import { allowsSources, modelSources } from '../privacy/sources';
 import { markdownLink as link, oneLine } from './markdown';
@@ -149,7 +150,8 @@ export function buildWrapUpInput(sources: TrailSources & { sameDay: SameDay[] },
   const sameDaySources: Expedition['wrapUpSource'][] = [];
   const sameDay = sources.sameDay.flatMap(({ expedition, root }) => {
     if (sameDayIds.size >= 10 || expedition.id === sources.expedition.id || !allowed(root, settings) || root.id !== expedition.rootVisitId ||
-      !allowsSources(expedition.wrapUpSource, byId, settings)) return [];
+      !allowsSources(expedition.wrapUpSource, byId, settings) ||
+      dismissed(sources.expedition, { kind: 'expedition', id: expedition.id }, expedition)) return [];
     const id = `e${sameDayIds.size + 1}`;
     sameDayIds.set(id, expedition.id);
     sameDaySources.push(modelSources([root], expedition.wrapUpSource));

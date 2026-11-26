@@ -10,6 +10,7 @@ import { useCallback, useMemo, useState, type DragEvent } from 'react';
 import type { TrailmapDb } from '../../db/db';
 import { readExpedition, useJournalData } from '../../journal/data';
 import { formatExpeditionDate } from '../../journal/links';
+import { useJournalCorrection } from '../../journal/useJournalCorrection';
 import { TrailGraphView } from '../../trail/TrailGraphView';
 import { CorrectionDialog, type ExpeditionCorrection } from './CorrectionDialog';
 import { FieldNotesPane } from './FieldNotesPane';
@@ -30,6 +31,7 @@ export function App() {
   const expedition = review?.expedition;
   const [selected, setSelected] = useState<string | undefined>(() => new URLSearchParams(location.search).get('stop') ?? undefined);
   const [action, setAction] = useState<ExpeditionCorrection>();
+  const classification = useJournalCorrection();
   const canMove = !!review?.alternatives.length;
   const graphActions = useMemo(() => review ? {
     summaries: review.summaries, onSelect: setSelected, onDragVisit: canMove ? dragVisit : undefined,
@@ -52,10 +54,15 @@ export function App() {
               <Link href={chrome.runtime.getURL('/journal.html')}>Journal</Link>
               <Heading level={1}>{expedition?.title ?? 'Expedition'}</Heading>
               {expedition?.drivingQuestion && expedition.drivingQuestion !== expedition.title && <Text>{expedition.drivingQuestion}</Text>}
-              {expedition && <Text type="supporting">{formatExpeditionDate(expedition.startedAt)}</Text>}
+              {expedition && <Text type="supporting">{formatExpeditionDate(expedition.startedAt)} · {
+                expedition.kind === 'unclassified' ? 'Unclassified' : expedition.kind === 'learning' ? 'Learning' : 'Not learning'
+              }</Text>}
             </VStack>
             {expedition && (
               <HStack gap={2} wrap="wrap">
+                <Button label={expedition.kind === 'learning' ? 'Mark as not learning' : 'Mark as learning'} size="sm"
+                  isDisabled={classification.busy} onClick={() => void classification.run({ action: 'classify', expeditionIds: [expedition.id],
+                    kind: expedition.kind === 'learning' ? 'errand' : 'learning' })} />
                 <Button label="Rename expedition" size="sm" onClick={() => setAction({ kind: 'rename' })} />
                 {canMove && <Button label="Merge expeditions" size="sm" onClick={() => setAction({ kind: 'merge' })} />}
               </HStack>
@@ -65,6 +72,7 @@ export function App() {
       )}
       content={(
         <LayoutContent padding={4} role="main">
+          {classification.feedback}
           {!result && <Text>Loading expedition…</Text>}
           {result?.error && <Text role="alert">Could not load this expedition. Try reloading the page.</Text>}
           {result && !result.error && !expedition && <Text>This expedition no longer exists.</Text>}

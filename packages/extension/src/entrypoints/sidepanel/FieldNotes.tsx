@@ -31,7 +31,7 @@ export function FieldNotes({ expeditions }: { expeditions: Expedition[] }) {
             <VStack key={id} gap={1}>
               {heading}
               <Text type="supporting">
-                {kind === 'errand' ? 'Errand, so no field notes.' : drivingQuestion ?? 'Writing notes…'}
+                {kind === 'errand' ? 'Not learning — no field notes.' : kind === 'unclassified' ? 'Mark as learning in the Journal to generate field notes.' : drivingQuestion ?? 'Writing notes…'}
               </Text>
             </VStack>
           );

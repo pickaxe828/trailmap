@@ -124,23 +124,25 @@ export type ExpeditionKind = z.infer<typeof ExpeditionKind>;
 export const MergeSuggestion = z.object({ expeditionId: z.string(), reason: z.string() });
 export type MergeSuggestion = z.infer<typeof MergeSuggestion>;
 
+export const SuggestionTarget = z.object({ kind: z.enum(['thread', 'expedition']), id: z.string() });
+export type SuggestionTarget = z.infer<typeof SuggestionTarget>;
+
 export const Expedition = z.object({
   id: z.string(),
   rootVisitId: z.string().optional(),
   centroid: z.instanceof(Int8Array).nullable().optional(),
   title: z.string(),
   drivingQuestion: z.string().nullable(),
-  kind: ExpeditionKind,
+  kind: ExpeditionKind.or(z.literal('unclassified')),
+  kindOverride: z.boolean().optional(), // Manual classification wins over later wrap-up.
   startedAt: z.number(),
   endedAt: z.number().nullable(),
   imported: z.literal(true).optional(),
   fieldNotes: z.string().nullable(),
   userEdited: z.boolean(),
   threadId: z.string().nullable(),
-  threadSuggestion: z.discriminatedUnion('kind', [
-    z.object({ kind: z.literal('thread'), id: z.string() }),
-    z.object({ kind: z.literal('expedition'), id: z.string() }),
-  ]).optional(),
+  threadSuggestion: SuggestionTarget.optional(),
+  dismissedSuggestions: z.array(SuggestionTarget).optional(),
   threadSignature: z.object({ vector: z.instanceof(Int8Array), conceptIds: z.array(z.string()) }).optional(),
   threadAutoExcluded: z.boolean().optional(),
   wrappedUpAt: z.number().optional(), // The wrap-up pass (title, question, kind) committed.

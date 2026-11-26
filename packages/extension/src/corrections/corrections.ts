@@ -138,7 +138,7 @@ export function createCorrections({ db, now, newId }: CorrectionsOptions) {
     },
 
     /** Folds `fromId` into `intoId`. The target keeps its title and notes. */
-    async merge(intoId: string, fromId: string) {
+    async merge(intoId: string, fromId: string, { log = true } = {}) {
       if (intoId === fromId) return false;
       return db.transaction('rw', [db.visits, db.queries, db.expeditions, db.notes, db.corrections, db.threads, db.jobs, db.pages], async () => {
         const into = await db.expeditions.get(intoId);
@@ -160,7 +160,7 @@ export function createCorrections({ db, now, newId }: CorrectionsOptions) {
         const merged = await db.expeditions.get(intoId);
         if (merged?.threadId && merged.endedAt === null) await db.expeditions.update(intoId, { threadId: null });
         await refreshEditedSessions(db, [into, from], now());
-        await logEntry('merge', [intoId, fromId, ...ids],
+        if (log) await logEntry('merge', [intoId, fromId, ...ids],
           { visits: before, intoId, fromId, fromTitle: from.title }, { visits: await membership(ids) });
         return true;
       });

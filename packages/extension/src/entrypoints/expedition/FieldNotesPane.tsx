@@ -40,11 +40,11 @@ export function FieldNotesPane({ expedition }: { expedition: Expedition }) {
     <VStack as="section" gap={3} aria-label="Field notes">
       <HStack align="center" justify="between" wrap="wrap" gap={2}>
         <Heading level={2}>Field notes</Heading>
-        {draft === undefined && <Button label="Edit field notes" size="sm" onClick={() => setDraft(fieldNotes ?? '')} />}
+        {kind === 'learning' && draft === undefined && <Button label="Edit field notes" size="sm" onClick={() => setDraft(fieldNotes ?? '')} />}
       </HStack>
-      {draft === undefined ? (
+      {kind !== 'learning' ? <Text type="supporting">Mark this expedition as learning to generate field notes.</Text> : draft === undefined ? (
         fieldNotes ? <FieldNotesMarkdown>{displayFieldNotes(expedition) ?? ''}</FieldNotesMarkdown> : (
-          <Text type="supporting">{kind === 'errand' ? 'Field notes aren’t generated for errands.' : 'No field notes yet.'}</Text>
+          <Text type="supporting">No field notes yet.</Text>
         )
       ) : (
         <>
