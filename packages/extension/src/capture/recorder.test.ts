@@ -87,6 +87,28 @@ test('pausing ends the active Visit and resuming does not admit its stale conten
   expect(await db.highlights.count()).toBe(0);
 });
 
+test('recorded Visits strip session parameters while still accepting title and content events', async () => {
+  const url = 'https://kagi.com/search?q=crdts&token=fixture-private&session-id=one&utm_source=two';
+  await browser.commit(TAB, url);
+  await browser.reportPageContent(TAB, url, { kind: 'highlight', source: 'copy', text: 'safe excerpt' });
+  expect(await visits()).toMatchObject([{ url: 'https://kagi.com/search?q=crdts', canonicalUrl: 'https://kagi.com/search?q=crdts' }]);
+  expect(await db.highlights.count()).toBe(1);
+});
+
+test('a late password field hard-deletes the earlier Visit, Query, Highlight and Page', async () => {
+  const url = 'https://www.google.com/search?q=private-fixture';
+  await browser.commit(TAB, url);
+  const id = (await byUrl(url))!.id;
+  await browser.reportPageContent(TAB, url, { kind: 'highlight', source: 'copy', text: 'private-fixture' });
+  await browser.reportPageContent(TAB, url, { kind: 'text', visitId: id, text: 'private-fixture', textHash: 'hash', sourceHash: 'source' });
+  expect(await db.pages.count()).toBe(1);
+  expect(await db.queries.count()).toBe(1);
+  await browser.reportPageContent(TAB, url, { kind: 'screen', hasPassword: true });
+  expect(recorder.isPasswordProtected(TAB)).toBe(true);
+  expect(recorder.getCurrentVisit(TAB)).toBeUndefined();
+  for (const table of [db.visits, db.queries, db.highlights, db.pages, db.jobs]) expect(await table.count()).toBe(0);
+});
+
 test('forgetting the Visit shown in a tab stops its capture and starts the next trail fresh', async () => {
   const first = `${LEARN}/article`;
   await browser.focusWindow(WINDOW);
@@ -111,6 +133,20 @@ test('forgetting the Visit shown in a tab stops its capture and starts the next 
 });
 
 describe('navigation lineage', () => {
+  test('a search link retains its parent, including as a new-tab branch', async () => {
+    const root = `${LEARN}/article`;
+    const query = 'https://www.google.com/search?q=linked';
+    await browser.commit(TAB, root, { transitionType: 'typed' });
+    const parent = (await byUrl(root))!.id;
+    await browser.openInNewTab(TAB, 2, query);
+    await browser.commit(2, query, { transitionType: 'link' });
+    clock.advance(1);
+    await browser.commit(TAB, query, { transitionType: 'link' });
+    expect((await visits()).filter(({ url }) => url === query)).toMatchObject([
+      { parentVisitId: parent, transition: 'new-tab' }, { parentVisitId: parent, transition: 'link' },
+    ]);
+    expect((await db.queries.toArray()).map(({ q }) => q)).toEqual(['linked', 'linked']);
+  });
   test('clicking a link creates a Visit whose parent is the previous page in that tab', async () => {
     await browser.commit(TAB, `${LEARN}/index.html`, { transitionType: 'typed' });
     clock.advance(5_000);

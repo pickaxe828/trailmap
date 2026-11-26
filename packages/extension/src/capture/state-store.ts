@@ -14,6 +14,7 @@ export type RecorderState = {
   documentIdsByTab?: Record<number, string>;
   /** Browser-session tab ids only; never store a password page's URL. */
   passwordTabs?: number[];
+  passwordDocumentIdsByTab?: Record<number, string>;
   /**
    * Tabs opened from a link, mapped to the Visit that was current in the source
    * tab (`null` if it had none). Consumed by the new tab's first commit.
@@ -54,21 +55,5 @@ export class MemoryStateStore implements RecorderStateStore {
   }
   async save(state: RecorderState) {
     this.state = structuredClone(state);
-  }
-}
-
-const STORAGE_KEY = 'trailmap.recorderState';
-
-/**
- * `chrome.storage.session` survives service-worker restarts but is cleared when
- * the browser restarts, which matches how long tab ids stay valid.
- */
-export class ChromeSessionStateStore implements RecorderStateStore {
-  async load() {
-    const stored = (await chrome.storage.session.get(STORAGE_KEY))[STORAGE_KEY] as RecorderState | undefined;
-    return stored?.version === 1 ? stored : null;
-  }
-  async save(state: RecorderState) {
-    await chrome.storage.session.set({ [STORAGE_KEY]: state });
   }
 }

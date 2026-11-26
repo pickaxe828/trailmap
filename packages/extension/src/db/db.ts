@@ -11,6 +11,7 @@ import type {
   Thread,
   Visit,
 } from '@trailmap/shared';
+import { canonicalizeUrl } from '../capture/canonical';
 import type { ConceptEvidence } from '../concepts/evidence';
 import { conceptResolutionJob } from '../concepts/enqueue';
 import { enqueueJob } from '../jobs/queue';
@@ -135,13 +136,62 @@ export function openTrailmapDb(name: string = DB_NAME): TrailmapDb {
     sentToModel: 'id, at, canonicalUrl',
     corrections: 'id, at, *targetIds',
   });
-  db.version(7).stores({ conceptEvidence: 'id, conceptId, visitId, sourceVisitId, canonicalUrl' }).upgrade(async () => {
+  db.version(7).stores({
+    visits: 'id, canonicalUrl, tabId, parentVisitId, startedAt, expeditionId, [segmentationPending+startedAt]',
+    pages: 'canonicalUrl, textHash, enrichedAt',
+    queries: 'id, expeditionId, at, visitId',
+    expeditions: 'id, startedAt, endedAt, threadId, kind, unseenNotes',
+    threads: 'id, lastActiveAt, status',
+    concepts: 'id, name, *aliases, firstSeen',
+    conceptEvidence: 'id, conceptId, visitId, sourceVisitId, canonicalUrl',
+    edges: 'id, from, to, type, [from+type], [to+type]',
+    highlights: 'id, visitId, at, canonicalUrl',
+    notes: 'id, nodeId, at',
+    jobs: 'id, status, [status+priority+createdAt]',
+    queueHolds: 'id',
+    sentToModel: 'id, at, canonicalUrl',
+    corrections: 'id, at, *targetIds',
+  }).upgrade(async () => {
     const jobs: JobSpec<'concept_resolution'>[] = [];
     await db.pages.where('enrichedAt').aboveOrEqual(0).each((page) => {
       const job = conceptResolutionJob(page);
       if (job) jobs.push(job);
     });
     for (const job of jobs) await enqueueJob(db, job, job.payload.enrichedAt);
+  });
+  db.version(8).stores({
+    visits: 'id, canonicalUrl, tabId, parentVisitId, startedAt, expeditionId, [segmentationPending+startedAt], captureDocumentId',
+    pages: 'canonicalUrl, textHash, enrichedAt',
+    queries: 'id, expeditionId, at, visitId',
+    expeditions: 'id, startedAt, endedAt, threadId, kind, unseenNotes',
+    threads: 'id, lastActiveAt, status',
+    concepts: 'id, name, *aliases, firstSeen',
+    conceptEvidence: 'id, conceptId, visitId, sourceVisitId, canonicalUrl',
+    edges: 'id, from, to, type, [from+type], [to+type]',
+    highlights: 'id, visitId, at, canonicalUrl',
+    notes: 'id, nodeId, at',
+    jobs: 'id, status, [status+priority+createdAt]',
+    queueHolds: 'id',
+    sentToModel: 'id, at, canonicalUrl',
+    corrections: 'id, at, *targetIds',
+  }).upgrade(async () => {
+    await db.visits.toCollection().modify((visit) => { visit.url = canonicalizeUrl(visit.url); });
+    // Old generated Markdown embedded local-only unread links. Strip that historical format once,
+    // before it can become a living-note input. Future writes keep unread stops in their own field.
+    await db.expeditions.filter(({ notesSource }) => !!notesSource).modify((expedition) => {
+      expedition.fieldNotes = expedition.fieldNotes?.split('\n').filter((line) => !line.startsWith('- Opened but never read: ')).join('\n') ?? null;
+    });
+    // Older split entries didn't index all moved descendants.
+    await db.corrections.where('at').aboveOrEqual(0).and(({ kind }) => kind === 'split').modify((entry) => {
+      const before = entry.before as { visits?: Record<string, string> } | null;
+      entry.targetIds = [...new Set([...entry.targetIds, ...Object.keys(before?.visits ?? {})])];
+    });
+  });
+  // History replay and any other Visit writer use the same persistence boundary.
+  db.visits.hook('creating', (_id, visit) => { visit.url = canonicalizeUrl(visit.url); });
+  db.visits.hook('updating', (changes) => {
+    const { url } = changes as { url?: unknown };
+    return typeof url === 'string' ? { url: canonicalizeUrl(url) } : undefined;
   });
   return db;
 }

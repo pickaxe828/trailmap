@@ -14,6 +14,20 @@ import type {
 } from './events';
 import { WINDOW_ID_NONE } from './events';
 import { isPageContentMessage, isPageVisibilityMessage } from './page-messages';
+import type { RecorderState, RecorderStateStore } from './state-store';
+
+const STORAGE_KEY = 'trailmap.recorderState';
+
+/** Session storage shares the browser lifetime of the tab IDs in RecorderState. */
+export class ChromeSessionStateStore implements RecorderStateStore {
+  async load() {
+    const stored = (await chrome.storage.session.get(STORAGE_KEY))[STORAGE_KEY] as RecorderState | undefined;
+    return stored?.version === 1 ? stored : null;
+  }
+  async save(state: RecorderState) {
+    await chrome.storage.session.set({ [STORAGE_KEY]: state });
+  }
+}
 
 export const TICK_ALARM = 'trailmap.capture-tick';
 /** MV3 alarms can fire at most every 30 seconds. */
@@ -42,6 +56,16 @@ function toNavigationEvent(d: CommittedDetails): NavigationEvent {
   };
 }
 
+async function passwordFrame(tabId: number, documentId: string, h: BrowserEventHandlers) {
+  const frames = await chrome.webNavigation.getAllFrames({ tabId });
+  const byDocument = new Map(frames?.filter((frame) => frame.documentLifecycle === 'active').map((frame) => [frame.documentId, frame]));
+  let frame = byDocument.get(documentId);
+  while (frame?.parentDocumentId) frame = byDocument.get(frame.parentDocumentId);
+  if (frame?.frameId === 0) await h.onPageContent({
+    tabId, documentId: frame.documentId, url: frame.url, content: { kind: 'screen', hasPassword: true },
+  });
+}
+
 export class ChromeEventSource implements BrowserEventSource {
   subscribe(h: BrowserEventHandlers): () => void {
     const onCommitted = (d: CommittedDetails) => {
@@ -66,7 +90,15 @@ export class ChromeEventSource implements BrowserEventSource {
     };
     const onMessage = (message: unknown, sender: chrome.runtime.MessageSender, respond: (reply?: unknown) => void) => {
       const tabId = sender.tab?.id;
-      if (tabId === undefined || sender.frameId !== 0) return;
+      if (tabId === undefined) return;
+      if (sender.frameId !== 0) {
+        if (sender.documentLifecycle === 'active' && sender.documentId && isPageContentMessage(message) &&
+          message.kind === 'screen' && message.hasPassword) {
+          void passwordFrame(tabId, sender.documentId, h).then(() => respond(), () => respond());
+          return true;
+        }
+        return;
+      }
       if (isPageVisibilityMessage(message)) {
         void h.onPageVisibilityChanged({ tabId, visible: message.visible });
         return;

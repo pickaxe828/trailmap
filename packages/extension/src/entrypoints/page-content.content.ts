@@ -1,4 +1,4 @@
-import { extractPageText, hasPasswordField, hashText } from '../capture/extract';
+import { extractPageText, hasPasswordField, hashText, screenableRoots } from '../capture/extract';
 import { PAGE_CONTENT_MESSAGE, type PageContent, type PageContentMessage, type PageContentReply } from '../capture/page-messages';
 
 const EXTRACTION_DELAY_MS = 2_000;
@@ -36,7 +36,45 @@ function isHighlight(text: string): boolean {
 export default defineContentScript({
   matches: ['http://*/*', 'https://*/*'],
   runAt: 'document_start',
+  allFrames: true,
   main(ctx) {
+    const shadowOf = (element: Element) => element.shadowRoot ?? (element.namespaceURI === 'http://www.w3.org/1999/xhtml'
+      ? chrome.dom?.openOrClosedShadowRoot(element as HTMLElement) ?? null : null);
+    const findPassword = () => hasPasswordField(document, shadowOf);
+
+    function watchPasswordFields(check: () => void, enabled: () => boolean) {
+      const watched = new WeakSet<Document | ShadowRoot>();
+      const observer = new MutationObserver(rescreen);
+      function watch(root: Document | ShadowRoot) {
+        if (watched.has(root)) return;
+        watched.add(root);
+        observer.observe(root, { subtree: true, childList: true, attributes: true, attributeFilter: ['type'] });
+      }
+      function rescreen() {
+        if (!enabled()) return;
+        for (const root of screenableRoots(document, shadowOf)) watch(root);
+        check();
+      }
+      watch(document);
+      ctx.addEventListener(document, 'load', rescreen, { capture: true });
+      // attachShadow() on an existing host produces no light-DOM mutation.
+      ctx.setInterval(rescreen, EXTRACTION_DELAY_MS);
+      ctx.onInvalidated(() => observer.disconnect());
+      rescreen();
+    }
+
+    if (window !== window.top) {
+      // A child frame can veto capture, but can never publish metadata or text.
+      let detected = false;
+      watchPasswordFields(() => {
+        if (findPassword()) {
+          detected = true;
+          void send({ kind: 'screen', hasPassword: true });
+        }
+      }, () => !detected);
+      return;
+    }
+
     let extractionTimer: number | undefined;
     let scrollTimer: number | undefined;
     let selectionTimer: number | undefined;
@@ -51,13 +89,13 @@ export default defineContentScript({
 
     const screen = async (started: number) => {
       if (document.readyState === 'loading' || passwordDetected || generation !== started) return;
-      passwordDetected = hasPasswordField(document);
+      passwordDetected = findPassword();
       const reply = await send({ kind: 'screen', hasPassword: passwordDetected });
       if (generation === started && !passwordDetected) admitted = !!reply;
     };
 
     const isPublic = () => {
-      if (!passwordDetected && hasPasswordField(document)) {
+      if (!passwordDetected && findPassword()) {
         passwordDetected = true;
         admitted = false;
         void send({ kind: 'screen', hasPassword: true });
@@ -127,17 +165,7 @@ export default defineContentScript({
 
     // Catch login forms inserted after the initial screen without observing or
     // reading form values. Also check synchronously before each content capture.
-    const observer = new MutationObserver((records) => {
-      if (!admitted) return;
-      const password = 'input[type="password" i]';
-      const changed = records.some((record) => record.type === 'attributes'
-        ? record.target instanceof Element && record.target.matches(password)
-        : Array.from(record.addedNodes).some((node) => node instanceof Element &&
-          (node.matches(password) || node.querySelector(password))));
-      if (changed) isPublic();
-    });
-    observer.observe(document, { subtree: true, childList: true, attributes: true, attributeFilter: ['type'] });
-    ctx.onInvalidated(() => observer.disconnect());
+    watchPasswordFields(isPublic, () => admitted && !passwordDetected);
     ctx.addEventListener(window, 'pageshow', (event) => {
       if (event.persisted) schedule();
     });

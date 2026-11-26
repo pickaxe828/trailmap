@@ -1,5 +1,6 @@
 import type { Transition, Visit } from '@trailmap/shared';
 import type { TrailmapDb } from '../db/db';
+import { forgetCascade } from '../corrections/forget';
 import { enqueuePageEnrichment } from '../enrichment/enqueue';
 import { canonicalizeUrl } from './canonical';
 import { scoreEngagement } from './engagement';
@@ -61,7 +62,7 @@ type PendingVisit = {
   title: string;
 };
 
-const sameUrl = (left: string, right: string) => left.split('#')[0] === right.split('#')[0];
+const sameUrl = (left: string, right: string) => canonicalizeUrl(left) === canonicalizeUrl(right);
 
 /**
  * Turns browser events into Visits (docs/PLAN.md §4.1).
@@ -261,7 +262,9 @@ export class VisitRecorder {
     delete this.state.documentIdsByTab?.[tabId];
   }
 
-  private setPasswordStatus(tabId: number, blocked: boolean) {
+  private setPasswordStatus(tabId: number, blocked: boolean, documentId?: string) {
+    if (blocked && documentId) (this.state.passwordDocumentIdsByTab ??= {})[tabId] = documentId;
+    else delete this.state.passwordDocumentIdsByTab?.[tabId];
     if (this.isPasswordProtected(tabId) === blocked) return;
     const tabs = this.state.passwordTabs ??= [];
     if (blocked) tabs.push(tabId);
@@ -271,6 +274,7 @@ export class VisitRecorder {
 
   private async beginVisit(event: NavigationEvent, transition: Transition, parentVisitId: string | null) {
     this.endTrail(event.tabId);
+    if (event.documentId && this.state.passwordDocumentIdsByTab?.[event.tabId] === event.documentId) return;
     this.setPasswordStatus(event.tabId, false);
     if (!this.isRecordable(event.url)) return;
     const pending = { event, transition, parentVisitId, startedAt: this.options.now(), activeMs: 0, title: '' };
@@ -282,12 +286,13 @@ export class VisitRecorder {
     const search = parseSearchQuery(event.url);
     const visit: Visit = {
       id: this.options.newId(),
-      url: event.url,
+      captureDocumentId: event.documentId,
+      url: canonicalizeUrl(event.url),
       canonicalUrl: this.canonicalize(event.url),
       title,
       tabId: event.tabId,
-      parentVisitId: search ? null : parentVisitId,
-      transition: search ? 'search' : transition,
+      parentVisitId,
+      transition: search && !parentVisitId && transition !== 'new-tab' ? 'search' : transition,
       startedAt,
       activeMs,
       scrollDepth: 0,
@@ -297,6 +302,7 @@ export class VisitRecorder {
     };
     const { db } = this.options;
     await db.transaction('rw', db.visits, db.queries, db.pages, db.jobs, async () => {
+      if (visit.parentVisitId && !await db.visits.get(visit.parentVisitId)) visit.parentVisitId = null;
       await db.visits.put(visit);
       await enqueuePageEnrichment(db, visit, startedAt + activeMs);
       if (search) {
@@ -321,7 +327,6 @@ export class VisitRecorder {
   }
 
   private async capturePageContent({ tabId, documentId, url, content }: PageContentEvent): Promise<PageContentReply | undefined> {
-    if (!this.isRecordable(url)) return;
     const current = this.current.get(tabId);
     const visit = current && this.state.documentIdsByTab?.[tabId] === documentId && sameUrl(current.url, url) ? current : undefined;
     const { db } = this.options;
@@ -329,15 +334,21 @@ export class VisitRecorder {
       const pending = this.pending.get(tabId);
       const matches = pending && pending.event.documentId === documentId && sameUrl(pending.event.url, url);
       if (content.hasPassword) {
-        if (matches || visit) {
-          // If a previously public document inserts a password field, stop
-          // capture and disallow model use of its earlier stored text.
-          this.endTrail(tabId);
-          this.setPasswordStatus(tabId, true);
-          if (visit) await db.visits.update(visit.id, { privacyBlocked: true });
+        const previouslyScreened = documentId ? await db.visits.where('captureDocumentId').equals(documentId).primaryKeys() : [];
+        if (matches || visit || previouslyScreened.length) {
+          // Earlier same-document screens are invalid too, including before a pushState.
+          if (matches || visit || documentId === this.state.documentIdsByTab?.[tabId]) {
+            this.endTrail(tabId);
+            this.setPasswordStatus(tabId, true, documentId);
+          }
+          const visitIds = [...new Set([...previouslyScreened, ...(visit ? [visit.id] : [])])];
+          if (visitIds.length) await forgetCascade(db, {
+            kind: 'forget-page', visitIds, now: this.options.now, newId: this.options.newId, quiet: true,
+          });
         }
         return;
       }
+      if (!this.isRecordable(url)) return;
       if (matches) {
         const admitted = await this.createVisit(pending);
         this.pending.delete(tabId);
@@ -345,7 +356,7 @@ export class VisitRecorder {
       }
       return visit && { visitId: visit.id, extract: false };
     }
-    if (!visit || !this.isRecordable(visit.canonicalUrl)) return;
+    if (!visit || !this.isRecordable(url) || !this.isRecordable(visit.canonicalUrl)) return;
     if (content.kind === 'scroll') {
       if (content.depth <= visit.scrollDepth) return;
       await this.updateEngagement(visit, { scrollDepth: content.depth });
@@ -423,7 +434,7 @@ export class VisitRecorder {
     onHistoryStateUpdated: (event) =>
       this.enqueue(async () => {
         if (event.frameId !== 0) return;
-        if (this.current.get(event.tabId)?.url === event.url || this.pending.get(event.tabId)?.event.url === event.url) return;
+        if (this.current.get(event.tabId)?.url === canonicalizeUrl(event.url) || this.pending.get(event.tabId)?.event.url === event.url) return;
         const transition = event.transitionQualifiers.includes('forward_back') ? 'back' : 'link';
         await this.beginVisit(event, transition, this.parentFor(event.tabId, transition));
       }),
@@ -455,7 +466,7 @@ export class VisitRecorder {
         const pending = this.pending.get(tabId);
         if (pending && sameUrl(pending.event.url, url)) pending.title = title;
         const visit = this.current.get(tabId);
-        if (!visit || visit.url !== url || visit.title === title) return;
+        if (!visit || !sameUrl(visit.url, url) || visit.title === title) return;
         const firstTitle = !visit.title.trim() && !!title.trim();
         visit.title = title;
         await this.options.db.visits.where('id').equals(visit.id).modify((stored) => {

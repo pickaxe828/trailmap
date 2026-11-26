@@ -21,6 +21,18 @@ test('extracts and hashes a capped article without changing the live document', 
   expect(article.textContent).toContain('Immediately after the text cap.');
 });
 
+test('a password field inside an open shadow root or same-origin frame prevents extraction', async () => {
+  const { window } = new JSDOM(await Bun.file(fixture).text());
+  const { document } = window;
+  const host = document.body.appendChild(document.createElement('div'));
+  host.attachShadow({ mode: 'open' }).innerHTML = '<input type="password">';
+  expect(extractPageText(document)).toBeNull();
+  host.remove();
+  const frame = document.body.appendChild(document.createElement('iframe'));
+  frame.contentDocument!.body.innerHTML = '<input type="password">';
+  expect(extractPageText(document)).toBeNull();
+});
+
 test('a password field anywhere in the document prevents extraction', async () => {
   const { window } = new JSDOM(await Bun.file(fixture).text());
   window.document.body.insertAdjacentHTML('beforeend', '<form><input type="PASSWORD"></form>');
