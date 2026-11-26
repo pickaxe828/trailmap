@@ -25,6 +25,7 @@ const BROWSERS: ReadonlyArray<{ name: string; mac: string; linux: string }> = [
   { name: 'Edge', mac: 'Microsoft Edge', linux: 'microsoft-edge' },
   { name: 'Arc', mac: 'Arc/User Data', linux: '' }, // macOS only
   { name: 'Vivaldi', mac: 'Vivaldi', linux: 'vivaldi' },
+  { name: 'Helium', mac: 'net.imput.helium', linux: 'net.imput.helium' }, // Folder named after its bundle identifier
 ];
 
 export const MANIFEST_FILE = `${NATIVE_HOST_NAME}.json`;

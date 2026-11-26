@@ -21,4 +21,6 @@ bun run e2e          # headless Playwright against the built extension (first ru
 bun run build:companion
 ```
 
+Register the companion with `packages/companion/dist/trailmap-companion install`. It finds Chrome (stable, Beta, Canary), Chromium, Brave, Edge, Arc, Vivaldi and Helium; pass `--user-data-dir <dir>` for any other Chromium browser.
+
 To try it by hand, open `chrome://extensions`, enable Developer mode, choose **Load unpacked** and pick `packages/extension/.output/chrome-mv3`. The extension ID is always `boahmdajmiicaicaopfgkcdaahidmalm`.

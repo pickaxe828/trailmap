@@ -49,6 +49,13 @@ test('install also covers Vivaldi when it is the browser present', () => {
   expect(installManifests({ env: mac(), binaryPath: BIN, extensionId: EXT })).toEqual([manifestIn(support('Vivaldi'))]);
 });
 
+test('install covers Helium, which keeps its profile under its bundle identifier', () => {
+  mkdirs(support('net.imput.helium'));
+  expect(installManifests({ env: mac(), binaryPath: BIN, extensionId: EXT })).toEqual([manifestIn(support('net.imput.helium'))]);
+  mkdirs(join(home, '.config', 'net.imput.helium'));
+  expect(installManifests({ env: linux(), binaryPath: BIN, extensionId: EXT })).toEqual([manifestIn(join(home, '.config', 'net.imput.helium'))]);
+});
+
 test('install finds the Linux browser folders under ~/.config, honouring XDG_CONFIG_HOME', () => {
   mkdirs(join(home, '.config', 'google-chrome'), join(home, '.config', 'chromium'), join(home, '.config', 'BraveSoftware', 'Brave-Browser'), join(home, '.config', 'microsoft-edge'), join(home, '.config', 'vivaldi'));
   const written = installManifests({ env: linux(), binaryPath: BIN, extensionId: EXT });
