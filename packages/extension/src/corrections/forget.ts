@@ -47,11 +47,21 @@ export async function forgetCascade(db: TrailmapDb, input: ForgetInput): Promise
   return db.transaction('rw', tables, async () => {
     const fromForgottenHost = (url: string | undefined) => !!url && (!!input.host && hostMatches(url, input.host) ||
       !!input.denied && isDefaultDenied(url));
-    const visits = input.host || input.denied
+    let visits = input.host || input.denied
       ? await db.visits.filter(({ url, canonicalUrl, privacyBlocked }) => fromForgottenHost(url) || fromForgottenHost(canonicalUrl) ||
         !!input.denied && !!privacyBlocked).toArray()
       : (await db.visits.bulkGet(input.visitIds ?? [])).filter((v) => v !== undefined);
-    const visitIds = visits.map(({ id }) => id);
+    // The conversation follows its opening search into Forget. A synthetic
+    // opening Query is itself part of the conversation (not a separate search).
+    const linked = new Map(visits.map((visit) => [visit.id, visit]));
+    const parentIds = visits.flatMap((visit) => visit.aiConversation && visit.parentVisitId ? [visit.parentVisitId] : []);
+    for (const parent of await db.visits.bulkGet(parentIds)) {
+      if (parent?.aiOpeningQuery) linked.set(parent.id, parent);
+    }
+    const children = await db.visits.where('parentVisitId').anyOf([...linked.keys()]).filter((visit) => !!visit.aiConversation).toArray();
+    for (const child of children) linked.set(child.id, child);
+    visits = [...linked.values()];
+    const visitIds = [...linked.keys()];
     const gone = new Set(visitIds);
     const forgottenExpeditions = input.expeditionIds ?? [];
     if (input.denied) {

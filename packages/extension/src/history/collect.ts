@@ -1,7 +1,7 @@
 import type { Query, Visit } from '@trailmap/shared';
 import { canonicalizeUrl } from '../capture/canonical';
 import { toVisitTransition } from '../capture/recorder';
-import { parseSearchQuery } from '../capture/search';
+import { googleSearchSurface, parseSearchQuery } from '../capture/search';
 
 export type HistoryApi = {
   search(query: chrome.history.HistoryQuery): Promise<Pick<chrome.history.HistoryItem, 'url' | 'title'>[]>;
@@ -43,7 +43,7 @@ export async function collectHistory(history: HistoryApi, { start, end, shouldRe
   const stops = new Map<string, HistoryStop & { referrer: string }>();
   for (const [url, title] of pages) {
     signal.throwIfAborted();
-    if (!shouldRecord(url)) continue;
+    if (!shouldRecord(url) || googleSearchSurface(url) === 'ai-mode') continue;
     const canonicalUrl = canonicalizeUrl(url);
     const visits = await history.getVisits({ url });
     signal.throwIfAborted();

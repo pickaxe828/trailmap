@@ -1,4 +1,5 @@
 import type { Page, Visit } from '@trailmap/shared';
+import { googleSearchSurface } from '../capture/search';
 import { DENIED_HOSTS, DENIED_PATH_SEGMENTS, DENIED_SERVICE_LABELS, LOCAL_SUFFIXES } from './default-deny-list';
 
 export type RecordingSettings = {
@@ -66,11 +67,16 @@ export function eligibleMetadata<T extends VisitMetadata>(visit: T | undefined, 
 
 /** Call at dispatch time with current settings, not just when enqueuing enrichment. */
 export function maySendToModel(
-  visit: Pick<Visit, 'url' | 'canonicalUrl' | 'engagement' | 'privacyBlocked'>,
-  page: Pick<Page, 'canonicalUrl' | 'sourceUrl' | 'sourceVisitId' | 'text'> | undefined,
+  visit: Pick<Visit, 'url' | 'canonicalUrl' | 'engagement' | 'privacyBlocked' | 'aiConversation'>,
+  page: Pick<Page, 'canonicalUrl' | 'sourceUrl' | 'sourceVisitId' | 'text' | 'aiTurns'> | undefined,
   settings: RecordingSettings,
   sourceVisit?: Visit,
 ): boolean {
+  if (visit.aiConversation) {
+    if (!page?.aiTurns?.some(({ answer }) => !!answer) || page.aiTurns.some(({ answer, extractionFailed }) => !answer && !extractionFailed)) return false;
+  } else if ([visit.url, visit.canonicalUrl, page?.sourceUrl].some((url) => url && googleSearchSurface(url))) {
+    return false;
+  }
   const knownSource = !page?.sourceVisitId || (sourceVisit?.id === page.sourceVisitId && eligibleMetadata(sourceVisit, settings));
   return knownSource && eligibleMetadata(visit, settings) && visit.engagement !== 'bounced' && !!page?.text.trim() &&
     page.canonicalUrl === visit.canonicalUrl && recordingState(page.sourceUrl, settings) === 'recording';

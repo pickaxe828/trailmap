@@ -18,7 +18,7 @@ export function readExpedition(db: TrailmapDb, id: string) {
     ]);
     const pages = await db.pages.bulkGet([...new Set(visits.map(({ canonicalUrl }) => canonicalUrl))]);
     const pageNotes = new Map(pages.flatMap((page) => page ? [[page.canonicalUrl, {
-      summary: page.summary, takeaways: page.takeaways,
+      summary: page.summary, takeaways: page.takeaways, aiTurns: page.aiTurns,
     }] as const] : []));
     const summaries = new Map([...pageNotes].map(([url, { summary }]) => [url, summary]));
     const alternatives = expeditions.filter((other) => other.id !== id).map(({ id, title }) => ({ id, title }));

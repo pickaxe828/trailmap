@@ -33,6 +33,8 @@ export const Visit = z.object({
   engagement: Engagement,
   privacyBlocked: z.literal(true).optional(),
   imported: z.literal(true).optional(),
+  aiConversation: z.literal(true).optional(),
+  aiOpeningQuery: z.literal(true).optional(), // Synthetic Query for a session started in the AI Mode composer.
   starred: z.literal(true).optional(), // The user marked this a key page.
   expeditionId: z.string().nullable(),
   segmentationPending: z.literal(1).optional(),
@@ -73,10 +75,20 @@ export type ConceptMergeVerdicts = z.infer<typeof ConceptMergeVerdicts>;
 export const ModelSources = z.object({ visitIds: z.array(z.string()), canonicalUrls: z.array(z.string()) });
 export type ModelSources = z.infer<typeof ModelSources>;
 
+export const AiTurn = z.object({
+  id: z.string(),
+  question: z.string(),
+  answer: z.string().nullable(),
+  citations: z.array(z.string()),
+  extractionFailed: z.literal(true).optional(),
+});
+export type AiTurn = z.infer<typeof AiTurn>;
+
 export const Page = z.object({
   canonicalUrl: z.string(),
   text: z.string(),
   textHash: z.string(),
+  aiTurns: z.array(AiTurn).optional(), // Present only for AI conversation Pages.
   sourceHash: z.string().optional(), // Fingerprint of the input DOM for the last extraction.
   sourceUrl: z.string().optional(), // Cleaned source URL, which can differ from rel=canonical.
   summary: z.string().nullable(),

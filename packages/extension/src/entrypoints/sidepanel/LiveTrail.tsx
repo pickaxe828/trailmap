@@ -18,6 +18,7 @@ import { buildTrail, type TrailNode } from '../../trail/tree';
 import type { useLiveTrail } from '../../trail/useLiveTrail';
 import { WRAP_UP_MESSAGE } from '../../wrapup/messages';
 import { correct } from '../../corrections/client';
+import { expeditionHref } from '../../journal/links';
 import type { PriorRead } from '../../threads/picking-up';
 import { useSiteSkipped } from './corrections-client';
 
@@ -78,6 +79,9 @@ export function LiveTrail({ trail, currentVisitId, priorReads }: {
             tooltip={visit.starred ? 'Remove key page' : 'Mark as a key page'}
             clickAction={() => run(correct('star', { visitId: visit.id, starred: !visit.starred }))} />
           <MoreMenu size="sm" alignment="end" label={`Actions for ${visit.title || host}`} items={[
+            ...(visit.aiConversation && visit.expeditionId ? [{ label: 'View AI conversation',
+              onClick: () => { void chrome.tabs.create({ url: expeditionHref(visit.expeditionId!, visit.id) }); },
+            }] : []),
             { label: note ? 'Edit note' : 'Add note', onClick: () => setDialogue({ kind: 'note', visit }) },
             ...(group && group.expedition.rootVisitId !== visit.id ? [{
               label: 'Split expedition here', onClick: () => void run(correct('split', { visitId: visit.id })),
@@ -92,7 +96,8 @@ export function LiveTrail({ trail, currentVisitId, priorReads }: {
               onClick: () => void run(correct('ignore-site', { visitId: visit.id })),
             },
             { type: 'divider' as const },
-            { label: 'Forget page', variant: 'destructive' as const, onClick: () => setDialogue({ kind: 'forget-page', visit }) },
+            { label: visit.aiConversation ? 'Forget AI conversation' : 'Forget page', variant: 'destructive' as const,
+              onClick: () => setDialogue({ kind: 'forget-page', visit }) },
             { label: `Forget ${host}`, variant: 'destructive' as const, onClick: () => setDialogue({ kind: 'forget-site', host }) },
           ]} />
         </HStack>
@@ -150,9 +155,10 @@ export function LiveTrail({ trail, currentVisitId, priorReads }: {
           onSave={(title) => run(correct('rename', { expeditionId: dialogue.expedition.id, title }))} />
       )}
       {dialogue?.kind === 'forget-page' && (
-        <AlertDialog isOpen onOpenChange={() => setDialogue(undefined)} title="Forget this page?"
-          description="This permanently deletes every visit to this page and everything derived from it: its text, highlights, notes, queries and page notes."
-          actionLabel="Forget page"
+        <AlertDialog isOpen onOpenChange={() => setDialogue(undefined)} title={dialogue.visit.aiConversation ? 'Forget this AI conversation?' : 'Forget this page?'}
+          description={dialogue.visit.aiConversation ? 'This permanently deletes the conversation, its cited links, and everything derived from its content.'
+            : 'This permanently deletes every visit to this page and everything derived from it: its text, highlights, notes, queries and page notes.'}
+          actionLabel={dialogue.visit.aiConversation ? 'Forget AI conversation' : 'Forget page'}
           onAction={() => run(correct('forget-page', { canonicalUrl: dialogue.visit.canonicalUrl }))} />
       )}
       {dialogue?.kind === 'forget-site' && (

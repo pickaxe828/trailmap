@@ -12,6 +12,14 @@ export type RecorderState = {
   currentVisitByTab: Record<number, string>;
   /** Document ids distinguish successive visits with the same URL, such as reloads. */
   documentIdsByTab?: Record<number, string>;
+  /** Mode entry is not a Visit until a composer submission. Do not keep its query URL. */
+  aiEntries?: Record<number, {
+    origin: string;
+    documentId?: string;
+    parentVisitId: string | null;
+    screened: boolean;
+    carryReply?: true;
+  }>;
   /** Browser-session tab ids only; never store a password page's URL. */
   passwordTabs?: number[];
   passwordDocumentIdsByTab?: Record<number, string>;
@@ -20,6 +28,7 @@ export type RecorderState = {
    * tab (`null` if it had none). Consumed by the new tab's first commit.
    */
   pendingNewTabParent: Record<number, string | null>;
+  pendingAiCitationParent?: Record<number, string>;
   activeTabByWindow: Record<number, number>;
   focusedWindowId: number;
   idleState: IdleState;

@@ -2,12 +2,14 @@ import type { Transition, Visit } from '@trailmap/shared';
 import type { TrailmapDb } from '../db/db';
 import { forgetCascade } from '../corrections/forget';
 import { enqueuePageEnrichment } from '../enrichment/enqueue';
+import { aiEngagement, conversationPage, mergeAiTurn, pendingAiTurns } from './ai-conversation';
 import { canonicalizeUrl } from './canonical';
+import { normalizeQuestion } from './google-ai-mode';
 import { scoreEngagement } from './engagement';
 import { WINDOW_ID_NONE, type BrowserEventHandlers, type BrowserEventSource, type NavigationEvent, type PageContentEvent } from './events';
-import type { PageContentReply } from './page-messages';
+import type { AiCapture, PageContentReply } from './page-messages';
 import { newPage } from './pages';
-import { parseSearchQuery } from './search';
+import { googleSearchSurface, parseSearchQuery } from './search';
 import { emptyRecorderState, type RecorderState, type RecorderStateStore } from './state-store';
 
 export type VisitChange =
@@ -64,6 +66,7 @@ type PendingVisit = {
 };
 
 const sameUrl = (left: string, right: string) => canonicalizeUrl(left) === canonicalizeUrl(right);
+const INITIAL_AI_NAVIGATION_MS = 15_000;
 
 /**
  * Turns browser events into Visits (docs/PLAN.md §4.1).
@@ -114,7 +117,11 @@ export class VisitRecorder {
       for (const [tabId, pending] of this.pending) {
         if (!this.isRecordable(pending.event.url)) this.endTrail(tabId);
       }
+      for (const [tabId, entry] of Object.entries(this.state.aiEntries ?? {})) {
+        if (!this.isRecordable(entry.origin)) this.endTrail(Number(tabId));
+      }
       this.state.pendingNewTabParent = {};
+      this.state.pendingAiCitationParent = {};
     });
   }
 
@@ -131,7 +138,22 @@ export class VisitRecorder {
       for (const [tabId, parent] of Object.entries(this.state.pendingNewTabParent)) {
         if (parent && removed.has(parent)) this.state.pendingNewTabParent[Number(tabId)] = null;
       }
+      for (const [tabId, parent] of Object.entries(this.state.pendingAiCitationParent ?? {})) {
+        if (removed.has(parent)) delete this.state.pendingAiCitationParent?.[Number(tabId)];
+      }
       return [...removed];
+    });
+  }
+
+  /** Validate a clicked citation and reserve the conversation as its new tab's parent. */
+  prepareCitationVisit(tabId: number, visitId: string, url: string): Promise<boolean> {
+    return this.enqueue(async () => {
+      const visit = await this.options.db.visits.get(visitId);
+      if (!visit?.aiConversation || visit.privacyBlocked) return false;
+      const page = await this.options.db.pages.get(visit.canonicalUrl);
+      if (!page?.aiTurns?.some(({ citations }) => citations.includes(url))) return false;
+      if (this.isRecordable(visit.url) && this.isRecordable(url)) (this.state.pendingAiCitationParent ??= {})[tabId] = visitId;
+      return true;
     });
   }
 
@@ -210,7 +232,9 @@ export class VisitRecorder {
     const tabId = this.accruingTabId();
     if (tabId === undefined) return;
     const visit = this.current.get(tabId);
-    if (visit) await this.updateEngagement(visit, { activeMs: visit.activeMs + now - last, lastActiveAt: now });
+    if (visit && this.state.aiEntries?.[tabId]?.screened !== false) {
+      await this.updateEngagement(visit, { activeMs: visit.activeMs + now - last, lastActiveAt: now });
+    }
     const pending = this.pending.get(tabId);
     if (pending) {
       pending.activeMs += now - last;
@@ -219,8 +243,10 @@ export class VisitRecorder {
   }
 
   private async updateEngagement(visit: Visit, changes: Partial<Pick<Visit, 'activeMs' | 'lastActiveAt' | 'scrollDepth'>>, interacted = false) {
-    const engagement = scoreEngagement(changes.activeMs ?? visit.activeMs, changes.scrollDepth ?? visit.scrollDepth,
-      interacted || visit.engagement === 'read');
+    const engagement = visit.aiConversation
+      ? aiEngagement(changes.activeMs ?? visit.activeMs, visit.engagement === 'read' ? 2 : 1)
+      : scoreEngagement(changes.activeMs ?? visit.activeMs, changes.scrollDepth ?? visit.scrollDepth,
+        interacted || visit.engagement === 'read');
     const { db, now } = this.options;
     if (engagement !== visit.engagement) {
       await db.transaction('rw', db.visits, db.pages, db.jobs, async () => {
@@ -269,6 +295,7 @@ export class VisitRecorder {
     this.current.delete(tabId);
     delete this.state.currentVisitByTab[tabId];
     delete this.state.documentIdsByTab?.[tabId];
+    delete this.state.aiEntries?.[tabId];
   }
 
   private setPasswordStatus(tabId: number, blocked: boolean, documentId?: string) {
@@ -282,10 +309,18 @@ export class VisitRecorder {
   }
 
   private async beginVisit(event: NavigationEvent, transition: Transition, parentVisitId: string | null) {
+    await this.finishAiVisit(event.tabId);
     this.endTrail(event.tabId);
     if (event.documentId && this.state.passwordDocumentIdsByTab?.[event.tabId] === event.documentId) return;
     this.setPasswordStatus(event.tabId, false);
     if (!this.isRecordable(event.url)) return;
+    if (googleSearchSurface(event.url) === 'ai-mode') {
+      (this.state.aiEntries ??= {})[event.tabId] = {
+        origin: new URL(event.url).origin, documentId: event.documentId, parentVisitId,
+        screened: !this.options.screenDocuments,
+      };
+      return;
+    }
     const pending = { event, transition, parentVisitId, startedAt: this.options.now(), activeMs: 0, title: '' };
     if (this.options.screenDocuments) this.pending.set(event.tabId, pending);
     else await this.createVisit(pending);
@@ -336,22 +371,111 @@ export class VisitRecorder {
     return visit;
   }
 
+  private async finishAiVisit(tabId: number) {
+    const visit = this.current.get(tabId);
+    if (!visit?.aiConversation || !this.isRecordable(visit.url)) return;
+    const { db, now } = this.options;
+    await db.transaction('rw', db.visits, db.pages, db.jobs, async () => {
+      const page = await db.pages.get(visit.canonicalUrl);
+      if (!page?.aiTurns || !pendingAiTurns(page).length) return;
+      const next = page.aiTurns.map((turn) => turn.answer === null ? { ...turn, extractionFailed: true as const } : turn);
+      const fallback = conversationPage(visit, page, next);
+      await db.pages.put(fallback);
+      await enqueuePageEnrichment(db, visit, now(), fallback);
+    });
+  }
+
+  /** A composer on the Mode landing page can submit by navigating to /search?udm=50&q=…. */
+  private async carryAiReply(event: NavigationEvent, transition: Transition): Promise<boolean> {
+    const entry = this.state.aiEntries?.[event.tabId];
+    const visit = this.current.get(event.tabId);
+    if (!entry?.screened || !visit?.aiConversation || (transition !== 'form' && transition !== 'link') ||
+        googleSearchSurface(event.url) !== 'ai-mode' || !this.isRecordable(event.url) ||
+        this.options.now() - visit.startedAt > INITIAL_AI_NAVIGATION_MS) return false;
+    const url = new URL(event.url);
+    if (url.origin !== entry.origin) return false;
+    const page = await this.options.db.pages.get(visit.canonicalUrl);
+    const pending = pendingAiTurns(page);
+    if (page?.aiTurns?.length !== 1 || pending.length !== 1 ||
+        normalizeQuestion(url.searchParams.get('q') ?? '') !== normalizeQuestion(pending[0]!.question)) return false;
+    entry.screened = false;
+    entry.documentId = event.documentId;
+    entry.carryReply = true;
+    return true;
+  }
+
+  private async captureAiTurn(tabId: number, entry: NonNullable<RecorderState['aiEntries']>[number], content: AiCapture): Promise<PageContentReply | undefined> {
+    const { db, now, newId } = this.options;
+    const active = this.current.get(tabId);
+    if (!active && content.kind !== 'ai-submit') return;
+    const visit = active ? { ...active } : {
+      url: `${entry.origin}/search?udm=50`, id: newId(), tabId, captureDocumentId: entry.documentId,
+      title: 'Google AI Mode · AI-generated', parentVisitId: entry.parentVisitId, transition: 'link' as const,
+      startedAt: now(), activeMs: 0, scrollDepth: 0, engagement: 'skimmed' as const,
+      expeditionId: null, segmentationPending: 1 as const, aiConversation: true as const, canonicalUrl: '',
+    };
+    // Keep a local, per-session key on the real host (privacy/Forget), never a
+    // canonical URL with Google's session IDs or the user's questions in it.
+    if (!active) visit.canonicalUrl = `${visit.url}#trailmap-ai-${visit.id}`;
+    let opening: Visit | undefined;
+    const changed = await db.transaction('rw', db.visits, db.pages, db.queries, db.jobs, async () => {
+      const previous = active && await db.pages.get(active.canonicalUrl);
+      if (active && !previous) return false;
+      const turns = previous?.aiTurns ?? [];
+      if (content.kind === 'ai-result' && content.result) {
+        content = { ...content, result: { ...content.result, citations: content.result.citations.filter((url) => this.isRecordable(url)) } };
+      }
+      const next = mergeAiTurn(turns, content);
+      if (next === turns) return false;
+      if (!active && content.kind === 'ai-submit') {
+        const parent = visit.parentVisitId ? await db.visits.get(visit.parentVisitId) : undefined;
+        const search = parent && this.isRecordable(parent.url) && new URL(parent.url).origin === entry.origin &&
+          await db.queries.where('visitId').equals(parent.id).first();
+        if (!search) {
+          opening = { ...visit, id: newId(), aiConversation: undefined, aiOpeningQuery: true,
+            canonicalUrl: `${visit.canonicalUrl}-query`, parentVisitId: null, title: content.question, transition: 'search' };
+          await db.visits.add(opening);
+          await db.queries.add({ id: newId(), visitId: opening.id, q: content.question, engine: 'google', at: opening.startedAt, expeditionId: null });
+          visit.parentVisitId = opening.id;
+        }
+      }
+      visit.engagement = aiEngagement(visit.activeMs, next.length);
+      if (active) await db.visits.update(visit.id, { engagement: visit.engagement });
+      else await db.visits.add(visit);
+      const page = conversationPage(visit, previous, next);
+      await db.pages.put(page);
+      await enqueuePageEnrichment(db, visit, now(), page);
+      return true;
+    });
+    if (!changed) return active && { visitId: active.id, extract: false };
+    this.current.set(tabId, visit);
+    this.state.currentVisitByTab[tabId] = visit.id;
+    if (entry.documentId) (this.state.documentIdsByTab ??= {})[tabId] = entry.documentId;
+    if (opening) this.emit({ type: 'created', visit: opening });
+    this.emit({ type: active ? 'updated' : 'created', visit: { ...visit } });
+    return { visitId: visit.id, extract: false };
+  }
+
   private async capturePageContent({ tabId, documentId, url, content }: PageContentEvent): Promise<PageContentReply | undefined> {
     const current = this.current.get(tabId);
     const visit = current && this.state.documentIdsByTab?.[tabId] === documentId && sameUrl(current.url, url) ? current : undefined;
     const { db } = this.options;
+    const entry = this.state.aiEntries?.[tabId];
+    const inMode = googleSearchSurface(url) === 'ai-mode';
+    const aiDocument = inMode && entry && entry.documentId === documentId && entry.origin === URL.parse(url)?.origin ? entry : undefined;
     if (content.kind === 'screen') {
       const pending = this.pending.get(tabId);
       const matches = pending && pending.event.documentId === documentId && sameUrl(pending.event.url, url);
       if (content.hasPassword) {
         const previouslyScreened = documentId ? await db.visits.where('captureDocumentId').equals(documentId).primaryKeys() : [];
-        if (matches || visit || previouslyScreened.length) {
+        if (matches || visit || aiDocument || previouslyScreened.length) {
           // Earlier same-document screens are invalid too, including before a pushState.
-          if (matches || visit || documentId === this.state.documentIdsByTab?.[tabId]) {
+          if (matches || visit || aiDocument || documentId === this.state.documentIdsByTab?.[tabId]) {
             this.endTrail(tabId);
             this.setPasswordStatus(tabId, true, documentId);
           }
-          const visitIds = [...new Set([...previouslyScreened, ...(visit ? [visit.id] : [])])];
+          const blocked = aiDocument ? current : visit;
+          const visitIds = [...new Set([...previouslyScreened, ...(blocked ? [blocked.id] : [])])];
           if (visitIds.length) await forgetCascade(db, {
             kind: 'forget-page', visitIds, now: this.options.now, newId: this.options.newId, quiet: true,
           });
@@ -359,6 +483,14 @@ export class VisitRecorder {
         return;
       }
       if (!this.isRecordable(url)) return;
+      if (aiDocument) {
+        aiDocument.screened = true;
+        const carry = aiDocument.carryReply;
+        delete aiDocument.carryReply;
+        if (current && documentId) (this.state.documentIdsByTab ??= {})[tabId] = documentId;
+        const aiPending = carry && current ? pendingAiTurns(await db.pages.get(current.canonicalUrl)) : undefined;
+        return { visitId: current?.id ?? '', extract: false, aiPending: aiPending?.map(({ id, question }) => ({ id, question })) };
+      }
       if (matches) {
         const admitted = await this.createVisit(pending);
         this.pending.delete(tabId);
@@ -366,7 +498,12 @@ export class VisitRecorder {
       }
       return visit && { visitId: visit.id, extract: false };
     }
+    if (content.kind === 'ai-submit' || content.kind === 'ai-result') {
+      if (!aiDocument?.screened || !this.isRecordable(url) || (current && !this.isRecordable(current.canonicalUrl))) return;
+      return this.captureAiTurn(tabId, aiDocument, content);
+    }
     if (!visit || !this.isRecordable(url) || !this.isRecordable(visit.canonicalUrl)) return;
+    if (googleSearchSurface(url) && content.kind !== 'scroll') return;
     if (content.kind === 'scroll') {
       if (content.depth <= visit.scrollDepth) return;
       await this.updateEngagement(visit, { scrollDepth: content.depth });
@@ -436,14 +573,20 @@ export class VisitRecorder {
     onCommitted: (event) =>
       this.enqueue(async () => {
         if (event.frameId !== 0) return;
-        const pending = this.state.pendingNewTabParent[event.tabId];
+        const citationParent = /^https?:/i.test(event.url) ? this.state.pendingAiCitationParent?.[event.tabId] : undefined;
+        if (citationParent) delete this.state.pendingAiCitationParent?.[event.tabId];
+        const pending = citationParent ?? this.state.pendingNewTabParent[event.tabId];
         delete this.state.pendingNewTabParent[event.tabId];
         const transition = pending !== undefined ? 'new-tab' : toVisitTransition(event);
+        if (await this.carryAiReply(event, transition)) return;
         await this.beginVisit(event, transition, pending !== undefined ? pending : this.parentFor(event.tabId, transition));
       }),
     onHistoryStateUpdated: (event) =>
       this.enqueue(async () => {
         if (event.frameId !== 0) return;
+        const entry = this.state.aiEntries?.[event.tabId];
+        if (entry && entry.documentId === event.documentId && googleSearchSurface(event.url) === 'ai-mode' &&
+            entry.origin === URL.parse(event.url)?.origin) return;
         if (this.current.get(event.tabId)?.url === canonicalizeUrl(event.url) || this.pending.get(event.tabId)?.event.url === event.url) return;
         const transition = event.transitionQualifiers.includes('forward_back') ? 'back' : 'link';
         await this.beginVisit(event, transition, this.parentFor(event.tabId, transition));
@@ -470,13 +613,15 @@ export class VisitRecorder {
         if (!visible) hidden.push(tabId);
         this.state.hiddenTabs = hidden;
       }),
-    onPageContent: (event) => this.enqueue(() => this.capturePageContent(event), { settle: event.content.kind === 'screen' }),
+    onPageContent: (event) => this.enqueue(() => this.capturePageContent(event), {
+      settle: event.content.kind === 'screen' || event.content.kind === 'ai-submit' || event.content.kind === 'ai-result',
+    }),
     onTabTitleChanged: ({ tabId, url, title }) =>
       this.enqueue(async () => {
         const pending = this.pending.get(tabId);
         if (pending && sameUrl(pending.event.url, url)) pending.title = title;
         const visit = this.current.get(tabId);
-        if (!visit || !sameUrl(visit.url, url) || visit.title === title) return;
+        if (!visit || visit.aiConversation || !sameUrl(visit.url, url) || visit.title === title) return;
         const firstTitle = !visit.title.trim() && !!title.trim();
         visit.title = title;
         await this.options.db.visits.where('id').equals(visit.id).modify((stored) => {
@@ -489,9 +634,11 @@ export class VisitRecorder {
       }),
     onTabRemoved: (tabId) =>
       this.enqueue(async () => {
+        await this.finishAiVisit(tabId);
         this.endTrail(tabId);
         this.setPasswordStatus(tabId, false);
         delete this.state.pendingNewTabParent[tabId];
+        delete this.state.pendingAiCitationParent?.[tabId];
         this.state.hiddenTabs = this.state.hiddenTabs.filter((id) => id !== tabId);
         for (const [windowId, active] of Object.entries(this.state.activeTabByWindow)) {
           if (active === tabId) delete this.state.activeTabByWindow[Number(windowId)];

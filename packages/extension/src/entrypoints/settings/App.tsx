@@ -10,6 +10,8 @@ import { CompanionSetup } from '../../companion/CompanionSetup';
 import { useCompanionStatus } from '../../companion/useCompanionStatus';
 import { ProviderSettings } from '../../llm/ProviderSettings';
 import { PrivacySettings } from '../../privacy/PrivacySettings';
+import type { TrailmapDb } from '../../db/db';
+import { useJournalData } from '../../journal/data';
 import { HistoryImportSettings } from '../../ui/HistoryImportSettings';
 import { ExportSettings } from '../../vault/ExportSettings';
 import { VaultSettings } from '../../vault/VaultSettings';
@@ -18,8 +20,25 @@ import { SentToModelLog } from './SentToModelLog';
 const sections = [
   ['privacy', 'Privacy'], ['companion', 'Companion'], ['model-providers', 'Model providers'],
   ['obsidian', 'Obsidian sync'], ['history-import', 'History import'], ['exports', 'Exports'],
-  ['sent-to-model', 'Sent-to-model log'],
+  ['sent-to-model', 'Sent-to-model log'], ['diagnostics', 'Diagnostics'],
 ];
+
+async function readExtractionFailures(db: TrailmapDb) {
+  let count = 0;
+  await db.pages.each((page) => { count += page.aiTurns?.filter(({ extractionFailed }) => extractionFailed).length ?? 0; });
+  return count;
+}
+
+function CaptureDiagnostics() {
+  const failures = useJournalData(readExtractionFailures);
+  return (
+    <VStack as="section" id="diagnostics" gap={2}>
+      <Heading level={2}>Diagnostics</Heading>
+      <Text as="p">AI Mode reply extraction failures: {failures?.data ?? (failures?.error ? 'Unavailable' : 'Loading…')}</Text>
+      <Text as="p" type="supporting">Counts saved AI Mode questions whose replies could not be captured.</Text>
+    </VStack>
+  );
+}
 
 export function App() {
   const companion = useCompanionStatus();
@@ -60,6 +79,8 @@ export function App() {
             <ExportSettings />
             <Divider />
             <SentToModelLog />
+            <Divider />
+            <CaptureDiagnostics />
           </VStack>
         </LayoutContent>
       )}
