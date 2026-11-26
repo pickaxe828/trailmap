@@ -48,7 +48,10 @@ test('an article stores capped Readability text under its canonical URL and skip
   expect(article!.textHash).toBe(createHash('sha256').update(article!.text).digest('hex'));
 
   const visits = await readCapture('visits');
-  expect(visits.find((visit) => visit.url === url)?.canonicalUrl).toBe(canonicalUrl);
+  // Stored Visit URLs drop tracking and session parameters too, not just the canonical URL.
+  const stored = fixtureUrl('learn.test', '/content/article.html');
+  expect(visits.find((visit) => visit.url === stored)?.canonicalUrl).toBe(canonicalUrl);
+  expect(visits.some((visit) => /fbclid|sid=/.test(visit.url))).toBe(false);
   expect(visits.some((visit) => visit.url === privateUrl)).toBe(false);
 });
 
