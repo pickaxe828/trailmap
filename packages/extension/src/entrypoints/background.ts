@@ -11,6 +11,7 @@ import { createRecordingPrivacy } from '../privacy/background';
 import { startThreadCorrections } from '../threads/background';
 import { watchUnseenNotes } from '../wrapup/badge';
 import { startVaultSync } from '../vault/background';
+import { startHistoryImport } from '../history/background';
 
 export default defineBackground(() => {
   startCompanion();
@@ -41,7 +42,8 @@ export default defineBackground(() => {
     onPasswordStatusChanged: privacy.onPasswordStatusChanged,
     newId: () => crypto.randomUUID(),
   });
-  startSegmentation(db, recorder);
+  const expeditions = startSegmentation(db, recorder);
+  startHistoryImport(expeditions, privacy);
   recorder.start();
   privacy.start(recorder);
   startCorrections(db, recorder, privacy);
