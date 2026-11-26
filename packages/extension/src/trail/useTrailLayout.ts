@@ -5,6 +5,7 @@ import type { TrailGraph } from './graph';
 
 // Shared geometry in canvas units. React Flow uses the same dimensions as ELK.
 export const TRAIL_CARD = { width: 264, height: 80 } as const;
+const TRAIL_GAP = { betweenLayers: 88, betweenCards: 24 } as const;
 
 type Layout = { positions: Map<string, { x: number; y: number }> } | { error: true };
 
@@ -16,8 +17,8 @@ export function useTrailLayout({ nodes, edges }: TrailGraph): Layout | undefined
     layoutOptions: {
       'elk.algorithm': 'layered',
       'elk.direction': 'RIGHT',
-      'elk.layered.spacing.nodeNodeBetweenLayers': '88',
-      'elk.spacing.nodeNode': '24',
+      'elk.layered.spacing.nodeNodeBetweenLayers': String(TRAIL_GAP.betweenLayers),
+      'elk.spacing.nodeNode': String(TRAIL_GAP.betweenCards),
       'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
     },
     children: nodes.map(({ id }) => ({ id, ...TRAIL_CARD })),

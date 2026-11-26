@@ -1,10 +1,8 @@
 import type { Expedition, Page, Visit } from '@trailmap/shared';
 import type { TrailmapDb } from '../db/db';
-import { recordingState, type RecordingSettings } from '../privacy/policy';
+import { eligibleMetadata, recordingState, type RecordingSettings } from '../privacy/policy';
 
 const unique = (values: string[]) => [...new Set(values)].sort();
-export const eligibleMetadata = (visit: Visit, settings: RecordingSettings) => !visit.privacyBlocked &&
-  recordingState(visit.url, settings) === 'recording' && recordingState(visit.canonicalUrl, settings) === 'recording';
 
 /** Record transitive Page provenance without putting any Page text into a living-note request. */
 export function notesProvenance(visits: Visit[], pages: Page[]): NonNullable<Expedition['notesSource']> {

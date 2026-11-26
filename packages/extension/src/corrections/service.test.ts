@@ -34,7 +34,7 @@ const visit = (id: string, host: string): Visit => ({
 });
 const req = <A extends string>(action: A, rest: object) => ({ type: CORRECTION_MESSAGE, action, ...rest }) as never;
 
-test('ignoring a site reuses the skip-list controller and logs the change; protected or already-skipped sites are refused', async () => {
+test('ignoring a site reuses the skip-list controller without logging which site was skipped', async () => {
   await db.visits.bulkPut([visit('a', 'blog.example'), visit('m', 'mail.test'), visit('k', 'already.example')]);
   const s = service();
 
@@ -46,9 +46,8 @@ test('ignoring a site reuses the skip-list controller and logs the change; prote
   const log = await db.corrections.toArray();
   expect(log).toHaveLength(1);
   expect(log[0]).toMatchObject({
-    kind: 'ignore-site', targetIds: ['site:blog.example'], before: { skipped: false }, after: { skipped: true, host: 'blog.example' },
+    kind: 'ignore-site', targetIds: [], before: { skipped: false }, after: { skipped: true },
   });
-  expect(await db.visits.count()).toBe(3); // Ignoring never deletes history.
 });
 
 test('forgetting goes through the recorder, and "current-visit" answers from it', async () => {

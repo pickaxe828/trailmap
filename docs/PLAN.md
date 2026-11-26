@@ -154,7 +154,7 @@ capture ──▶ filter ──▶ segment ──▶ enrich (LLM) ──▶ reso
 ### 4.2 Filter (keeping the mess out)
 - **Engagement levels:** `bounced` is under 10 s active and no scroll. `skimmed` is 10–60 s. `read` is more than 60 s active, or more than 50% scrolled, or any selection or copy. Bounced visits stay as faint nodes in the trail and are never sent to the LLM.
 - **Default deny-list:** mail, banking, calendars, chat, social feeds, checkout pages, localhost and intranet hosts, and any page with a password field.
-- **Per-site toggle** in the side panel, plus a global pause hotkey.
+- **Per-site toggle** in the side panel, plus a global pause hotkey. Skipping a site purges its Trailmap records and blocks future capture; pausing does not erase previous history.
 - **URL canonicalization:** use `rel=canonical`, drop `utm_*` parameters and session tokens.
 
 ### 4.3 Segment into expeditions (the make-or-break step)
@@ -303,7 +303,8 @@ Keep it as a fallback only, in case OpenAI ever accepts custom schemes and loopb
 | `keys.set` / `keys.status` | Saves the Anthropic API key to the companion's secret store and reports whether a key is saved. The extension does not persist the key; the companion never returns it. |
 | `llm.models` | Lists displayable `{ provider, slug, displayName }` models from all connected providers. Reports provider status separately so an unavailable provider doesn't hide the other catalogs. |
 | `llm.complete` | Takes `{ provider?, task, model?, instructions, input, schema, schemaName }`. The prompt and input are strings; pass a JSON Schema 2020-12 object (e.g. from Zod). Returns `{ output }` only after validation, or a typed error. |
-| `vault.write` | Writes a Markdown file, only inside the chosen Obsidian folder |
+| `vault.write` | Writes a Markdown file, only inside the chosen Obsidian folder. |
+| `vault.remove` | Removes a stale generated Trailmap note after Forget or reconciliation, only in the pinned Obsidian folder. Accepts only generated flat Markdown filenames, refuses symlinks and folder changes, and removes the file only if its digest matches the last generated content. |
 
 - **No general-purpose commands.** There is nothing like "fetch any URL" or "read any file", so a bug in the extension can't turn the companion into a general proxy. Every incoming message is checked against the shared Zod schemas.
 - **Secrets** live in the macOS Keychain. The `security` command-line tool is enough for the prototype.

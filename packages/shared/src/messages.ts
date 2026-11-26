@@ -72,14 +72,19 @@ export const CompanionError = ErrorDetails.extend({
 });
 export type CompanionError = z.infer<typeof CompanionError>;
 
+/** Chrome rejects host-to-extension frames above this many bytes. */
+export const MAX_OUTGOING_FRAME_BYTES = 1024 * 1024;
+export const MAX_CHUNKS = 96;
+
 /** One page of a response whose JSON was over the 1 MB frame cap. `data` is base64 of a slice of its UTF-8 bytes. */
 export const ChunkFrame = z.object({
   type: z.literal('chunk'),
-  id: z.string(),
+  id: z.string().min(1).max(256),
   index: z.number().int().nonnegative(),
-  total: z.number().int().positive(),
-  data: z.string(),
-});
+  total: z.number().int().positive().max(MAX_CHUNKS),
+  data: z.string().min(4).max(MAX_OUTGOING_FRAME_BYTES).regex(/^[A-Za-z0-9+/]+={0,2}$/)
+    .refine((data) => data.length % 4 === 0),
+}).refine(({ index, total }) => index < total);
 export type ChunkFrame = z.infer<typeof ChunkFrame>;
 
 export const ChatGptStatus = z.object({

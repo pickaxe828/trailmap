@@ -1,6 +1,6 @@
 import type { Visit } from '@trailmap/shared';
 import type { TrailmapDb } from '../db/db';
-import { forgetCascade, hostMatches, type ForgetResult } from './forget';
+import { forgetCascade, type ForgetResult } from './forget';
 import { repairExpedition } from './repair';
 import { refreshEditedSessions } from '../threads/corrections';
 import { refreshThread } from '../threads/model';
@@ -112,7 +112,7 @@ export function createCorrections({ db, now, newId }: CorrectionsOptions) {
         await assign(ids, id);
         await refreshExpeditionCentroid(db, id);
         await refreshExpeditionCentroid(db, source.id);
-        await logEntry('split', [visitId, source.id, id], { visits: before },
+        await logEntry('split', [...ids, source.id, id], { visits: before },
           { visits: await membership(ids), expeditionId: id, fromExpeditionId: source.id });
         return id;
       });
@@ -178,16 +178,12 @@ export function createCorrections({ db, now, newId }: CorrectionsOptions) {
 
     /** `host` is a site key: the hostname and its subdomains. */
     async forgetSite(host: string): Promise<ForgetResult> {
-      const visitIds = (await db.visits.filter(({ url, canonicalUrl }) => hostMatches(url, host) || hostMatches(canonicalUrl, host))
-        .primaryKeys()) as string[];
-      const pageUrls = (await db.pages.filter(({ canonicalUrl, sourceUrl }) =>
-        hostMatches(canonicalUrl, host) || hostMatches(sourceUrl, host)).primaryKeys()) as string[];
-      return forgetCascade(db, { kind: 'forget-site', visitIds, pageUrls, targetIds: [`site:${host}`], now, newId });
+      return forgetCascade(db, { kind: 'forget-site', host, targetIds: [`site:${host}`], now, newId });
     },
 
     /** The skip list itself is owned by the privacy controller; this only records the change. */
-    async logSiteIgnored(host: string) {
-      await logEntry('ignore-site', [`site:${host}`], { skipped: false }, { skipped: true, host });
+    async logSiteIgnored() {
+      await logEntry('ignore-site', [], { skipped: false }, { skipped: true });
     },
   };
 }

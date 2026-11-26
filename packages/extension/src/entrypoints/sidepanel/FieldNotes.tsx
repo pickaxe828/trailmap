@@ -7,6 +7,7 @@ import type { Expedition } from '@trailmap/shared';
 import { useState } from 'react';
 import { openTrailmapDb } from '../../db/db';
 import { markNotesSeen } from '../../wrapup/badge';
+import { displayFieldNotes } from '../../wrapup/markdown';
 import { FieldNotesMarkdown } from '../../wrapup/FieldNotesMarkdown';
 
 let db: ReturnType<typeof openTrailmapDb> | undefined;
@@ -38,7 +39,7 @@ export function FieldNotes({ expeditions }: { expeditions: Expedition[] }) {
         return (
           <Collapsible key={id} isOpen={open === id} onOpenChange={(isOpen) => toggle(expedition, isOpen)}
             trigger={<HStack gap={2} align="center">{heading}</HStack>}>
-            <FieldNotesMarkdown>{fieldNotes}</FieldNotesMarkdown>
+            <FieldNotesMarkdown>{displayFieldNotes(expedition) ?? ''}</FieldNotesMarkdown>
           </Collapsible>
         );
       })}

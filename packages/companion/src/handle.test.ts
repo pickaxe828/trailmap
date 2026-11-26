@@ -3,7 +3,7 @@ import { COMPANION_VERSION, handleFrame, handleMessage, type CompanionContext } 
 
 const ctx: CompanionContext = {
   env: {},
-  secrets: { get: async () => null, set: async () => {}, delete: async () => {} },
+  secrets: { get: async () => null, set: async () => {}, delete: async () => {}, lockChatGptAccount: (work) => work() },
   log: () => {},
 };
 

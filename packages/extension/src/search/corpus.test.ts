@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test';
 import type { Expedition, Page, Thread, Visit } from '@trailmap/shared';
+import { createCorrections } from '../corrections/corrections';
 import { openTrailmapDb } from '../db/db';
 import { observeSearchCorpus } from './corpus';
 import { SearchIndex } from './index';
@@ -21,6 +22,30 @@ const thread: Thread = {
   id: 't', title: 'Replication research', question: null, lastActiveAt: 3, status: 'active',
   livingNote: 'Combine divergent operations', centroid: null, conceptIds: [],
 };
+
+test('manual Notes enter Journal search and disappear after their Visit is forgotten', async () => {
+  const db = openTrailmapDb(crypto.randomUUID());
+  const index = new SearchIndex({ async embed() { return []; } });
+  const corrections = createCorrections({ db, now: () => 100, newId: () => crypto.randomUUID() });
+  await db.visits.add(visit);
+  await db.expeditions.add(expedition);
+  await corrections.note(visit.id, 'Recheck distributivity');
+  let next = Promise.withResolvers<void>();
+  const subscription = observeSearchCorpus(db).subscribe({
+    next: (documents) => { index.update(documents); next.resolve(); }, error: (error) => next.reject(error),
+  });
+  try {
+    await next.promise;
+    expect(index.keyword('distributivity', 5)).toMatchObject([{ kind: 'note', href: '/expedition.html?id=e', title: 'Replicated lists' }]);
+    next = Promise.withResolvers<void>();
+    await corrections.forgetPage(url);
+    await next.promise;
+    expect(index.keyword('distributivity', 5)).toEqual([]);
+  } finally {
+    subscription.unsubscribe();
+    await db.delete();
+  }
+});
 
 test('committed Page enrichment, note edits and deletions refresh the existing index', async () => {
   const db = openTrailmapDb(crypto.randomUUID());

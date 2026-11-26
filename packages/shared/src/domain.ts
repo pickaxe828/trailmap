@@ -18,6 +18,7 @@ export const Engagement = z.enum(['bounced', 'skimmed', 'read']);
 export type Engagement = z.infer<typeof Engagement>;
 
 export const Visit = z.object({
+  captureDocumentId: z.string().optional(), // Groups same-document visits for late password screening.
   id: z.string(),
   url: z.string(),
   canonicalUrl: z.string(),
@@ -68,6 +69,9 @@ export const ConceptMergeVerdicts = z.object({
 });
 export type ConceptMergeVerdicts = z.infer<typeof ConceptMergeVerdicts>;
 
+export const ModelSources = z.object({ visitIds: z.array(z.string()), canonicalUrls: z.array(z.string()) });
+export type ModelSources = z.infer<typeof ModelSources>;
+
 export const Page = z.object({
   canonicalUrl: z.string(),
   text: z.string(),
@@ -84,6 +88,7 @@ export const Page = z.object({
   enrichmentVisitId: z.string().optional(), // Evidence for the unresolved mentions.
   enrichmentSourceVisitId: z.string().optional(),
   enrichmentSourceUrl: z.string().optional(),
+  enrichmentSources: ModelSources.optional(),
   answersQuestion: PageEnrichment.shape.answers_question.optional(),
   conceptMentions: PageEnrichment.shape.concepts.optional(),
   relationMentions: PageEnrichment.shape.relations.optional(),
@@ -126,9 +131,11 @@ export const Expedition = z.object({
   threadSignature: z.object({ vector: z.instanceof(Int8Array), conceptIds: z.array(z.string()) }).optional(),
   threadAutoExcluded: z.boolean().optional(),
   wrappedUpAt: z.number().optional(), // The wrap-up pass (title, question, kind) committed.
+  wrapUpSource: ModelSources.optional(),
   mergeSuggestions: z.array(MergeSuggestion).optional(), // Same-day Expeditions on the same topic.
   notesWrittenAt: z.number().optional(), // Field notes were generated at this time.
-  notesSource: z.object({ visitIds: z.array(z.string()), canonicalUrls: z.array(z.string()) }).optional(),
+  notesSource: ModelSources.optional(),
+  unreadStops: z.array(z.object({ visitId: z.string(), title: z.string(), url: z.string() })).optional(), // Local-only loose ends.
   unseenNotes: z.literal(1).optional(), // Set with new field notes; cleared once viewed. Indexed for the badge.
 });
 export type Expedition = z.infer<typeof Expedition>;

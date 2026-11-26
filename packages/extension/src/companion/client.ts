@@ -8,7 +8,6 @@
  */
 import {
   ChunkAssembler,
-  ChunkFrame,
   CompanionEvent,
   CompanionResponse,
   ErrorDetails,
@@ -235,6 +234,7 @@ export class CompanionClient {
   }
 
   private failAll(code: RequestErrorCode, message: string) {
+    this.assembler = new ChunkAssembler();
     const pending = [...this.pending.values()];
     this.pending.clear();
     for (const p of pending) {
@@ -263,6 +263,7 @@ export class CompanionClient {
     const id = this.newId();
     const timer = this.scheduler.setTimeout(() => {
       this.pending.delete(id);
+      this.assembler.discard(id);
       settle(new CompanionRequestError('timeout', `The companion did not answer ${request.type}`));
     }, timeoutMs);
     this.pending.set(id, { settle, timer });
@@ -270,11 +271,9 @@ export class CompanionClient {
   }
 
   private onFrame(raw: unknown) {
-    const chunk = ChunkFrame.safeParse(raw);
-    if (chunk.success) {
-      const whole = this.assembler.add(chunk.data);
-      if (whole !== null) this.onFrame(whole);
-      return;
+    if (raw && typeof raw === 'object' && 'type' in raw && raw.type === 'chunk') {
+      raw = this.assembler.add(raw);
+      if (raw === null) return;
     }
     const event = CompanionEvent.safeParse(raw);
     if (event.success) {
@@ -287,6 +286,7 @@ export class CompanionClient {
     const pending = id === null ? undefined : this.pending.get(id);
     if (!pending) return;
     this.pending.delete(id!);
+    this.assembler.discard(id!);
     this.scheduler.clearTimeout(pending.timer);
     if (response.data.type === 'error') {
       pending.settle(new CompanionRequestError(response.data.code, response.data.message, ErrorDetails.parse(response.data)));

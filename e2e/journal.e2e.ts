@@ -27,6 +27,24 @@ test('the Journal opens from the side panel and shows the newest Expeditions fir
   await expect(journal.getByRole('link', { name: 'Buy a desk lamp' })).toBeVisible();
 });
 
+test('Journal shows merge suggestions only for Expeditions that still exist', async ({ openExtensionPage }, info) => {
+  const setup = await openExtensionPage('sidepanel.html');
+  await seed(setup, { expeditions: [
+    expedition('source', 'Replicated lists', start, { mergeSuggestions: [
+      { expeditionId: 'target', reason: 'Both sessions cover replicated deletes.' },
+      { expeditionId: 'gone', reason: 'Stale suggestion' },
+    ] }),
+    expedition('target', 'Delete markers', start + 1000),
+  ] });
+  const journal = await openExtensionPage('journal.html');
+  const suggestions = journal.getByRole('region', { name: 'Merge suggestions' });
+  await expect(suggestions.getByRole('link', { name: 'Replicated lists' })).toHaveAttribute('href', /\/expedition\.html\?id=source$/);
+  await expect(suggestions.getByRole('link', { name: 'Delete markers' })).toHaveAttribute('href', /\/expedition\.html\?id=target$/);
+  await expect(suggestions.getByText('Both sessions cover replicated deletes.')).toBeVisible();
+  await expect(journal.getByText('Stale suggestion')).toHaveCount(0);
+  await journal.screenshot({ path: process.env.PROOF_DIR ? join(process.env.PROOF_DIR, 'journal-merges.png') : info.outputPath('journal-merges.png') });
+});
+
 test('opening field notes marks them seen and a Markdown edit survives reload', async ({ openExtensionPage, readCapture }) => {
   const setup = await openExtensionPage('sidepanel.html');
   await seed(setup, { expeditions: [expedition('research:crdt', 'Tombstones in CRDTs', start, {

@@ -48,7 +48,7 @@ export function createCorrectionService({ db, corrections, recorder, privacy }: 
           return false;
         }
         await privacy.setSiteSkipped(host, true);
-        await corrections.logSiteIgnored(host);
+        await corrections.logSiteIgnored();
         return true;
       }
       case 'forget-page': return forget(() => corrections.forgetPage(request.canonicalUrl));

@@ -51,6 +51,14 @@ export function recordingState(url: string | undefined, settings: RecordingSetti
     : 'recording';
 }
 
+type VisitMetadata = Pick<Visit, 'url' | 'canonicalUrl' | 'privacyBlocked'>;
+
+/** A navigation title or query may be used only from a recordable Visit. */
+export function eligibleMetadata<T extends VisitMetadata>(visit: T | undefined, settings: RecordingSettings): visit is T {
+  return !!visit && !visit.privacyBlocked && recordingState(visit.url, settings) === 'recording' &&
+    recordingState(visit.canonicalUrl, settings) === 'recording';
+}
+
 /** Call at dispatch time with current settings, not just when enqueuing enrichment. */
 export function maySendToModel(
   visit: Pick<Visit, 'url' | 'canonicalUrl' | 'engagement' | 'privacyBlocked'>,
@@ -58,9 +66,7 @@ export function maySendToModel(
   settings: RecordingSettings,
   sourceVisit?: Visit,
 ): boolean {
-  const knownSource = !page?.sourceVisitId || (sourceVisit?.id === page.sourceVisitId && !sourceVisit.privacyBlocked &&
-    recordingState(sourceVisit.url, settings) === 'recording' && recordingState(sourceVisit.canonicalUrl, settings) === 'recording');
-  return knownSource && !visit.privacyBlocked && (visit.engagement === 'skimmed' || visit.engagement === 'read') && !!page?.text.trim() &&
-    page.canonicalUrl === visit.canonicalUrl && recordingState(visit.url, settings) === 'recording' &&
-    recordingState(page.canonicalUrl, settings) === 'recording' && recordingState(page.sourceUrl, settings) === 'recording';
+  const knownSource = !page?.sourceVisitId || (sourceVisit?.id === page.sourceVisitId && eligibleMetadata(sourceVisit, settings));
+  return knownSource && eligibleMetadata(visit, settings) && visit.engagement !== 'bounced' && !!page?.text.trim() &&
+    page.canonicalUrl === visit.canonicalUrl && recordingState(page.sourceUrl, settings) === 'recording';
 }

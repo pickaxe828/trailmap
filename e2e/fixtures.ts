@@ -11,17 +11,18 @@
  */
 import { chromium, test as base, expect, type BrowserContext, type Page, type Worker } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
-import { cpSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import type { ConceptEvidence } from '../packages/extension/src/concepts/evidence';
+import type { SentToModel } from '../packages/extension/src/db/db';
 import type { Concept, Edge, Expedition, Highlight, Note, Page as CapturedPage, Query, Thread, Visit } from '../packages/shared/src/domain';
 import { COMPANION_BIN, EXTENSION_DIR, FIXTURE_PORT } from './constants';
 
 type CaptureTables = {
   visits: Visit; pages: CapturedPage; queries: Query; highlights: Highlight; expeditions: Expedition; notes: Note;
-  concepts: Concept; edges: Edge; threads: Thread; conceptEvidence: ConceptEvidence;
+  concepts: Concept; edges: Edge; threads: Thread; conceptEvidence: ConceptEvidence; sentToModel: SentToModel;
   corrections: { id: string; at: number; kind: string; targetIds: string[]; before: unknown; after: unknown };
 };
 
@@ -76,6 +77,7 @@ type Fixtures = {
 
 type Options = {
   realEmbedder: boolean;
+  controlledCaptureClock: boolean;
   /** `test.use({ companionInstalled: true })` installs the real companion into the profile before the browser starts. */
   companionInstalled: boolean;
 };
@@ -84,6 +86,7 @@ type WorkerFixtures = { fakeEmbeddingExtension: string };
 
 export const test = base.extend<Fixtures & Options, WorkerFixtures>({
   realEmbedder: [false, { option: true }],
+  controlledCaptureClock: [false, { option: true }],
 
   // Swap only the Embedder behind the production offscreen message handler.
   // The normal bundle has no test configuration and retains its manifest key.
@@ -131,8 +134,26 @@ export const test = base.extend<Fixtures & Options, WorkerFixtures>({
     });
   },
 
-  context: async ({ userDataDir, companionEnv, companionInstalled, installCompanion, fakeEmbeddingExtension, realEmbedder }, use) => {
-    const extensionDir = realEmbedder ? EXTENSION_DIR : fakeEmbeddingExtension;
+  context: async ({ userDataDir, companionEnv, companionInstalled, installCompanion, fakeEmbeddingExtension, realEmbedder, controlledCaptureClock }, use) => {
+    let extensionDir = realEmbedder ? EXTENSION_DIR : fakeEmbeddingExtension;
+    if (controlledCaptureClock) {
+      const copy = join(userDataDir, 'clock-extension');
+      cpSync(extensionDir, copy, { recursive: true });
+      extensionDir = copy;
+      const worker = join(copy, 'background.js');
+      // Keep real Chrome navigation, active-tab and content-script events; pin
+      // the desktop focus/idle inputs that headless Chrome cannot drive portably.
+      const shim = `
+        globalThis.captureTestTime = Date.now();
+        Date.now = () => globalThis.captureTestTime;
+        const getLastFocusedWindow = chrome.windows.getLastFocused.bind(chrome.windows);
+        chrome.windows.getLastFocused = async () => ({ ...await getLastFocusedWindow(), focused: true });
+        chrome.windows.onFocusChanged.addListener = () => {};
+        chrome.idle.queryState = async () => 'active';
+        chrome.idle.onStateChanged.addListener = () => {};
+      `;
+      writeFileSync(worker, shim + readFileSync(worker, 'utf8'));
+    }
     if (companionInstalled) installCompanion();
     const context = await chromium.launchPersistentContext(userDataDir, {
       env: { ...process.env, ...companionEnv } as Record<string, string>,

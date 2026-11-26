@@ -75,7 +75,7 @@ test('the live trail marks the current page, and split, rename, star and forget 
   expect((await readCapture('pages')).some(({ canonicalUrl }) => canonicalUrl === articleUrl)).toBe(false);
 });
 
-test('ignoring a site uses the skip list from the recording settings, keeps history and stops new capture', async ({
+test('ignoring a site uses the recording skip list, purges history and stops new capture', async ({
   context, fixtureUrl, openExtensionPage, readCapture, serviceWorker,
 }) => {
   const first = fixtureUrl('learn.test', '/trail/start.html');
@@ -92,12 +92,10 @@ test('ignoring a site uses the skip list from the recording settings, keeps hist
   await expect.poll(() => worker.evaluate(async () =>
     ((await chrome.storage.local.get('trailmap.recordingSettings'))['trailmap.recordingSettings'] as { skippedHosts: string[] }).skippedHosts))
     .toEqual(['learn.test']);
-  await row.getByRole('button', { name: /Actions for/ }).click();
-  await expect(panel.getByRole('menuitem', { name: 'learn.test is ignored' })).toBeDisabled();
-  await panel.keyboard.press('Escape');
+  await expect(row).not.toBeVisible();
 
   await page.goto(fixtureUrl('learn.test', '/trail/article.html'));
   await page.goto(fixtureUrl('learn.test', '/trail/other.html'));
-  expect((await readCapture('visits')).map(({ url }) => url)).toEqual([first]);
-  expect((await readCapture('corrections')).map(({ kind }) => kind)).toEqual(['ignore-site']);
+  expect(await readCapture('visits')).toEqual([]);
+  expect(JSON.stringify(await readCapture('corrections'))).not.toContain('learn.test');
 });

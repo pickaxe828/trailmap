@@ -113,7 +113,9 @@ export class ChatGptAuth {
         try {
           await this.exclusive(async () => {
             if (this.attempt !== attempt || this.signOutFlight) throw new Error('Sign-in ended');
-            await this.complete(url, clientId, verifier, redirect.href, nonce, account);
+            const current = await this.readAccount();
+            if (JSON.stringify(current) !== JSON.stringify(account)) throw new Error('Account changed during sign-in');
+            await this.complete(url, clientId, verifier, redirect.href, nonce, current);
           });
           this.endAttempt(attempt);
           this.ctx.emit?.({ type: 'event', name: 'auth.completed' });
@@ -299,7 +301,8 @@ export class ChatGptAuth {
   }
 
   private exclusive<T>(work: () => Promise<T>): Promise<T> {
-    const result = this.queue.then(work);
+    // Multiple Native Messaging hosts share one underlying secret store.
+    const result = this.queue.then(() => this.ctx.secrets.lockChatGptAccount(work));
     this.queue = result.catch(() => {});
     return result;
   }

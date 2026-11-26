@@ -10,10 +10,14 @@ const badges: Record<RecordingState, { text: string; title: string }> = {
 };
 
 /** `unseenNotes` is the toolbar count of field notes nobody has looked at yet; it takes the badge over from the recording state. */
-export function createRecordingPrivacy(unseenNotes: () => number = () => 0) {
-  // Start fail-closed until persisted preferences have loaded.
+export function createRecordingPrivacy(unseenNotes: () => number, purge: (host?: string) => Promise<unknown>) {
+  // Start fail-closed until preferences load and any interrupted purge completes.
   let settings: RecordingSettings = { paused: true, skippedHosts: [] };
-  const ready = readRecordingSettings().then((saved) => { settings = saved; });
+  const ready = readRecordingSettings().then(async (saved) => {
+    await purge();
+    for (const host of saved.skippedHosts) await purge(host);
+    settings = saved;
+  });
   let recorder: VisitRecorder;
   let settingsWritten = Promise.resolve();
 
@@ -38,11 +42,15 @@ export function createRecordingPrivacy(unseenNotes: () => number = () => 0) {
       id === undefined ? undefined : refreshBadge(id).catch(() => {})));
   }
 
-  function changeSettings(edit: (current: RecordingSettings) => RecordingSettings) {
+  function changeSettings(edit: (current: RecordingSettings) => RecordingSettings, skipHost?: string) {
     const written = recorder.changeRecordingPolicy(async () => {
       const next = edit(settings);
-      await saveRecordingSettings(next);
+      // Block dispatch as soon as a skip begins, before the cascade runs.
+      const previous = settings;
       settings = next;
+      try { await saveRecordingSettings(next); }
+      catch (error) { settings = previous; throw error; }
+      if (skipHost) await purge(skipHost);
     });
     settingsWritten = written.catch(() => {});
     return written.then(refreshBadges);
@@ -53,7 +61,7 @@ export function createRecordingPrivacy(unseenNotes: () => number = () => 0) {
     return changeSettings((current) => ({
       ...current,
       skippedHosts: skip ? [...new Set([...current.skippedHosts, host])] : current.skippedHosts.filter((entry) => entry !== host),
-    }));
+    }), skip ? host : undefined);
   }
 
   async function getStatus(tabId: number | undefined): Promise<RecordingStatus> {

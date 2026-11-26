@@ -27,7 +27,7 @@ export function startJobs(db: TrailmapDb, ready: Promise<void>, getSettings: () 
     merge_verdict: decideConceptMerges(db, getSettings, Date.now),
     thread_match: matchThread(db, getEmbedder(), Date.now),
     living_note: updateLivingNote(db, getSettings),
-  }, [db.pages, db.expeditions, db.visits, db.concepts, db.conceptEvidence, db.edges, db.threads]);
+  }, [db.pages, db.expeditions, db.visits, db.concepts, db.conceptEvidence, db.edges, db.threads, db.highlights, db.queries]);
   const client = getCompanionClient();
   let pumping = false;
   function kick() {

@@ -1,6 +1,7 @@
 import type { Visit } from '@trailmap/shared';
 import type { TrailmapDb } from '../db/db';
 import { cosine } from '../embeddings/embedder';
+import { displayFieldNotes } from '../wrapup/markdown';
 import { readDormantThreads, readThreadMembers, sessionEnd } from './model';
 
 const DAY_MS = 86_400_000;
@@ -66,7 +67,7 @@ export function readPickingUp(db: TrailmapDb, expeditionId: string) {
       const summary = page?.enrichedAt != null && page.enrichedAt < root.startedAt ? page.summary : null;
       priorReads.set(visit.id, { at, summary });
     }
-    const notes = lastSession.fieldNotes?.trim() ?? '';
+    const notes = displayFieldNotes(lastSession)?.trim() ?? '';
     const summary = fieldNotesSection(notes, 'What you found');
     const looseEnds = fieldNotesSection(notes, 'Loose ends');
     return {

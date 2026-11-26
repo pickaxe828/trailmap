@@ -2,11 +2,13 @@ import { Collapsible } from '@astryxdesign/core/Collapsible';
 import { Grid } from '@astryxdesign/core/Grid';
 import { Heading } from '@astryxdesign/core/Heading';
 import { Layout, LayoutContent, LayoutHeader } from '@astryxdesign/core/Layout';
+import { Link } from '@astryxdesign/core/Link';
 import { Text } from '@astryxdesign/core/Text';
 import { VStack } from '@astryxdesign/core/VStack';
 import { useMediaQuery } from '@astryxdesign/core/hooks';
 import type { ReactNode } from 'react';
 import { useJournalData } from '../../journal/data';
+import { expeditionHref } from '../../journal/links';
 import { readJournalResearch } from '../../threads/read';
 import { ExpeditionCard } from './ExpeditionCard';
 import { JournalSearch } from './JournalSearch';
@@ -24,7 +26,7 @@ function Cards({ children }: { children: ReactNode }) {
 
 export function App() {
   const result = useJournalData(readJournalResearch);
-  const { items = [], errands = [], targets = [] } = result?.data ?? {};
+  const { items = [], errands = [], targets = [], mergeSuggestions = [] } = result?.data ?? {};
 
   return (
     <Layout contentWidth="72rem"
@@ -49,6 +51,20 @@ export function App() {
                   <Cards>{items.map((item) => item.kind === 'thread'
                     ? <ThreadCard key={item.thread.id} thread={item.thread} count={item.count} />
                     : <StandaloneCard key={item.expedition.id} expedition={item.expedition} suggestion={item.suggestion} targets={targets} />)}</Cards>
+                </VStack>
+              )}
+              {mergeSuggestions.length > 0 && (
+                <VStack as="section" gap={2} aria-labelledby="merge-suggestions">
+                  <Heading level={2} id="merge-suggestions">Merge suggestions</Heading>
+                  <VStack as="ul" gap={2}>
+                    {mergeSuggestions.map(({ source, target, reason }) => (
+                      <VStack as="li" key={JSON.stringify([source.id, target.id])} gap={0.5}>
+                        <Text as="p"><Link href={expeditionHref(source.id)}>{source.title}</Link>
+                          {' and '}<Link href={expeditionHref(target.id)}>{target.title}</Link></Text>
+                        {reason && <Text type="supporting">{reason}</Text>}
+                      </VStack>
+                    ))}
+                  </VStack>
                 </VStack>
               )}
               {errands.length > 0 && (

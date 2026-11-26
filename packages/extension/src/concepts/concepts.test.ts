@@ -36,6 +36,7 @@ const queue = (model?: Parameters<typeof decideConceptMerges>[3]) => new JobQueu
 
 async function enriched(id: string, concepts: NonNullable<Page['conceptMentions']>, opts: {
   pageId?: string; engagement?: Visit['engagement']; relations?: Page['relationMentions']; expeditionId?: string;
+  enrichmentSources?: Page['enrichmentSources'];
 } = {}) {
   const url = `https://learn.example/${opts.pageId ?? id}`;
   const visit: Visit = {
@@ -45,7 +46,7 @@ async function enriched(id: string, concepts: NonNullable<Page['conceptMentions'
   const page: Page = {
     canonicalUrl: url, sourceUrl: url, sourceVisitId: id, text: 'An article', textHash: id,
     summary: 'Summary', takeaways: [], embedding: null, pageKind: 'article', enrichedAt: now,
-    enrichmentVisitId: id, conceptMentions: concepts, relationMentions: opts.relations ?? [],
+    enrichmentVisitId: id, enrichmentSources: opts.enrichmentSources, conceptMentions: concepts, relationMentions: opts.relations ?? [],
   };
   await db.visits.put(visit);
   await db.pages.put(page);
@@ -121,6 +122,20 @@ test('one queued verdict batch handles same, broader, narrower, related and diff
     ['Replica timestamp', 'related_to', 'Tombstone', ['a', 'b']],
   ]));
   expect(edges.filter(({ evidence }) => evidence.length === 2)).toHaveLength(3);
+});
+
+test('a merge verdict audits the Visits behind the enrichment of both Concepts', async () => {
+  vectors['Borderline\nBorderline'] = [0.85, Math.sqrt(1 - 0.85 ** 2)];
+  const parent = await enriched('parent', []);
+  await enriched('a', [mention('Tombstone')], { enrichmentSources: { visitIds: [parent.id], canonicalUrls: [parent.url] } });
+  await enriched('b', [mention('Borderline')]);
+  const ids: string[][] = [];
+  await queue(async (_db, _request, guard) => {
+    expect(await guard.allow()).toBe(true);
+    ids.push(guard.visitIds?.slice().sort() ?? []);
+    return { output: { verdicts: [{ id: 'p1', verdict: 'related' }] } };
+  }).runNext();
+  expect(ids).toEqual([['a', 'b', 'parent']]);
 });
 
 test('Forget re-scores surviving Concepts and Edges and removes text supported only by forgotten Visits', async () => {

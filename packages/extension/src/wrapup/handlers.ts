@@ -5,12 +5,12 @@ import type { TrailmapDb } from '../db/db';
 import { jobId, enqueueJob, JOB_PRIORITY, type JobHandlers, type JobResult } from '../jobs/queue';
 import { requestModel } from '../llm/dispatch';
 import type { ModelRoute } from '../llm/settings';
-import { maySendToModel, type RecordingSettings } from '../privacy/policy';
+import { eligibleMetadata, maySendToModel, type RecordingSettings } from '../privacy/policy';
+import { modelSources } from '../privacy/sources';
 import { startOfLocalDay } from '../trail/tree';
 import { refreshThread } from '../threads/model';
-import { notesProvenance } from '../threads/provenance';
 import { fieldNotesWritten, type NotesWrittenHooks } from './hooks';
-import { buildFieldNotesInput, buildWrapUpInput, collectTrail, renderFieldNotes, type SameDay, type TrailSources } from './trail';
+import { buildFieldNotesInput, buildWrapUpInput, renderFieldNotes, type SameDay, type TrailSources } from './trail';
 
 export type ModelRequester = (...args: Parameters<typeof requestModel>) => Promise<{ output: unknown }>;
 
@@ -49,9 +49,7 @@ export function wrapUpHandlers(
     const visits = await db.visits.where('expeditionId').equals(expeditionId).toArray();
     const urls = [...new Set(visits.map(({ canonicalUrl }) => canonicalUrl))];
     const pages = (await db.pages.bulkGet(urls)).filter((page) => !!page);
-    const sourceIds = [...new Set(pages.flatMap(({ sourceVisitId }) => sourceVisitId ? [sourceVisitId] : []))];
-    const [sourceVisits, highlights, queries] = await Promise.all([
-      db.visits.bulkGet(sourceIds).then((found) => found.filter((visit) => !!visit)),
+    const [highlights, queries] = await Promise.all([
       db.highlights.where('visitId').anyOf(visits.map(({ id }) => id)).toArray(),
       db.queries.where('expeditionId').equals(expeditionId).toArray(),
     ]);
@@ -62,6 +60,13 @@ export function wrapUpHandlers(
       const roots = await db.visits.bulkGet(others.map(({ rootVisitId }) => rootVisitId ?? ''));
       sameDay = others.map((other, i) => ({ expedition: other, root: roots[i] }));
     }
+    const sourceIds = new Set([
+      ...pages.flatMap(({ sourceVisitId, enrichmentVisitId, enrichmentSourceVisitId, enrichmentSources }) =>
+        [sourceVisitId, enrichmentVisitId, enrichmentSourceVisitId, ...(enrichmentSources?.visitIds ?? [])]),
+      ...(expedition.wrapUpSource?.visitIds ?? []),
+      ...sameDay.flatMap(({ expedition: other }) => other.wrapUpSource?.visitIds ?? []),
+    ].filter((id): id is string => !!id));
+    const sourceVisits = (await db.visits.bulkGet([...sourceIds])).filter((visit) => !!visit);
     const base: TrailSources = { expedition, visits, pages, highlights, queries, sourceVisits };
     return { ...base, sameDay };
   }
@@ -83,13 +88,19 @@ export function wrapUpHandlers(
     instructions: string,
     schemaName: string,
     schema: Record<string, import('@trailmap/shared').LlmOutput>,
-    prepare: () => Promise<'waiting' | { text: string; urls: string[]; visitIds?: string[]; value: T } | undefined>,
+    prepare: () => Promise<'waiting' | { text: string; urls: string[]; visitIds: string[]; value: T; localOutput?: unknown } | undefined>,
     expeditionId: string,
     route?: ModelRoute,
-  ): Promise<{ early: JobResult } | { early?: undefined; output: unknown; prepared: { text: string; urls: string[]; value: T } }> {
+  ): Promise<{ early: JobResult } | { early?: undefined; output: unknown; prepared: { text: string; urls: string[]; visitIds: string[]; value: T }; stillCurrent: () => Promise<boolean> }> {
     const prepared = await db.transaction('r', [...sources, db.jobs], prepare);
     if (prepared === 'waiting') return { early: { retryAt: now() + WAIT_MS } };
     if (!prepared) return { early: 'discard' as const };
+    const stillCurrent = async () => {
+      const again = await prepare();
+      return typeof again === 'object' && again.text === prepared.text &&
+        JSON.stringify([again.urls, again.visitIds]) === JSON.stringify([prepared.urls, prepared.visitIds]);
+    };
+    if (prepared.localOutput) return { output: prepared.localOutput, prepared, stillCurrent };
     let output: unknown;
     try {
       ({ output } = await request(db, { task, instructions, input: prepared.text, schema, schemaName }, {
@@ -97,20 +108,15 @@ export function wrapUpHandlers(
         allow: async () => {
           const current = await db.jobs.get(job.id);
           if (!current?.lease || current.lease.token !== job.lease?.token || current.lease.until <= now()) return false;
-          const again = await prepare();
-          return typeof again === 'object' && again.text === prepared.text &&
-            JSON.stringify([again.urls, again.visitIds]) === JSON.stringify([prepared.urls, prepared.visitIds]);
+          return stillCurrent();
         },
       }, route));
     } catch (error) {
       if (error instanceof CompanionRequestError && error.code === 'dispatch_cancelled') return { early: { retryAt: now() + 30_000 } };
       throw error;
     }
-    return { output, prepared };
+    return { output, prepared, stillCurrent };
   }
-
-  const urlsOf = (s: TrailSources, settings: RecordingSettings) =>
-    collectTrail(s, settings).entries.flatMap((entry) => 'url' in entry ? [entry.url] : []);
 
   return {
     async expedition_wrap_up(job, route) {
@@ -121,7 +127,16 @@ export function wrapUpHandlers(
         if (!s) return;
         if (settings.paused || await waitingOnPages(s, settings)) return 'waiting' as const;
         const built = buildWrapUpInput(s, settings);
-        return built && { text: JSON.stringify(built.input), urls: urlsOf(s, settings), value: built.sameDayIds };
+        if (built) return { text: JSON.stringify(built.input), urls: built.provenance.canonicalUrls,
+          visitIds: built.provenance.visitIds, value: built.sameDayIds };
+        // Nothing can leave the machine, but a closed Expedition still needs a title and kind.
+        const root = s.visits.find(({ id }) => id === s.expedition.rootVisitId);
+        const source = eligibleMetadata(root, settings) ? root : undefined;
+        const title = (source && (oneLine(source.title) || URL.parse(source.url)?.hostname)) || 'Browsing Expedition';
+        const localOutput = { title: title.split(' ').slice(0, 8).join(' '), driving_question: '', kind: 'errand', merge_with: [] };
+        const provenance = modelSources(source ? [source] : []);
+        return { text: JSON.stringify(localOutput), urls: provenance.canonicalUrls, visitIds: provenance.visitIds,
+          value: new Map<string, string>(), localOutput };
       };
       const result = await run(job, 'expedition_wrap_up', wrapUpInstructions, 'expedition_wrap_up', wrapUpSchema, prepare, expeditionId, route);
       if ('early' in result) return result.early;
@@ -131,7 +146,7 @@ export function wrapUpHandlers(
       const sameDayIds = result.prepared.value;
       return { commit: async () => {
         const current = await db.expeditions.get(expeditionId);
-        if (!current || current.endedAt !== endedAt) return;
+        if (!current || current.endedAt !== endedAt || !await result.stillCurrent()) return 'discard';
         const wanted = new Map<string, string>();
         for (const { id, reason } of wrapUp.merge_with) {
           const target = sameDayIds.get(id.trim());
@@ -144,6 +159,7 @@ export function wrapUpHandlers(
         const question = oneLine(wrapUp.driving_question);
         const patch: Partial<Expedition> = {
           kind: wrapUp.kind, wrappedUpAt: now(), mergeSuggestions,
+          wrapUpSource: { visitIds: result.prepared.visitIds, canonicalUrls: result.prepared.urls },
           drivingQuestion: question || current.drivingQuestion,
         };
         if (!current.userEdited && title) patch.title = title; // A renamed Expedition keeps the user's title.
@@ -170,9 +186,7 @@ export function wrapUpHandlers(
         if (settings.paused || await waitingOnPages(s, settings)) return 'waiting' as const;
         const built = buildFieldNotesInput(s, settings);
         if (!built) return;
-        const urls = urlsOf(s, settings);
-        const notesSource = notesProvenance(s.visits,
-          s.pages.filter(({ canonicalUrl }) => urls.includes(canonicalUrl)));
+        const notesSource = built.provenance;
         return { text: JSON.stringify(built.input), urls: notesSource.canonicalUrls, visitIds: notesSource.visitIds, value: { built, notesSource } };
       };
       const result = await run(job, 'field_notes', notesInstructions, 'field_notes', notesSchema, prepare, expeditionId, route);
@@ -186,9 +200,11 @@ export function wrapUpHandlers(
         const current = await db.expeditions.get(expeditionId);
         if (!current || current.endedAt !== endedAt || current.kind !== 'learning') return;
         if (current.fieldNotes !== null && current.userEdited) return; // Regenerating never overwrites user edits.
-        if ((await db.visits.bulkGet(notesSource.visitIds)).some((visit) => !visit)) return 'discard';
+        if (!await result.stillCurrent()) return 'discard';
         const at = now();
-        await db.expeditions.update(expeditionId, { fieldNotes: markdown, notesWrittenAt: at, unseenNotes: 1, notesSource });
+        const latest = await load(expeditionId, endedAt, false);
+        const unreadStops = latest ? buildFieldNotesInput(latest, getSettings())?.unread : undefined;
+        await db.expeditions.update(expeditionId, { fieldNotes: markdown, unreadStops, notesWrittenAt: at, unseenNotes: 1, notesSource });
         await hooks.run({ db, expeditionId, at });
       } };
     },

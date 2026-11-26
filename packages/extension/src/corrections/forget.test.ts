@@ -119,8 +119,9 @@ test('forgetting records that audit rows were removed without keeping their cont
   expect((await db.corrections.toArray()).some((e) => e.kind === 'star')).toBe(true); // unrelated entries stay
 });
 
-test('forgetting an Expedition removes it and its Visits but keeps a Page that other Expeditions still visited', async () => {
+test('forgetting an Expedition keeps a shared Page only if it has surviving capture provenance', async () => {
   await seed();
+  await db.pages.update('https://secret.example/s', { sourceVisitId: 's2' });
   const { visitIds } = await corrections().forgetExpedition('e1');
   expect(visitIds.sort()).toEqual(['a', 's']);
 
@@ -166,10 +167,56 @@ test('forgetting a site removes every Visit and Page on that host and its subdom
   expect(await everything()).not.toContain('//secret.example');
 });
 
-test('a Page that survives a forgotten Visit is queued for enrichment again from a remaining Visit', async () => {
+test('Forget Site keeps an allowed alias Visit but purges its forgotten shared Page capture', async () => {
+  const allowed = visit('allowed', 'learn.example', { expeditionId: null });
+  const secret = visit('secret', 'secret.example', { canonicalUrl: allowed.canonicalUrl, expeditionId: null });
+  await db.visits.bulkAdd([allowed, secret, visit('history:42', 'secret.example', { expeditionId: null })]);
+  await db.pages.add(page(allowed.canonicalUrl, { sourceUrl: secret.url, sourceVisitId: secret.id, text: SECRET, enrichedAt: null }));
+  await corrections().forgetSite('secret.example');
+  expect(await db.visits.toArray()).toEqual([allowed]);
+  expect(await db.pages.count()).toBe(0);
+  expect(await db.jobs.count()).toBe(0);
+  expect(await everything()).not.toContain(SECRET);
+});
+
+test('Forget clears an errand title derived from a non-root Visit', async () => {
+  await db.visits.bulkAdd([visit('root', 'learn.example'), visit('secret', 'secret.example')]);
+  await db.expeditions.add(expedition('e1', { rootVisitId: 'root', endedAt: 200, kind: 'errand', wrappedUpAt: 300,
+    title: SECRET, drivingQuestion: SECRET }));
+  await corrections().forgetSite('secret.example');
+  expect(await db.expeditions.get('e1')).toMatchObject({ title: 'Title root', drivingQuestion: null });
+  expect(await everything()).not.toContain(SECRET);
+});
+
+test('Forget purges the split snapshots for moved descendants and renames of indirectly deleted Expeditions', async () => {
+  const c = corrections();
+  await db.expeditions.add(expedition('e1', { rootVisitId: 'root' }));
+  await db.visits.bulkAdd([visit('root', 'learn.example'), visit('branch', 'learn.example', { parentVisitId: 'root' }),
+    visit('secret', 'secret.example', { parentVisitId: 'branch' })]);
+  const splitId = (await c.split('branch'))!;
+  await c.rename(splitId, SECRET);
+  await c.forgetSite('secret.example');
+  expect((await db.corrections.toArray()).map(({ kind }) => kind)).not.toContain('split');
+  await c.forgetPage('https://learn.example/branch');
+  expect(await db.expeditions.get(splitId)).toBeUndefined();
+  expect(await everything()).not.toContain(SECRET);
+});
+
+test('a surviving independent capture can still be queued for enrichment', async () => {
   await seed();
-  await db.pages.update('https://secret.example/s', { enrichedAt: null, sourceUrl: 'https://secret.example/s' });
+  await db.pages.update('https://secret.example/s', { enrichedAt: null, sourceUrl: 'https://secret.example/s', sourceVisitId: 's2' });
   await corrections().forgetExpedition('e1');
   const jobs = await db.jobs.toArray();
   expect(jobs.flatMap(({ payload }) => 'canonicalUrl' in payload && payload.canonicalUrl === 'https://secret.example/s' ? [payload.visitId] : [])).toEqual(['s2']);
+});
+
+test('Forget Site also removes imported history Visits and stored URLs never keep session tokens', async () => {
+  await db.visits.bulkPut([
+    visit('history:1', 'secret.example', { imported: true, tabId: -1, engagement: 'bounced', expeditionId: null, url: 'https://secret.example/p?sid=abc#x' }),
+    visit('history:2', 'keep.example', { imported: true, tabId: -1, engagement: 'bounced', expeditionId: null, url: 'https://keep.example/p?utm_source=x&topic=1' }),
+  ]);
+  expect((await db.visits.get('history:2'))?.url).toBe('https://keep.example/p?topic=1');
+  expect((await db.visits.get('history:1'))?.url).toBe('https://secret.example/p');
+  await corrections().forgetSite('secret.example');
+  expect((await db.visits.toArray()).map(({ id }) => id)).toEqual(['history:2']);
 });

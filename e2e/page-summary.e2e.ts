@@ -28,6 +28,9 @@ test('summarizes the active Page from captured text in the side panel', async ({
   await expect(panel.getByText('Tombstones let replicas learn about deletions even when updates arrive out of order.')).toBeVisible();
   await expect(panel.getByText('A deletion marker preserves causal history.')).toBeVisible();
   await expect(panel.getByText('Each marker refers to a specific item.')).toBeVisible();
+  const captured = (await readCapture('visits')).find(({ url }) => url === article.url())!;
+  const audit = (await readCapture('sentToModel')).find(({ task }) => task === 'page_summary');
+  expect(audit?.visitIds).toEqual([captured.id]);
   await panel.screenshot({ path: testInfo.outputPath('page-summary.png') });
 
   await article.goto(fixtureUrl('learn.test', '/content/article.html?private'));

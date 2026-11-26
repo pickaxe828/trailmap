@@ -5,12 +5,15 @@
  * Secrets never leave the companion: no message returns one.
  */
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { withFileLock } from './file-lock';
 
 export interface SecretStore {
   get(account: string): Promise<string | null>;
   set(account: string, value: string): Promise<void>;
   delete(account: string): Promise<void>;
+  lockChatGptAccount<T>(work: () => Promise<T>): Promise<T>;
 }
 
 export class FileSecretStore implements SecretStore {
@@ -35,14 +38,20 @@ export class FileSecretStore implements SecretStore {
   }
 
   async set(account: string, value: string) {
-    this.write({ ...this.read(), [account]: value });
+    await withFileLock(`${this.path}.lock`, async () => { this.write({ ...this.read(), [account]: value }); });
   }
 
   async delete(account: string) {
-    const secrets = this.read();
-    if (!(account in secrets)) return;
-    delete secrets[account];
-    this.write(secrets);
+    await withFileLock(`${this.path}.lock`, async () => {
+      const secrets = this.read();
+      if (!(account in secrets)) return;
+      delete secrets[account];
+      this.write(secrets);
+    });
+  }
+
+  lockChatGptAccount<T>(work: () => Promise<T>) {
+    return withFileLock(`${this.path}.chatgpt.lock`, work);
   }
 }
 
@@ -90,6 +99,11 @@ export class KeychainSecretStore implements SecretStore {
   async delete(account: string) {
     const { code } = await this.run(['delete-generic-password', '-s', this.service, '-a', account]);
     if (code !== 0 && code !== NOT_FOUND) throw new Error('Keychain delete failed');
+  }
+
+  lockChatGptAccount<T>(work: () => Promise<T>) {
+    // Keychain accounts are shared even if the hosts use different data dirs.
+    return withFileLock(join(homedir(), '.trailmap', 'chatgpt-keychain.lock'), work);
   }
 }
 

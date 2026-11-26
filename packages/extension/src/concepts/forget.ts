@@ -4,12 +4,14 @@ import { edgeSupport, withEdgeSupport } from './edges';
 import { enqueueMergeVerdicts } from './verdicts';
 
 /** Runs inside Forget's transaction, so an in-flight verdict cannot put forgotten evidence back. */
-export async function forgetConceptEvidence(db: TrailmapDb, gone: Set<string>, orphanUrls: string[], now: number) {
+export async function forgetConceptEvidence(db: TrailmapDb, gone: Set<string>, orphanUrls: string[], now: number,
+  sourceRemoved: (source: import('@trailmap/shared').ModelSources | undefined) => boolean) {
   const ids = [...gone];
   const rows = new Map((await Promise.all([
     db.conceptEvidence.where('visitId').anyOf(ids).toArray(),
     db.conceptEvidence.where('sourceVisitId').anyOf(ids).toArray(),
     db.conceptEvidence.where('canonicalUrl').anyOf(orphanUrls).toArray(),
+    db.conceptEvidence.filter(({ enrichmentSources }) => sourceRemoved(enrichmentSources)).toArray(),
   ])).flat().map((row) => [row.id, row]));
   await db.conceptEvidence.bulkDelete([...rows.keys()]);
   const removedConceptIds: string[] = [];

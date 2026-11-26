@@ -24,11 +24,16 @@ type ReviewActions = {
 };
 type CardNode = Node<{ stop: TrailGraphNode; review?: ReviewActions }, 'trailCard'>;
 
+// SVG geometry is in canvas units; the favicon request is bitmap pixels, not UI sizing.
+const EDGE_STROKE_WIDTH = 1.5;
+const SKIPPED_EDGE_DASH = '6 4';
+const FAVICON_BITMAP_PX = 32;
+
 /** Chrome's local favicon cache; it doesn't contact the site or a third party. */
 function faviconUrl(pageUrl: string): string {
   const url = new URL(chrome.runtime.getURL('/_favicon/'));
   url.searchParams.set('pageUrl', pageUrl);
-  url.searchParams.set('size', '32');
+  url.searchParams.set('size', String(FAVICON_BITMAP_PX));
   return url.href;
 }
 
@@ -110,7 +115,7 @@ export function TrailGraphView({ graph, review }: { graph: TrailGraph; review?: 
     target: edge.target,
     data: { lineage: edge },
     type: 'smoothstep',
-    className: edge.dashed ? '[stroke-dasharray:6_4]' : undefined,
+    style: { strokeWidth: EDGE_STROKE_WIDTH, strokeDasharray: edge.dashed ? SKIPPED_EDGE_DASH : undefined },
     markerEnd: { type: MarkerType.ArrowClosed },
   })), [graph.edges]);
 
@@ -125,7 +130,7 @@ export function TrailGraphView({ graph, review }: { graph: TrailGraph; review?: 
   return (
     <ReactFlow
       nodes={nodes} edges={edges} nodeTypes={nodeTypes}
-      className="bg-body [--xy-edge-stroke:var(--color-icon-secondary)] [--xy-edge-stroke-width:1.5]"
+      className="bg-body [--xy-edge-stroke:var(--color-icon-secondary)]"
       defaultMarkerColor="var(--color-icon-secondary)"
       fitView fitViewOptions={fitOptions} minZoom={0.01} maxZoom={2}
       nodesDraggable={false} nodesConnectable={false} nodesFocusable={false}

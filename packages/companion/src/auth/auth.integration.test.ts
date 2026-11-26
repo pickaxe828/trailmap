@@ -175,6 +175,26 @@ test('concurrent expiry triggers one refresh and the rotated token survives rest
   expect(mock.exchanges[2]?.get('refresh_token')).toBe('mock-refresh-1');
 });
 
+test('two browser hosts share one rotation and neither can retire the new session', async () => {
+  expect((await fetch((await begin()).callback)).ok).toBe(true);
+  now += 3_600_000;
+  const otherHost = { ...ctx, secrets: new FileSecretStore(join(directory, 'secrets.json')) };
+  mock.behavior.rejectStaleRefresh = true;
+  const started = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  mock.behavior.beforeRefresh = () => { started.resolve(); return release.promise; };
+  const first = getChatGptAuth(ctx).getAccessToken();
+  await started.promise;
+  const second = getChatGptAuth(otherHost).getAccessToken();
+  // Both host requests are outstanding while the mocked issuer holds the rotation.
+  release.resolve();
+  expect(await Promise.allSettled([first, second])).toEqual([
+    { status: 'fulfilled', value: 'mock-access-1' }, { status: 'fulfilled', value: 'mock-access-1' },
+  ]);
+  expect(mock.exchanges.filter((form) => form.get('grant_type') === 'refresh_token')).toHaveLength(1);
+  expect(await request('auth.status', otherHost)).toMatchObject({ signedIn: true });
+});
+
 test('transient refresh errors preserve the account, and terminal errors require a new sign-in', async () => {
   const { authorize } = await begin();
   const approval = await fetch(authorize);
