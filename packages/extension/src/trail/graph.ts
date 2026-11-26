@@ -48,12 +48,12 @@ export function buildTrailGraph(visits: readonly Visit[], queries: readonly Quer
   return { nodes, edges };
 }
 
-/** Collapse contiguous bounced Visits and bounced siblings, but never hide a search question. */
+/** Collapse bounced live Visits. Imported Visits have no engagement data, so preserve those trails. */
 export function buildExpeditionTrail(visits: readonly Visit[], queries: readonly Query[]): TrailGraph {
   const raw = buildTrailGraph(visits, queries);
   const parents = new Map(raw.edges.map(({ source, target }) => [target, source]));
   const bounced = new Set(raw.nodes.flatMap((node) =>
-    node.kind === 'page' && node.visit.engagement === 'bounced' ? [node.id] : []));
+    node.kind === 'page' && node.visit.engagement === 'bounced' && !node.visit.imported ? [node.id] : []));
   const groups = new Map<string, string>();
   const skipped = new Map<string, Extract<TrailGraphNode, { kind: 'skipped' }>>();
   const nodes: TrailGraphNode[] = [];

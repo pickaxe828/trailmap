@@ -1,5 +1,5 @@
 import Dexie from 'dexie';
-import type { Expedition, Visit } from '@trailmap/shared';
+import type { Expedition, Query, Visit } from '@trailmap/shared';
 import type { TrailmapDb } from '../db/db';
 import { type Embedder, quantize } from '../embeddings/embedder';
 import { EXPEDITION_WINDOW_MS, VISIT_TITLE_GRACE_MS } from './config';
@@ -24,6 +24,12 @@ type Options = {
   now: () => number;
   /** Called once for each closure transaction, after the closed rows are visible. */
   onClosed?: (expeditions: Expedition[]) => void;
+};
+
+type Replay = {
+  sessionStart: number;
+  query?: Query;
+  canImport: (visit: Visit) => boolean;
 };
 
 export class ExpeditionRecorder {
@@ -57,6 +63,12 @@ export class ExpeditionRecorder {
       });
       if (closed.length) onClosed?.(closed);
     });
+  }
+
+  /** Commit a historical stop and its assignment together. Replay never opens live Expeditions. */
+  async importVisit(visit: Visit, replay: Replay): Promise<boolean> {
+    if (!replay.canImport(visit) || await this.options.db.visits.get(visit.id)) return false;
+    return this.assign(visit, replay.query?.q, replay);
   }
 
   private enqueue(work: () => Promise<void>) {
@@ -96,43 +108,68 @@ export class ExpeditionRecorder {
     return visit;
   }
 
-  private async assign(visit: Visit, query?: string) {
+  private async assign(visit: Visit, query?: string, replay?: Replay): Promise<boolean> {
     const { db, embedder } = this.options;
     const parentVisit = visit.parentVisitId ? await db.visits.get(visit.parentVisitId) : undefined;
-    const parent = parentVisit?.expeditionId ? await db.expeditions.get(parentVisit.expeditionId) : undefined;
-    const candidates = visit.expeditionId || parent?.endedAt === null ? [] : await db.expeditions.where('startedAt')
-      .between(visit.startedAt - EXPEDITION_WINDOW_MS, visit.startedAt, true, true).reverse().toArray();
+    const eligibleParent = parentVisit && (!replay || replay.canImport(parentVisit)) ? parentVisit : undefined;
+    // During replay, Expeditions worked on since the last browsing gap count as open.
+    // In the database they stay closed, even across cancellation or worker restart.
+    function open(expedition: Expedition | undefined): Expedition | undefined {
+      if (!expedition) return;
+      if (!replay) return expedition.endedAt === null ? expedition : undefined;
+      if (expedition.imported && expedition.endedAt !== null && expedition.endedAt >= replay.sessionStart &&
+          expedition.startedAt <= visit.startedAt) return { ...expedition, endedAt: null };
+    }
+    const parent = eligibleParent?.expeditionId ? open(await db.expeditions.get(eligibleParent.expeditionId)) : undefined;
+    const candidates = visit.expeditionId || parent ? [] : (await db.expeditions.where('startedAt')
+      .between(visit.startedAt - EXPEDITION_WINDOW_MS, visit.startedAt, true, true).reverse().toArray()).flatMap((candidate) => {
+      const session = open(candidate);
+      return session ? [session] : [];
+    });
     // Inference runs outside IndexedDB transactions, which auto-commit when idle.
     const { expeditionId, embedding } = visit.expeditionEmbedding !== undefined
       ? { expeditionId: null, embedding: visit.expeditionEmbedding }
       : await segmentVisit({ visit, query, parent, candidates, embedder });
 
-    await db.transaction('rw', db.visits, db.queries, db.expeditions, async () => {
-      const current = await db.visits.get(visit.id);
-      if (!current?.segmentationPending) return;
-      const selected = expeditionId ? await db.expeditions.get(expeditionId) : undefined;
-      const id = current.expeditionId ?? (selected?.endedAt === null ? selected.id : `expedition:${current.id}`);
+    return db.transaction('rw', db.visits, db.queries, db.expeditions, async () => {
+      const saved = await db.visits.get(visit.id);
+      if (replay ? !!saved : !saved?.segmentationPending) return false;
+      const current = saved ?? visit;
+      const selected = expeditionId ? open(await db.expeditions.get(expeditionId)) : undefined;
+      const currentParent = replay && visit.parentVisitId ? await db.visits.get(visit.parentVisitId) : undefined;
+      if (replay && !replay.canImport(current)) return false;
+      const parentVisitId = currentParent && replay?.canImport(currentParent) ? currentParent.id : null;
+      const joined = selected && (!replay || !parent || (parentVisitId && currentParent?.expeditionId === selected.id));
+      const id = current.expeditionId ?? (joined ? selected.id : `expedition:${current.id}`);
       const existing = await db.expeditions.get(id);
       const label = query?.trim() || visit.title.trim();
 
       if (!existing) {
         await db.expeditions.add({
           id, rootVisitId: current.id, title: label || URL.parse(current.canonicalUrl)?.hostname || 'Untitled page',
-          kind: 'learning', startedAt: current.startedAt, endedAt: null, centroid: null,
+          kind: 'learning', startedAt: current.startedAt, endedAt: replay ? current.startedAt : null, centroid: null,
           drivingQuestion: null, fieldNotes: null, userEdited: false, threadId: null,
+          ...(replay && { imported: true }),
         });
+      } else if (replay) {
+        const endedAt = Math.max(existing.endedAt ?? current.startedAt, current.startedAt);
+        if (endedAt !== existing.endedAt) await db.expeditions.update(id, { endedAt });
       } else if (existing.rootVisitId === current.id && label && !existing.userEdited && existing.endedAt === null) {
         await db.expeditions.update(id, { title: label });
       }
 
-      await db.visits.update(current.id, {
-        expeditionId: id, expeditionEmbedding: embedding,
-        segmentationPending: !label && current.title.trim() ? 1 : undefined,
-      });
-      if (embedding && visit.expeditionEmbedding === undefined) await refreshExpeditionCentroid(db, id);
-      if (!current.expeditionId) {
-        await db.queries.where('visitId').equals(current.id).modify({ expeditionId: id });
+      if (replay) {
+        await db.visits.add({ ...current, parentVisitId, expeditionId: id, expeditionEmbedding: embedding });
+        if (replay.query) await db.queries.add({ ...replay.query, expeditionId: id });
+      } else {
+        await db.visits.update(current.id, {
+          expeditionId: id, expeditionEmbedding: embedding,
+          segmentationPending: !label && current.title.trim() ? 1 : undefined,
+        });
+        if (!current.expeditionId) await db.queries.where('visitId').equals(current.id).modify({ expeditionId: id });
       }
+      if (embedding && visit.expeditionEmbedding === undefined) await refreshExpeditionCentroid(db, id);
+      return true;
     });
   }
 }

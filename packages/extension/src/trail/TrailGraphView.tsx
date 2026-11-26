@@ -57,7 +57,8 @@ const TrailCard = memo(function TrailCard({ data: { stop, review } }: NodeProps<
       </HStack>
       <HStack as="span" gap={2} justify="between" align="center">
         <Text type="supporting" maxLines={1} hasTruncateTooltip={false}>{caption}</Text>
-        {visit && !summary && <Text type="supporting" hasTabularNumbers>{formatActiveTime(visit.activeMs)}</Text>}
+        {visit?.imported ? <Text type="supporting">Imported</Text>
+          : visit && !summary && <Text type="supporting" hasTabularNumbers>{formatActiveTime(visit.activeMs)}</Text>}
       </HStack>
     </VStack>
   );
