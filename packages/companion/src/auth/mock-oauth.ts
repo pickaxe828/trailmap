@@ -12,6 +12,8 @@ export function startMockOAuth(otherRoutes = (_request: Request): Response | Pro
   const revocations: URLSearchParams[] = [];
   const behavior = {
     scope: MOCK_SCOPE,
+    accessToken: 'mock-access-0',
+    refreshToken: 'mock-refresh-0',
     claims: {} as Record<string, unknown>,
     refreshError: null as string | null,
     rejectStaleRefresh: false,
@@ -85,8 +87,8 @@ export function startMockOAuth(otherRoutes = (_request: Request): Response | Pro
           });
           const signed = header + '.' + claims;
           return Response.json({
-            access_token: 'mock-access-0',
-            refresh_token: 'mock-refresh-0',
+            access_token: behavior.accessToken,
+            refresh_token: behavior.refreshToken,
             id_token: signed + '.' + sign(
               'RSA-SHA256', Buffer.from(behavior.badSignature ? signed + 'tampered' : signed), privateKey,
             ).toString('base64url'),

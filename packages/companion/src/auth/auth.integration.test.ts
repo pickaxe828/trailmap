@@ -4,8 +4,9 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { CompanionEvent } from '@trailmap/shared';
+import { fakeSecurity } from '../fake-security';
 import { handleMessage, type CompanionContext } from '../handle';
-import { FileSecretStore } from '../secrets';
+import { FileSecretStore, KeychainSecretStore } from '../secrets';
 import { getChatGptAuth } from './auth';
 import { MOCK_CLIENT, MOCK_EMAIL, MOCK_SCOPE, startMockOAuth } from './mock-oauth';
 
@@ -82,6 +83,70 @@ test('signs in through the loopback and only exposes account status', async () =
     .toBe(authorize.searchParams.get('code_challenge')!);
   await expect(fetch(callback)).rejects.toThrow();
   expect(mock.exchanges).toHaveLength(1);
+});
+
+test('persists a realistic-size ChatGPT account and reports it signed in from a new host', async () => {
+  const { run } = fakeSecurity();
+  const makeStore = () => new KeychainSecretStore({ service: 'test-sign-in', dataDir: directory, run });
+  ctx.secrets = makeStore();
+  mock.behavior.claims.padding = 'i'.repeat(1600);
+  mock.behavior.accessToken = 'access-' + 'a'.repeat(1900);
+  mock.behavior.refreshToken = 'refresh-' + 'r'.repeat(1300);
+
+  expect((await fetch((await begin()).callback)).status).toBe(200);
+  const host = { ...ctx, secrets: makeStore() };
+  expect((await host.secrets.get('chatgpt.account'))?.length).toBeGreaterThan(5900);
+  expect(await request('auth.status', host)).toMatchObject({ signedIn: true, email: MOCK_EMAIL, planUsage: true });
+});
+
+for (const failure of ['truncated JSON', 'invalid account shape', 'read failure'] as const) {
+  test(`auth.status clears the account under the lock on ${failure}`, async () => {
+    let locked = false;
+    let removed = false;
+    const secrets = ctx.secrets;
+    ctx.secrets = {
+      ...secrets,
+      get: async (account) => {
+        if (account !== 'chatgpt.account' || removed) return secrets.get(account);
+        if (failure === 'read failure') throw new Error('example sensitive record');
+        return failure === 'truncated JSON' ? '{"clientId":' : '{}';
+      },
+      set: (account, value) => secrets.set(account, value),
+      delete: async (account) => {
+        expect(locked).toBe(true);
+        expect(account).toBe('chatgpt.account');
+        removed = true;
+      },
+      lockChatGptAccount: async (work) => {
+        locked = true;
+        try { return await work(); } finally { locked = false; }
+      },
+    };
+    expect(await request('auth.status')).toMatchObject({ signedIn: false, email: null, planUsage: false });
+    expect(removed).toBe(true);
+    expect((await fetch((await begin()).callback)).status).toBe(200);
+    expect(await request('auth.status')).toMatchObject({ signedIn: true });
+  });
+}
+
+test('auth.status never deletes a good replacement written before it acquires the lock', async () => {
+  expect((await fetch((await begin()).callback)).status).toBe(200);
+  const original = ctx.secrets;
+  let first = true;
+  const host = {
+    ...ctx,
+    secrets: {
+      get: async (account: string) => {
+        if (first) { first = false; return '{'; }
+        return original.get(account);
+      },
+      set: original.set.bind(original),
+      delete: original.delete.bind(original),
+      lockChatGptAccount: original.lockChatGptAccount.bind(original),
+    },
+  };
+  expect(await request('auth.status', host)).toMatchObject({ signedIn: true });
+  expect(await request('auth.status')).toMatchObject({ signedIn: true });
 });
 
 test('a wrong state does not consume the callback, and concurrent replays cannot exchange twice', async () => {
@@ -175,10 +240,14 @@ test('concurrent expiry triggers one refresh and the rotated token survives rest
   expect(mock.exchanges[2]?.get('refresh_token')).toBe('mock-refresh-1');
 });
 
-test('two browser hosts share one rotation and neither can retire the new session', async () => {
+test.each(['file', 'keychain'] as const)('two browser hosts share one rotation with the %s store', async (kind) => {
+  const { run } = fakeSecurity();
+  const store = () => kind === 'file' ? new FileSecretStore(join(directory, 'secrets.json'))
+    : new KeychainSecretStore({ service: 'test-rotation', dataDir: directory, run });
+  ctx.secrets = store();
   expect((await fetch((await begin()).callback)).ok).toBe(true);
   now += 3_600_000;
-  const otherHost = { ...ctx, secrets: new FileSecretStore(join(directory, 'secrets.json')) };
+  const otherHost = { ...ctx, secrets: store() };
   mock.behavior.rejectStaleRefresh = true;
   const started = Promise.withResolvers<void>();
   const release = Promise.withResolvers<void>();
