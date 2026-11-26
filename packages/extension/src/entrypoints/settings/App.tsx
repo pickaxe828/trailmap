@@ -15,6 +15,7 @@ import { useJournalData } from '../../journal/data';
 import { HistoryImportSettings } from '../../ui/HistoryImportSettings';
 import { ExportSettings } from '../../vault/ExportSettings';
 import { VaultSettings } from '../../vault/VaultSettings';
+import { ModelJobs } from './ModelJobs';
 import { SentToModelLog } from './SentToModelLog';
 
 const sections = [
@@ -36,6 +37,7 @@ function CaptureDiagnostics() {
       <Heading level={2}>Diagnostics</Heading>
       <Text as="p">AI Mode reply extraction failures: {failures?.data ?? (failures?.error ? 'Unavailable' : 'Loading…')}</Text>
       <Text as="p" type="supporting">Counts saved AI Mode questions whose replies could not be captured.</Text>
+      <ModelJobs />
     </VStack>
   );
 }

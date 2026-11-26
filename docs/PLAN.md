@@ -315,6 +315,7 @@ Keep it as a fallback only, in case OpenAI ever accepts custom schemes and loopb
 | `vault.remove` | Removes a stale generated Trailmap note after Forget or reconciliation, only in the pinned Obsidian folder. Accepts only generated flat Markdown filenames, refuses symlinks and folder changes, and removes the file only if its digest matches the last generated content. |
 
 - **No general-purpose commands.** There is nothing like "fetch any URL" or "read any file", so a bug in the extension can't turn the companion into a general proxy. Every incoming message is checked against the shared Zod schemas.
+- **Failure logging:** each failed `llm.complete` writes the provider ID, a stable Trailmap error code, a fixed reason label, and the HTTP status when available to `companion.log`. For example, ChatGPT failures distinguish `http_status`, `non_stream_response`, `stream_ended_early` and `catalog_unavailable`. Never write provider messages, prompt or output text, or credentials to this log.
 - **Secrets** on macOS live in owner-only, AES-256-GCM encrypted files in the companion data dir. Only the data key is written to Keychain via `security` on stdin.
 - **Browsing data stays in the extension.** Visits, pages and the graph remain in IndexedDB. Moving them into SQLite in the companion is possible later, but not needed now.
 - **The extension still works without the companion.** Capture, trails and expeditions run without it, and so does Chrome's on-device model. Cloud and Ollama AI features and Obsidian sync need it.
@@ -396,8 +397,11 @@ Before the stream opens, the response may carry a `detail` field. Use the HTTP s
 
 ## 8. Privacy and permissions
 
-- **Everything stays local.** There is no hosted backend; the only backend is the companion on your computer (§6.1). The only thing that leaves the machine is text from filtered, engaged pages, sent to the LLM you choose. A "sent to model" log shows exactly what went out.
-- **Forget controls:** forget a page, an expedition or a site. This is a hard delete and also removes the evidence it contributed to concepts.
+- **Everything stays local.** There is no hosted backend; the only backend is the companion on your computer (§6.1). The only thing that leaves the machine is text from filtered, engaged pages, sent to the LLM you choose. A "Sent-to-model" log shows exactly what went out.
+- **Model audit:** the companion waits for the extension to durably record the provider, model, instructions, input and source identifiers before every inference dispatch, including fallbacks and repairs. This is permission to send, not proof of delivery. Each completed attempt updates that same row with `finishedAt`, its success, failure or cancellation, and any error code. The log shows what was **Sent** and **Returned**: validated JSON, or the model text when validation failed (up to 32 KiB of UTF-8). Legacy rows may have no outcome. Lost connections can interrupt attempts.
+- **Model diagnostics:** Settings shows pending, failing and failed model job counts by kind, with the latest stable error code, failure attempts and retry time. Retry now reschedules failed or backed-off jobs without bypassing sign-in requirements. Three consecutive failures with the same code within ten minutes trigger a side panel and Journal banner that clears on the next successful model job.
+- **Audit export:** Settings downloads the selected number of newest rows as `trailmap-model-log-<date>.jsonl`, with optional matching job diagnostics. By default, it substitutes UTF-8 byte lengths and SHA-256 hashes for instructions, input and output, but retains canonical URLs and identifiers. Unchecking the redaction option exports the stored text. The Blob download needs no permission, and saved files cannot be recalled.
+- **Forget controls:** forget a page, an expedition or a site. This is a hard delete and also removes the evidence it contributed to concepts and the associated audit rows, including their outputs.
 - **Permissions needed:** `<all_urls>` host access, `webNavigation`, `tabs`, `history`, `idle`, `storage`, `unlimitedStorage`, `sidePanel`, `offscreen`, `alarms`, and `nativeMessaging` (to talk to the companion).
   - For personal use, load it unpacked; no store review is needed.
   - Publishing to the Chrome Web Store with `<all_urls>` and `history` means extra review and a privacy policy.

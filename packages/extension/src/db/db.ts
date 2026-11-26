@@ -4,6 +4,7 @@ import type {
   Edge,
   Expedition,
   Highlight,
+  LlmOutput,
   ModelDispatch,
   Note,
   Page,
@@ -13,9 +14,10 @@ import type {
 } from '@trailmap/shared';
 import { canonicalizeUrl } from '../capture/canonical';
 import type { ConceptEvidence } from '../concepts/evidence';
+import type { RequestErrorCode } from '../companion/client';
 import { conceptResolutionJob } from '../concepts/enqueue';
 import { enqueueJob } from '../jobs/queue';
-import type { Job, JobSpec, QueueHold } from '../jobs/types';
+import type { Job, JobSpec, ModelHealth, QueueHold } from '../jobs/types';
 
 /**
  * The Trailmap IndexedDB database. One table per entity in docs/PLAN.md §3.
@@ -37,6 +39,7 @@ export type TrailmapDb = Dexie & {
   notes: EntityTable<Note, 'id'>;
   jobs: EntityTable<Job, 'id'>;
   queueHolds: EntityTable<QueueHold, 'id'>;
+  modelHealth: EntityTable<ModelHealth, 'id'>;
   sentToModel: EntityTable<SentToModel, 'id'>;
   corrections: EntityTable<CorrectionLogEntry, 'id'>;
 };
@@ -53,6 +56,11 @@ export type CorrectionLogEntry = {
 
 export type SentToModel = ModelDispatch & {
   id: string; at: number; task: string; canonicalUrl?: string; expeditionId?: string; canonicalUrls?: string[]; visitIds?: string[];
+  jobId?: string;
+  outcome?: 'pending' | 'succeeded' | 'failed' | 'cancelled';
+  errorCode?: RequestErrorCode;
+  finishedAt?: number;
+  output?: LlmOutput;
 };
 
 export const DB_NAME = 'trailmap';
@@ -187,6 +195,7 @@ export function openTrailmapDb(name: string = DB_NAME): TrailmapDb {
       entry.targetIds = [...new Set([...entry.targetIds, ...Object.keys(before?.visits ?? {})])];
     });
   });
+  db.version(9).stores({ modelHealth: 'id', sentToModel: 'id, at, canonicalUrl, outcome' });
   // History replay and any other Visit writer use the same persistence boundary.
   db.visits.hook('creating', (_id, visit) => { visit.url = canonicalizeUrl(visit.url); });
   db.visits.hook('updating', (changes) => {

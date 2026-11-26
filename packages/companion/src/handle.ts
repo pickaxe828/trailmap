@@ -4,7 +4,7 @@ import { ANTHROPIC_KEY_ACCOUNT } from './llm/anthropic';
 import { LlmFailure } from './llm/provider';
 import { complete, modelCatalog } from './llm/providers';
 import { VaultError, type Vault } from './vault';
-import { CompanionRequest, type CompanionEvent, type CompanionRequestType, type CompanionResponse, type ErrorCode, type ModelDispatch } from '@trailmap/shared';
+import { CompanionRequest, type CompanionEvent, type CompanionRequestType, type CompanionResponse, type ErrorCode, type ModelAttemptResult, type ModelDispatch } from '@trailmap/shared';
 import { ZodError } from 'zod';
 
 export const COMPANION_VERSION = '0.0.0';
@@ -20,7 +20,7 @@ export interface CompanionContext {
   /** Auth lifecycle notifications sent by the Native Messaging host. */
   emit?: (event: CompanionEvent) => void;
   now?: () => number;
-  authorizeDispatch?: (auditId: string, dispatch: ModelDispatch) => Promise<boolean>;
+  authorizeDispatch?: (auditId: string, dispatch: ModelDispatch) => Promise<boolean | ((result: ModelAttemptResult) => void)>;
   acknowledgeDispatch?: (dispatchId: string, allow: boolean) => void;
   vault?: Vault;
   /** Overrides for tests. */

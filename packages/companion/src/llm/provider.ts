@@ -7,10 +7,29 @@ export interface LlmProvider {
   models(): Promise<LlmModel[]>;
 }
 
+type FailureReason = 'http_status' | 'auth_unavailable' | 'not_signed_in' | 'network_error' | 'deadline' | 'catalog_unavailable'
+  | 'non_stream_response' | 'stream_ended_early' | 'stream_read_error' | 'stream_error';
+
 export class LlmFailure extends Error {
+  reason?: FailureReason;
+  status?: number;
+  rawOutput?: string;
   constructor(readonly code: LlmErrorCode, message: string, readonly details: ErrorDetails = {}) {
     super(message);
   }
+
+  diagnose(reason: FailureReason, status?: number): this {
+    this.reason = reason;
+    this.status = status;
+    return this;
+  }
+}
+
+export function invalidOutput(label: string, text?: string, status?: number) {
+  const error = new LlmFailure('invalid_output', `${label} did not return JSON that matches the requested schema.`);
+  error.rawOutput = text;
+  error.status = status;
+  return error;
 }
 
 /** The wire carries JSON Schema, not executable Zod. Compile locally; never load remote refs. */

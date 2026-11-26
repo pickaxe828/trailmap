@@ -10,6 +10,7 @@ import { useJournalData } from '../../journal/data';
 import { RecordingControls } from '../../privacy/RecordingControls';
 import { readPickingUp } from '../../threads/picking-up';
 import { useLiveTrail } from '../../trail/useLiveTrail';
+import { ModelJobAttention } from '../../ui/ModelJobAttention';
 import { AiNotesStatus } from './AiNotesStatus';
 import { LiveTrail } from './LiveTrail';
 import { CompanionStatus } from './CompanionStatus';
@@ -43,6 +44,7 @@ export function App() {
       </HStack>
       <RecordingControls />
       <AiNotesStatus />
+      <ModelJobAttention />
       <CompanionStatus />
       {pickingUp && <PickingUpCard {...pickingUp} />}
       {trail && <FieldNotes expeditions={trail.finished} />}

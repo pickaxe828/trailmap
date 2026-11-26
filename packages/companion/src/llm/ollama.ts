@@ -1,13 +1,13 @@
 import { z } from 'zod';
 import { LLM_PROVIDER_NAMES, LlmModel } from '@trailmap/shared';
 import type { CompanionContext } from '../handle';
-import { authorize, CATALOG_DEADLINE_MS, INFERENCE_DEADLINE_MS, JSON_HEADERS, rateLimited, requestJson } from './http';
-import { LlmFailure, outputValidator, type LlmProvider } from './provider';
+import { CATALOG_DEADLINE_MS, INFERENCE_DEADLINE_MS, JSON_HEADERS, rateLimited, requestJson, runDispatch } from './http';
+import { invalidOutput, LlmFailure, outputValidator, type LlmProvider } from './provider';
 
 const label = LLM_PROVIDER_NAMES.ollama;
 const Catalog = z.object({ models: z.array(z.unknown()) });
 const InstalledModel = z.object({ name: z.string(), remote_model: z.string().nullish(), remote_host: z.string().nullish() });
-const Reply = z.object({ done: z.literal(true), done_reason: z.literal('stop'), message: z.object({ content: z.string().max(1_048_576) }) });
+const Reply = z.object({ done: z.boolean(), done_reason: z.string().optional(), message: z.object({ content: z.string() }) });
 const cloud = /(?:^|[:-])cloud(?:$|:)/i;
 
 function origin(ctx: CompanionContext) {
@@ -27,45 +27,56 @@ function httpError(res: Response) {
 
 export function ollamaProvider(ctx: CompanionContext): LlmProvider {
   async function models() {
-    const catalog = Catalog.safeParse(await requestJson(label, `${origin(ctx)}/api/tags`, {
+    const { body, status } = await requestJson(label, `${origin(ctx)}/api/tags`, {
       signal: AbortSignal.timeout(CATALOG_DEADLINE_MS),
-    }, httpError));
-    if (!catalog.success) throw new LlmFailure('usage_unavailable', 'Ollama did not return a model catalog.');
-    return catalog.data.models.flatMap((data) => {
+    }, httpError);
+    const catalog = Catalog.safeParse(body);
+    if (!catalog.success) throw new LlmFailure('usage_unavailable', 'Ollama did not return a model catalog.').diagnose('catalog_unavailable', status);
+    const listedModels = catalog.data.models.flatMap((data) => {
       const entry = InstalledModel.safeParse(data);
       if (!entry.success || entry.data.remote_model || entry.data.remote_host || cloud.test(entry.data.name)) return [];
       const model = LlmModel.safeParse({ slug: entry.data.name, displayName: entry.data.name });
       return model.success ? [model.data] : [];
     });
+    return { listedModels, status };
   }
 
   return {
-    models,
+    models: async () => (await models()).listedModels,
     async complete(request) {
       const validate = outputValidator(request.schema);
       const signal = AbortSignal.timeout(INFERENCE_DEADLINE_MS);
       // Check the installed catalog even for explicit IDs: a local tag can be an alias for a cloud model.
-      const installed = await models();
+      const { listedModels: installed, status: catalogStatus } = await models();
       const model = request.model ?? installed[0]?.slug;
       if (!model || !installed.some(({ slug }) => slug === model)) {
-        throw new LlmFailure('model_not_found', 'Choose an installed local Ollama model in Trailmap Settings.');
+        throw new LlmFailure('model_not_found', 'Choose an installed local Ollama model in Trailmap Settings.')
+          .diagnose('catalog_unavailable', catalogStatus);
       }
       const base = origin(ctx);
       const { $schema: _dialect, ...schema } = request.schema;
       const input = [{ role: 'user' as const, content: request.input }];
       const system = `${request.instructions}\n\nReturn only JSON matching this schema:\n${JSON.stringify(schema)}`;
-      for (const instructions of [system, `${system}\nThe previous answer did not match the schema. Return a corrected JSON object.`]) {
-        await authorize(ctx, request, { provider: label, model, instructions, input });
-        const reply = Reply.safeParse(await requestJson(label, `${base}/api/chat`, {
+      const infer = (instructions: string) => runDispatch(ctx, request.auditId, { provider: label, model, instructions, input }, async () => {
+        const { body, status } = await requestJson(label, `${base}/api/chat`, {
           method: 'POST', signal, headers: JSON_HEADERS,
           body: JSON.stringify({ model, stream: false, think: false, keep_alive: '10m', format: schema,
             options: { num_ctx: 32768, temperature: 0 }, messages: [{ role: 'system', content: instructions }, ...input],
           }),
-        }, httpError));
-        const output = reply.success ? validate(reply.data.message.content) : undefined;
-        if (output !== undefined) return output;
+        }, httpError);
+        const reply = Reply.safeParse(body).data;
+        const text = reply?.message.content;
+        const output = reply?.done && reply.done_reason === 'stop' && text !== undefined && text.length <= 1_048_576
+          ? validate(text) : undefined;
+        if (output === undefined) throw invalidOutput(label, text, status);
+        return output;
+      });
+      try {
+        return await infer(system);
+      } catch (error) {
+        if (!(error instanceof LlmFailure) || error.code !== 'invalid_output') throw error;
+        return infer(`${system}\nThe previous answer did not match the schema. Return a corrected JSON object.`);
       }
-      throw new LlmFailure('invalid_output', 'Ollama did not return JSON that matches the requested schema.');
     },
   };
 }

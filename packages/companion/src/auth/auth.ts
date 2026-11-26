@@ -32,7 +32,7 @@ type Attempt = {
 };
 
 export class ChatGptAuthError extends Error {
-  constructor(readonly code: ErrorCode, message: string) {
+  constructor(readonly code: ErrorCode, message: string, readonly status?: number) {
     super(message);
   }
 }
@@ -212,9 +212,9 @@ export class ChatGptAuth {
         ['invalid_grant', 'invalid_refresh_token', 'token_expired'].includes(error.code) ||
         error.code.startsWith('refresh_token_')
       )) {
-        return this.requireSignIn(account);
+        return this.requireSignIn(account, error.status);
       }
-      throw new ChatGptAuthError('auth_unavailable', 'Could not refresh the ChatGPT session.');
+      throw new ChatGptAuthError('auth_unavailable', 'Could not refresh the ChatGPT session.', error instanceof OAuthError ? error.status : undefined);
     }
     if (!tokens.refresh_token || tokens.refresh_token === session.refreshToken) return this.requireSignIn(account);
     const scopes = tokens.scope?.split(/\s+/).filter(Boolean) ?? session.scopes;
@@ -242,10 +242,10 @@ export class ChatGptAuth {
     return next.accessToken;
   }
 
-  private async requireSignIn(account: Account): Promise<never> {
+  private async requireSignIn(account: Account, status?: number): Promise<never> {
     await this.writeAccount({ ...account, session: undefined });
     this.ctx.emit?.({ type: 'event', name: 'auth.changed' });
-    throw new ChatGptAuthError('auth_required', 'Your ChatGPT session ended. Sign in again.');
+    throw new ChatGptAuthError('auth_required', 'Your ChatGPT session ended. Sign in again.', status);
   }
 
   private async complete(

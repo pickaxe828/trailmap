@@ -17,12 +17,13 @@ import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import type { ConceptEvidence } from '../packages/extension/src/concepts/evidence';
 import type { SentToModel } from '../packages/extension/src/db/db';
+import type { Job } from '../packages/extension/src/jobs/types';
 import type { Concept, Edge, Expedition, Highlight, Note, Page as CapturedPage, Query, Thread, Visit } from '../packages/shared/src/domain';
 import { COMPANION_BIN, EXTENSION_DIR, FIXTURE_PORT } from './constants';
 
 type CaptureTables = {
   visits: Visit; pages: CapturedPage; queries: Query; highlights: Highlight; expeditions: Expedition; notes: Note;
-  concepts: Concept; edges: Edge; threads: Thread; conceptEvidence: ConceptEvidence; sentToModel: SentToModel;
+  concepts: Concept; edges: Edge; threads: Thread; conceptEvidence: ConceptEvidence; sentToModel: SentToModel; jobs: Job;
   corrections: { id: string; at: number; kind: string; targetIds: string[]; before: unknown; after: unknown };
 };
 
@@ -39,10 +40,10 @@ export async function seedCapture(page: Page, rows: { [K in keyof CaptureTables]
         const tx = db.transaction(Object.keys(rows), 'readwrite');
         tx.oncomplete = () => resolve();
         tx.onabort = () => reject(tx.error);
-        for (const [table, records] of Object.entries(rows)) for (const row of records) tx.objectStore(table).put(row);
+        for (const [table, records] of Object.entries(rows)) for (const row of records ?? []) tx.objectStore(table).put(row);
       });
     } finally { db.close(); }
-  }, rows);
+  }, rows as Record<string, unknown[] | undefined>);
 }
 
 type Fixtures = {
