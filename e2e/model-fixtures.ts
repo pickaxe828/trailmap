@@ -15,9 +15,10 @@ export async function signInToMockChatGpt(context: BrowserContext, setup: Page) 
 }
 
 const script = fileURLToPath(new URL('./mock-page-summary.ts', import.meta.url));
-export const test = base.extend<{ mockOrigin: string }>({
-  mockOrigin: async ({}, use) => {
-    const child = spawn('bun', [script], { stdio: ['ignore', 'pipe', 'inherit'] });
+export const test = base.extend<{ mockOrigin: string; chatGptModels: string[] }>({
+  chatGptModels: [[], { option: true }],
+  mockOrigin: async ({ chatGptModels }, use) => {
+    const child = spawn('bun', [script, ...chatGptModels], { stdio: ['ignore', 'pipe', 'inherit'] });
     const exited = once(child, 'exit');
     const lines = createInterface({ input: child.stdout });
     try {

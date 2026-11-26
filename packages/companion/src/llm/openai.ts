@@ -1,7 +1,8 @@
 import { z } from 'zod';
-import { LLM_PROVIDER_NAMES, LlmModel, type ModelDispatch } from '@trailmap/shared';
+import { LLM_PROVIDER_NAMES, LlmModel, llmTaskGroup, type ModelDispatch } from '@trailmap/shared';
 import { ChatGptAuthError, getChatGptAuth } from '../auth/auth';
 import type { CompanionContext } from '../handle';
+import { resolveChatGptDefault } from './chatgpt-default';
 import { runDispatch } from './http';
 import { invalidOutput, LlmFailure, outputValidator, type LlmProvider } from './provider';
 import { readSse } from './sse';
@@ -133,7 +134,7 @@ export function openAiProvider(ctx: CompanionContext): LlmProvider {
       const validate = outputValidator(request.schema);
       const signal = AbortSignal.timeout(DEADLINE_MS);
       const catalog = request.model ? undefined : await models(signal);
-      const model = request.model ?? catalog?.listedModels[0]?.slug;
+      const model = request.model ?? resolveChatGptDefault(catalog?.listedModels ?? [], llmTaskGroup(request.task))?.slug;
       if (!model) throw rejected('No ChatGPT plan models are available for this account.').diagnose('catalog_unavailable', catalog?.status);
       const body = {
         model,
