@@ -74,7 +74,10 @@ export function readAtlasEvidence(db: TrailmapDb, conceptId: string) {
         if (expedition) used.set(expedition.id, expedition);
       }
       const teacher = eligible.find(({ roles }) => roles.includes('explains'));
-      return [{ url: page.canonicalUrl, title: (teacher ?? eligible[0]!).visit.title || page.canonicalUrl, taught: Boolean(teacher) }];
+      const { visit } = teacher ?? eligible[0]!;
+      return [{ url: page.canonicalUrl, title: visit.title || page.canonicalUrl, taught: Boolean(teacher),
+        aiStop: visit.aiConversation ? { visitId: visit.id, expeditionId: visit.expeditionId } : undefined,
+      }];
     });
     return {
       pages: pages.sort((a, b) => Number(b.taught) - Number(a.taught)),

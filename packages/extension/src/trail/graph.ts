@@ -1,7 +1,7 @@
 import type { Query, Visit } from '@trailmap/shared';
 
 type TrailVisitNode =
-  | { id: string; kind: 'page'; visit: Visit }
+  | { id: string; kind: 'page' | 'ai-conversation'; visit: Visit }
   | { id: string; kind: 'question'; visit: Visit | null; query: Query };
 
 export type TrailGraphNode =
@@ -33,7 +33,8 @@ export function buildTrailGraph(visits: readonly Visit[], queries: readonly Quer
   }
   for (const visit of ordered) {
     const query = queriesByVisit.get(visit.id);
-    nodes.push(query ? { id: visit.id, kind: 'question', visit, query } : { id: visit.id, kind: 'page', visit });
+    nodes.push(query ? { id: visit.id, kind: 'question', visit, query }
+      : { id: visit.id, kind: visit.aiConversation ? 'ai-conversation' : 'page', visit });
   }
   const edges: TrailGraphEdge[] = [];
   for (const { id, parentVisitId, transition } of ordered) {

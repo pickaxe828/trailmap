@@ -96,7 +96,7 @@ test('recorded Visits strip session parameters while still accepting title and c
 });
 
 test('a late password field hard-deletes the earlier Visit, Query, Highlight and Page', async () => {
-  const url = 'https://www.google.com/search?q=private-fixture';
+  const url = 'https://kagi.com/search?q=private-fixture';
   await browser.commit(TAB, url);
   const id = (await byUrl(url))!.id;
   await browser.reportPageContent(TAB, url, { kind: 'highlight', source: 'copy', text: 'private-fixture' });
@@ -107,6 +107,29 @@ test('a late password field hard-deletes the earlier Visit, Query, Highlight and
   expect(recorder.isPasswordProtected(TAB)).toBe(true);
   expect(recorder.getCurrentVisit(TAB)).toBeUndefined();
   for (const table of [db.visits, db.queries, db.highlights, db.pages, db.jobs]) expect(await table.count()).toBe(0);
+});
+
+test('Google results record the search query but never DOM text or highlights', async () => {
+  const url = 'https://www.google.com/search?q=normal-search';
+  await browser.commit(TAB, url);
+  const id = (await byUrl(url))!.id;
+  expect(await browser.reportPageContent(TAB, url, { kind: 'probe', sourceHash: 'source' })).toBeUndefined();
+  await browser.reportPageContent(TAB, url, { kind: 'text', visitId: id, text: 'Overview junk', textHash: 'hash', sourceHash: 'source' });
+  await browser.reportPageContent(TAB, url, { kind: 'highlight', source: 'copy', text: 'Overview junk' });
+  expect(await db.queries.toArray()).toMatchObject([{ q: 'normal-search' }]);
+  for (const table of [db.pages, db.highlights, db.jobs, db.sentToModel]) expect(await table.count()).toBe(0);
+});
+
+test('leaving Mode before a reply arrives retains the typed question as a diagnostic failure', async () => {
+  const url = 'https://www.google.com/search?udm=50';
+  await browser.commit(TAB, url);
+  await browser.reportPageContent(TAB, url, { kind: 'ai-submit', turnId: 'pending', question: 'What is light?' });
+  await browser.commit(TAB, `${LEARN}/other`);
+  const aiVisit = (await visits()).find((visit) => visit.aiConversation);
+  expect(await db.pages.get(aiVisit!.canonicalUrl)).toMatchObject({
+    text: '', aiTurns: [{ id: 'pending', question: 'What is light?', answer: null, citations: [], extractionFailed: true }],
+  });
+  expect(await db.jobs.count()).toBe(0);
 });
 
 test('forgetting the Visit shown in a tab stops its capture and starts the next trail fresh', async () => {

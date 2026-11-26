@@ -30,8 +30,17 @@ const mock = startMockOAuth(async (request) => {
   if (task === 'expedition_wrap_up' || task === 'field_notes') {
     // Wrap-up inputs carry Page notes, never Page text.
     if (body.model !== 'fixture-model') return new Response(null, { status: 400 });
-    const input = JSON.parse(text) as { trail: { ref: string; summary?: string }[] };
+    const input = JSON.parse(text) as { trail: { ref: string; summary?: string; contentKind?: string }[] };
     const page = input.trail.find((entry) => entry.summary);
+    const ai = input.trail.find((entry) => entry.contentKind === 'ai_conversation');
+    if (ai && task === 'expedition_wrap_up') return stream(JSON.stringify({
+      title: 'How light scatters', driving_question: 'Why is the sky blue?', kind: 'learning', merge_with: [],
+    }));
+    if (ai) return stream(JSON.stringify({
+      found: 'Google AI Mode described how air scatters light.',
+      key_ideas: [{ idea: 'Shorter wavelengths scatter more strongly.', page: ai.ref }],
+      trail: 'The conversation explored Rayleigh scattering.', loose_ends: ['Check the cited reference.'],
+    }));
     if (task === 'expedition_wrap_up') {
       return stream(JSON.stringify({
         title: 'How replicated lists delete items', driving_question: 'How do replicated lists represent deletes?',
@@ -45,6 +54,16 @@ const mock = startMockOAuth(async (request) => {
       loose_ends: ['How are tombstones garbage collected?'],
     }));
   }
+  if (task === 'page_enrichment' && JSON.parse(text).contentKind === 'ai_conversation') return stream(JSON.stringify({
+    summary: 'The AI conversation explains Rayleigh scattering.',
+    takeaways: ['Shorter wavelengths scatter more strongly.', 'Air contains particles that scatter light.'],
+    answers_question: 'Why is the sky blue?', page_kind: 'other',
+    concepts: [
+      { name: 'Rayleigh scattering', kind: 'concept', gloss: 'Scattering by small particles.', role: 'explains' },
+      { name: 'Wavelength', kind: 'concept', gloss: 'Distance between wave crests.', role: 'mentions' },
+    ],
+    relations: [{ from: 'Rayleigh scattering', to: 'Wavelength', type: 'related_to' }],
+  }));
   if (body.model !== 'fixture-model' || body.store !== false || body.stream !== true ||
     !text.includes('Tombstones preserve causal history across replicas.') || text.includes('This paragraph appears after the extraction limit.')) {
     return new Response(null, { status: 400 });

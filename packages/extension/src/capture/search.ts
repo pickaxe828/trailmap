@@ -13,6 +13,19 @@ const googleSuffixes = new Set(`
 
 type SearchQuery = { engine: string; q: string };
 
+function isGoogle(host: string) {
+  return host.startsWith('google.') && googleSuffixes.has(host.slice('google.'.length));
+}
+
+/** Google search surfaces are metadata-only, apart from explicitly submitted AI Mode turns. */
+export function googleSearchSurface(value: string): 'search' | 'ai-mode' | undefined {
+  const url = URL.parse(value);
+  if (!url || !/^https?:$/.test(url.protocol) || !isGoogle(url.hostname.replace(/^www\./, ''))) return;
+  const path = url.pathname.replace(/\/$/, '') || '/';
+  if (path === '/aimode' || (path === '/search' && url.searchParams.get('udm') === '50')) return 'ai-mode';
+  if (path === '/' || path === '/search' || path === '/webhp') return 'search';
+}
+
 export function parseSearchQuery(value: string): SearchQuery | null {
   const url = URL.parse(value);
   if (!url || !/^https?:$/.test(url.protocol)) return null;
@@ -22,7 +35,7 @@ export function parseSearchQuery(value: string): SearchQuery | null {
   const q = url.searchParams.get('q')?.trim();
 
   if (path === '/search' && q) {
-    if (host.startsWith('google.') && googleSuffixes.has(host.slice('google.'.length))) return { engine: 'google', q };
+    if (isGoogle(host)) return { engine: 'google', q };
     if (host === 'bing.com' || host === 'cn.bing.com') return { engine: 'bing', q };
     if (host === 'kagi.com') return { engine: 'kagi', q };
   }

@@ -38,6 +38,14 @@ test('rebuilds a chronological trail from stable Chrome visit IDs, including a n
   expect(await collect(fakeHistory())).toEqual(result);
 });
 
+test('history without composer input evidence does not import AI Mode', async () => {
+  const history: HistoryApi = {
+    search: async () => [{ url: 'https://www.google.com/search?udm=50&q=passive' }],
+    getVisits: async () => [{ visitId: '9', referringVisitId: '0', visitTime: 10_000, transition: 'link' }],
+  };
+  expect(await collect(history)).toEqual([]);
+});
+
 test('cancelling while Chrome returns the final URL does not yield a trail', async () => {
   const abort = new AbortController();
   const history: HistoryApi = {

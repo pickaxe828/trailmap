@@ -28,7 +28,7 @@ export function App() {
   const result = useJournalData(read);
   const review = result?.data;
   const expedition = review?.expedition;
-  const [selected, setSelected] = useState<string>();
+  const [selected, setSelected] = useState<string | undefined>(() => new URLSearchParams(location.search).get('stop') ?? undefined);
   const [action, setAction] = useState<ExpeditionCorrection>();
   const canMove = !!review?.alternatives.length;
   const graphActions = useMemo(() => review ? {

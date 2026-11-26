@@ -148,7 +148,8 @@ capture ──▶ filter ──▶ segment ──▶ enrich (LLM) ──▶ reso
   - `webNavigation.onHistoryStateUpdated` catches navigation inside single-page apps.
 - **Active time** comes from `tabs.onActivated`, `windows.onFocusChanged`, `idle.onStateChanged` and `visibilitychange` in the page.
 - **Page content** comes from a content script running `@mozilla/readability` about 2 s after load. It also records scroll depth, selections and copies. A selection or copy is the strongest sign that something mattered.
-- **Search queries** are parsed from the URLs of known engines (Google, Bing, DDG, Kagi, YouTube, Wikipedia search). Each becomes a `Query` node.
+- **Search queries** are parsed from the URLs of known engines (Google, Bing, DDG, Kagi, YouTube, Wikipedia search). Each becomes a `Query` node. Ordinary Google results are query-only: **AI Overviews are never recorded or sent to a model**, including via selections or copies.
+- **Google AI Mode** starts one AI conversation node only after a user types and submits a question in the AI Mode composer. This includes a question that opens the Mode results. Opening Mode, restoring a URL, or importing browser history does not count. The node hangs off its opening search. A content-script observer matches new replies to typed questions in order and captures only answer text and available citation links, excluding images, carousels and the source side panel. Cited pages the user opens are normal child Visits. The DOM is undocumented; if a reply can't be identified, keep just the question and count the failed extraction in Settings diagnostics. A brief single turn is `skimmed`; a follow-up or more than 60 seconds of active reading is `read`. The usual pause, skip, password-screen and Forget rules apply.
 - **Backfill on day one:** `chrome.history.search` plus `getVisits` returns `transition` and `referringVisitId`, which is often filled in. That is enough to rebuild rough trails from past history, using URLs and titles only. Page text can be enriched later if you want it.
 
 ### 4.2 Filter (keeping the mess out)
@@ -169,6 +170,8 @@ Errand expeditions (shopping, admin) collapse into the Journal and stay out of t
 
 ### 4.4 Enrich each page (one LLM call per read or skimmed page, structured JSON output)
 Input: title, URL, Readability text capped at about 3k tokens, any highlights (marked as important), the expedition's driving question, and the parent page's title. The last two tell the model *why* you came to this page.
+
+A recorded AI Mode conversation uses the same enrichment and concept pipeline. Its capped transcript identifies the user's typed questions as learning intent and the replies as AI-generated, not verified sources. If no answer was extracted, there is no conversation enrichment. Field notes and the conversation detail view explicitly label AI-generated material; a citation is an independent Page only after it is opened and recorded as such.
 
 ```json
 {

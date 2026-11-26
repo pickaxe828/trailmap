@@ -13,7 +13,8 @@ import type {
   NavTransitionType,
 } from './events';
 import { WINDOW_ID_NONE } from './events';
-import { isPageContentMessage, isPageVisibilityMessage } from './page-messages';
+import { isPageContentMessage, isPageVisibilityMessage, OPEN_AI_CITATION } from './page-messages';
+import type { VisitRecorder } from './recorder';
 import type { RecorderState, RecorderStateStore } from './state-store';
 
 const STORAGE_KEY = 'trailmap.recorderState';
@@ -63,6 +64,32 @@ async function passwordFrame(tabId: number, documentId: string, h: BrowserEventH
   while (frame?.parentDocumentId) frame = byDocument.get(frame.parentDocumentId);
   if (frame?.frameId === 0) await h.onPageContent({
     tabId, documentId: frame.documentId, url: frame.url, content: { kind: 'screen', hasPassword: true },
+  });
+}
+
+/** Detail links open normal web tabs, with the same capture rules as other links. */
+export function startAiCitationLinks(recorder: VisitRecorder) {
+  chrome.runtime.onMessage.addListener((message: unknown, sender, respond) => {
+    if (!message || typeof message !== 'object') return;
+    const { type, visitId, url, background } = message as Record<string, unknown>;
+    if (type !== OPEN_AI_CITATION || typeof visitId !== 'string' || typeof url !== 'string' || sender.frameId !== 0 ||
+        sender.url?.split(/[?#]/, 1)[0] !== chrome.runtime.getURL('/expedition.html')) return;
+    const destination = URL.parse(url);
+    if (!destination || !/^https?:$/.test(destination.protocol) || destination.username || destination.password) return;
+    void (async () => {
+      const tab = await chrome.tabs.create({ active: background !== true });
+      if (tab.id === undefined) return;
+      try {
+        if (await recorder.prepareCitationVisit(tab.id, visitId, url)) {
+          await chrome.tabs.update(tab.id, { url });
+        } else {
+          await chrome.tabs.remove(tab.id);
+        }
+      } catch {
+        await chrome.tabs.remove(tab.id).catch(() => {});
+      }
+    })().then(() => respond(), () => respond());
+    return true;
   });
 }
 

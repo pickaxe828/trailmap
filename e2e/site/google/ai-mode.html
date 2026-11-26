@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Google Search</title></head>
+<body>
+<main data-container-id="main-col">
+  <section data-complete="true">
+    <h3>AI Mode reply for Why is the sky blue?</h3>
+    <div><p>Air scatters shorter wavelengths more strongly.</p>
+      <p>Blue light is scattered in many directions. <sup><button aria-label="Related results">1</button><a href="https://science.test/light.html">Light and scattering</a></sup></p>
+      <p hidden>Hidden content</p>
+      <div aria-roledescription="carousel"><p>Related image caption</p><img alt="Sky photo"></div>
+      <aside aria-label="Sources"><p>Source side panel</p><a href="https://science.test/side.html">Sidebar result</a></aside>
+      <p>AI responses may include mistakes.</p>
+    </div>
+  </section>
+</main>
+<form><textarea aria-label="Ask anything"></textarea><button type="submit" aria-label="Send">Send</button></form>
+<script>
+  // Local test driver; never use Google or an inference endpoint in this fixture.
+  const form = document.querySelector('form');
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const question = form.querySelector('textarea').value;
+    form.reset();
+    const url = new URL(location.href);
+    url.searchParams.set('q', question);
+    url.searchParams.set('aai', 'fixture-session-token');
+    history.pushState({}, '', url);
+    if (question === 'Where did the answer go?') {
+      const broken = document.createElement('section');
+      broken.dataset.complete = 'true';
+      broken.innerHTML = '<h3>AI Mode reply for Where did the answer go?</h3><aside>Sidebar junk</aside>';
+      document.querySelector('main').append(broken);
+      return;
+    }
+    if (question !== 'What is Rayleigh scattering?' && question !== 'Why is the sky blue?') return;
+    const section = document.createElement('section');
+    section.dataset.complete = 'false';
+    const heading = document.createElement('h3');
+    heading.textContent = `AI Mode reply for ${question}`;
+    section.append(heading, document.createElement('p'));
+    document.querySelector('main').append(section);
+    setTimeout(() => {
+      section.lastChild.textContent = question === 'What is Rayleigh scattering?'
+        ? 'Rayleigh scattering explains how light scatters from particles much smaller than its wavelength.'
+        : 'Molecules scatter blue light more than red light.';
+      section.dataset.complete = 'true';
+    }, 250);
+  });
+</script>
+</body>
+</html>

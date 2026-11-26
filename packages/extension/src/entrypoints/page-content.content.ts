@@ -1,5 +1,7 @@
 import { extractPageText, hasPasswordField, hashText, screenableRoots } from '../capture/extract';
 import { PAGE_CONTENT_MESSAGE, type PageContent, type PageContentMessage, type PageContentReply } from '../capture/page-messages';
+import { googleSearchSurface } from '../capture/search';
+import { watchAiMode } from '../capture/watch-ai-mode';
 
 const EXTRACTION_DELAY_MS = 2_000;
 const SCROLL_INTERVAL_MS = 250;
@@ -82,7 +84,7 @@ export default defineContentScript({
     let admitted = false;
     let passwordDetected = false;
     let generation = 0;
-    let url = location.href.split('#')[0];
+    let url = location.href.split('#', 1)[0]!;
     let lastSelection = '';
     let maxDepth = 0;
     let reportedDepth = 0;
@@ -91,7 +93,10 @@ export default defineContentScript({
       if (document.readyState === 'loading' || passwordDetected || generation !== started) return;
       passwordDetected = findPassword();
       const reply = await send({ kind: 'screen', hasPassword: passwordDetected });
-      if (generation === started && !passwordDetected) admitted = !!reply;
+      if (generation === started && !passwordDetected) {
+        admitted = !!reply;
+        if (reply?.aiPending?.length) aiMode.resume(reply.aiPending);
+      }
     };
 
     const isPublic = () => {
@@ -103,10 +108,13 @@ export default defineContentScript({
       return admitted && !passwordDetected;
     };
 
+    const aiMode = watchAiMode(document, isPublic, send);
+    ctx.onInvalidated(() => aiMode.dispose());
+
     const capture = async (started: number) => {
       if (!document.body) return;
       if (!admitted) await screen(started);
-      if (generation !== started || !isPublic()) return;
+      if (generation !== started || !isPublic() || googleSearchSurface(location.href)) return;
       const sourceHash = hashText(document.documentElement.outerHTML);
       const reply = await send({ kind: 'probe', sourceHash, canonicalLink: canonicalLink() });
       if (!reply?.extract || generation !== started || !isPublic()) return;
@@ -175,7 +183,7 @@ export default defineContentScript({
     ctx.addEventListener(document, 'selectionchange', () => {
       clearTimeout(selectionTimer);
       selectionTimer = ctx.setTimeout(() => {
-        if (!isPublic()) return;
+        if (googleSearchSurface(location.href) || !isPublic()) return;
         const text = selectedText();
         if (text && text !== lastSelection) {
           void send(isHighlight(text)
@@ -186,15 +194,18 @@ export default defineContentScript({
       }, SELECTION_DELAY_MS);
     }, { capture: true });
     ctx.addEventListener(window, 'copy', (event) => {
-      if (!event.isTrusted || !isPublic()) return;
+      if (!event.isTrusted || googleSearchSurface(location.href) || !isPublic()) return;
       const text = event.clipboardData?.getData('text/plain').trim() || selectedText();
       if (text) void send({ kind: 'highlight', source: 'copy', text, canonicalLink: canonicalLink() });
     });
 
     window.navigation?.addEventListener('currententrychange', () => {
-      const currentUrl = location.href.split('#')[0];
+      const currentUrl = location.href.split('#', 1)[0]!;
       if (currentUrl === url) return;
+      const sameMode = googleSearchSurface(url) === 'ai-mode' && googleSearchSurface(currentUrl) === 'ai-mode';
       url = currentUrl;
+      if (sameMode) return;
+      aiMode.clear();
       schedule();
     });
   },

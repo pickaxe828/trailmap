@@ -12,6 +12,7 @@ import {
 import '@xyflow/react/dist/base.css';
 import type { Visit } from '@trailmap/shared';
 import { memo, useMemo, type DragEvent } from 'react';
+import { expeditionHref } from '../journal/links';
 import { webUrl } from '../ui/web-url';
 import { formatActiveTime } from './format';
 import type { TrailGraph, TrailGraphEdge, TrailGraphNode } from './graph';
@@ -45,8 +46,9 @@ const TrailCard = memo(function TrailCard({ data: { stop, review } }: NodeProps<
   const title = stop.kind === 'question' ? stop.query.q : stop.kind === 'skipped' ? `+${stop.visits.length} skipped`
     : stop.visit.title || url?.hostname || 'Untitled Visit';
   const summary = visit && review?.summaries.get(visit.canonicalUrl);
+  const href = visit?.aiConversation ? (visit.expeditionId ? expeditionHref(visit.expeditionId, visit.id) : undefined) : url?.href;
   const caption = stop.kind === 'question' ? 'Search question' : stop.kind === 'skipped' ? 'Pages you didn’t read'
-    : summary || url?.hostname || 'Page';
+    : stop.kind === 'ai-conversation' ? 'AI conversation' : summary || url?.hostname || 'Page';
   const content = (
     <VStack as="span" height="100%" padding={3} gap={1} vAlign="center">
       <HStack as="span" gap={2} align="center">
@@ -74,8 +76,8 @@ const TrailCard = memo(function TrailCard({ data: { stop, review } }: NodeProps<
               onDragStart={drag ? (event) => drag(event, visit) : undefined}>
               {content}
             </button>
-          ) : url ? (
-            <a href={url.href} target="_blank" rel="noopener noreferrer" title={title} className={interactive}>{content}</a>
+          ) : href ? (
+            <a href={href} target="_blank" rel="noopener noreferrer" title={title} className={interactive}>{content}</a>
           ) : content}
         </Card>
       </VStack>

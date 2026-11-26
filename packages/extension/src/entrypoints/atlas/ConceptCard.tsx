@@ -41,10 +41,12 @@ export function ConceptCard({ concept, neighbours, onFocus, onClose }: {
                 <Heading level={3}>Evidence pages</Heading>
                 {evidence.data.pages.length ? (
                   <List edge="flush" aria-label="Evidence pages">
-                    {evidence.data.pages.map(({ url, title, taught }) => (
+                    {evidence.data.pages.map(({ url, title, taught, aiStop }) => (
                       <Item key={url} as="li" label={title} labelLines={2} density="compact"
-                        description={taught ? 'Explains this concept' : 'Mentions or uses this concept'}
-                        href={webUrl(url)?.href} target="_blank" />
+                        description={aiStop ? 'AI-generated, not an independent source'
+                          : taught ? 'Explains this concept' : 'Mentions or uses this concept'}
+                        href={aiStop ? (aiStop.expeditionId ? expeditionHref(aiStop.expeditionId, aiStop.visitId) : undefined) : webUrl(url)?.href}
+                        target={aiStop ? undefined : '_blank'} />
                     ))}
                   </List>
                 ) : <Text type="supporting">No evidence pages remain.</Text>}

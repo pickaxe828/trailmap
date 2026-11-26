@@ -1,4 +1,4 @@
-import { ChromeEventSource, ChromeSessionStateStore, ensureTickAlarm } from '../capture/chrome-events';
+import { ChromeEventSource, ChromeSessionStateStore, ensureTickAlarm, startAiCitationLinks } from '../capture/chrome-events';
 import { VisitRecorder } from '../capture/recorder';
 import { openTrailmapDb } from '../db/db';
 import { startCorrections } from '../corrections/background';
@@ -47,6 +47,7 @@ export default defineBackground(() => {
     newId: () => crypto.randomUUID(),
   });
   recorder.start();
+  startAiCitationLinks(recorder);
   const expeditions = startSegmentation(db, recorder, privacy.getSettings);
   startHistoryImport(expeditions, privacy);
   privacy.start(recorder);

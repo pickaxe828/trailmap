@@ -26,7 +26,8 @@ export function buildEnrichmentInput({ visit, page, highlights, sourceVisit, exp
     ? expedition.drivingQuestion || expedition.title : null;
   return {
     title: cap(visit.title || new URL(page.canonicalUrl).hostname, 768),
-    url: page.canonicalUrl,
+    url: visit.aiConversation ? visit.url : page.canonicalUrl,
+    ...(visit.aiConversation ? { contentKind: 'ai_conversation' as const } : {}),
     text: cap(page.text, PAGE_TEXT_BYTE_LIMIT),
     highlights: highlights.filter((item) => item.visitId === visit.id && (!item.canonicalUrl || item.canonicalUrl === page.canonicalUrl))
       .slice(0, 10).map(({ text }) => ({ text: cap(text, 800), important: true })),
