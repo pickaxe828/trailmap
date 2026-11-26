@@ -144,8 +144,13 @@ for (const colorScheme of ['light', 'dark'] as const) {
       await journal.getByRole('searchbox', { name: 'Search Journal' }).fill('tombstones');
       const result = journal.getByRole('link', { name: /^https:\/\/www\.google\.com/ });
       await expect(result).toHaveAttribute('href', url);
-      await textDoesNotOverlap(result.getByText(url, { exact: true }));
+      const resultTitle = result.getByText(url, { exact: true });
+      await textDoesNotOverlap(resultTitle);
       await journal.screenshot({ path: proof('search'), fullPage: true });
+      if (width === 360) {
+        await resultTitle.hover();
+        await expect(journal.getByRole('tooltip')).toHaveText(url);
+      }
 
       const settings = await open('settings.html#privacy');
       const privacy = settings.getByRole('tab', { name: 'Privacy' });

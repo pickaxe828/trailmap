@@ -54,7 +54,7 @@ export function JournalSearch({ children }: { children: ReactNode }) {
             return results.length > 0 && (
               <List key={kind} header={<Heading level={2}>{name}</Heading>} hasDividers>
                 {results.map(({ id, title, detail, href, snippet }) => (
-                  <ListItem key={id} label={<Text type="label" maxLines={2}>{title}</Text>}
+                  <ListItem key={id} label={<Text type="label" color="accent" maxLines={2} className="underline">{title}</Text>}
                     description={<Text type="supporting" maxLines={2}>{detail}{snippet ? ` · ${snippet}` : ''}</Text>}
                     href={href} target={kind === 'page' ? '_blank' : undefined} />
                 ))}
