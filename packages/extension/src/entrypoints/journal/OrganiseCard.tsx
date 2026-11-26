@@ -18,7 +18,7 @@ export function OrganiseCard({ id, title, children, chips, selecting, checked, b
   const [source, setSource] = useState<string>();
   const choices = source ? dropChoices(source) : [];
   return (
-    <VStack gap={2}>
+    <VStack gap={2} className="min-w-0">
       {selecting && <CheckboxInput label={`Select ${title}`} value={checked} isDisabled={busy} onChange={() => toggle(id)} />}
       <VStack as="article" ref={setAnchor} draggable={canDrag && !busy} className={canDrag ? 'cursor-grab' : undefined}
         onClickCapture={(event) => {
@@ -50,9 +50,9 @@ export function OrganiseCard({ id, title, children, chips, selecting, checked, b
       {anchorRef && <Popover label="Organise dropped card" anchorRef={anchorRef} isOpen={choices.length > 0}
         onOpenChange={(open) => { if (!open) setSource(undefined); }} content={
           <VStack gap={1}>
-            {choices.map(({ label, plan }) => <Button key={label} label={label} size="sm" variant="ghost" isDisabled={busy}
+            {choices.map(({ label, plan }) => <Button key={label} label={label} size="sm" isDisabled={busy}
               onClick={() => void run(plan).then((saved) => { if (saved) setSource(undefined); })} />)}
-            <Button label="Cancel" size="sm" variant="ghost" onClick={() => setSource(undefined)} />
+            <Button label="Cancel" size="sm" onClick={() => setSource(undefined)} />
           </VStack>
         } />}
     </VStack>

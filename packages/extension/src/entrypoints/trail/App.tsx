@@ -31,9 +31,9 @@ export function App() {
             <Text type="supporting">See how one page led to the next.</Text>
           </VStack>
           <HStack align="center" wrap="wrap" gap={2}>
-            <Button label="Yesterday" size="sm" variant={day === yesterday ? 'secondary' : 'ghost'}
+            <Button label="Yesterday" size="sm" variant={day === yesterday ? 'primary' : 'secondary'}
               aria-pressed={day === yesterday} onClick={() => setDay(yesterday)} />
-            <Button label="Today" size="sm" variant={day === today ? 'secondary' : 'ghost'}
+            <Button label="Today" size="sm" variant={day === today ? 'primary' : 'secondary'}
               aria-pressed={day === today} onClick={() => setDay(today)} />
             <DateInput label="Trail day" isLabelHidden size="sm" format="date_weekday" value={day} max={today}
               containerClassName="w-48" onChange={(value) => { if (value) setDay(value); }} />

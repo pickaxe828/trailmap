@@ -11,6 +11,7 @@ base('Obsidian sync waits for the companion, but both settings exports download'
   await expect(settings.getByRole('button', { name: 'Save vault folder' })).toBeDisabled();
   await settings.screenshot({ path: join(process.env.PROOF_DIR ?? info.outputDir, 'sync-waiting.png') });
 
+  await settings.getByRole('tab', { name: 'Exports' }).click();
   for (const [label, filename] of [
     ['Export all as Markdown (zip)', 'trailmap-markdown.zip'], ['Export JSON dump', 'trailmap.json'],
   ] as const) {
@@ -75,6 +76,7 @@ test.describe('with the installed companion and a mock model', () => {
     await expect(settings.getByText('Obsidian sync is up to date.')).toBeVisible();
 
     const panel = await openExtensionPage('sidepanel.html');
+    await settings.getByRole('tab', { name: 'Model providers' }).click();
     await signInToMockChatGpt(context, settings);
     const article = await context.newPage();
     await article.goto(fixtureUrl('learn.test', '/content/article.html'));
@@ -103,11 +105,13 @@ test.describe('with the installed companion and a mock model', () => {
     await expeditionPage.getByRole('button', { name: 'Save field notes' }).click();
     await expect.poll(() => readFile(join(vault, originalPath), 'utf8')).toContain('Keep this observation.');
 
+    await settings.getByRole('tab', { name: 'Exports' }).click();
     const zipStarted = settings.waitForEvent('download');
     await settings.getByRole('button', { name: 'Export all as Markdown (zip)' }).click();
     const zip = await zipStarted;
     expect(execFileSync('unzip', ['-p', (await zip.path())!, originalPath], { encoding: 'utf8' })).toBe(await readNote('expedition'));
     expect(execFileSync('unzip', ['-p', (await zip.path())!, conceptPath], { encoding: 'utf8' })).toBe(await readNote('concept'));
+    await settings.getByRole('tab', { name: 'Obsidian sync' }).click();
     await expect(settings.getByText('Obsidian sync is up to date.')).toBeVisible();
     await settings.screenshot({ path: join(process.env.PROOF_DIR ?? info.outputDir, 'sync-settings.png') });
 

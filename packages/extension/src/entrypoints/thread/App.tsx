@@ -53,7 +53,7 @@ export function App() {
           <LayoutHeader padding={4} hasDivider>
             <HStack gap={4} justify="between" align="end" wrap="wrap">
               <VStack gap={1}>
-                <Link href={journal}>Journal</Link>
+                <Link hasUnderline href={journal}>Journal</Link>
                 <Heading level={1}>{thread?.title ?? 'Thread'}</Heading>
                 {thread?.question && thread.question !== thread.title && <Text>{thread.question}</Text>}
                 {thread && <HStack gap={2} wrap="wrap">

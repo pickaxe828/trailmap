@@ -64,7 +64,7 @@ export function SentToModelLog() {
     <VStack as="section" aria-labelledby="sent-to-model" gap={2}>
       <HStack gap={2} wrap="wrap" align="center" justify="between">
         <Heading level={2} id="sent-to-model">Sent-to-model log</Heading>
-        <Button label="Export" variant="secondary" isDisabled={count < 1} clickAction={exportCalls} />
+        <Button label="Export" variant="secondary" size="sm" isDisabled={count < 1} clickAction={exportCalls} />
       </HStack>
       <Text as="p">
         This log is stored in this browser. It records the exact text and provider for each model attempt, including retries and failed calls.
@@ -108,7 +108,7 @@ export function SentToModelLog() {
           </Collapsible>
         ))}
       </CollapsibleGroup>}
-      {entries && entries.length > limit && <Button label="Show more calls" onClick={() => setLimit(limit + PAGE_SIZE)} />}
+      {entries && entries.length > limit && <Button label="Show more calls" size="sm" onClick={() => setLimit(limit + PAGE_SIZE)} />}
     </VStack>
   );
 }

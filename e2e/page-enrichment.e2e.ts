@@ -70,7 +70,7 @@ test('queued Page notes survive a worker restart, filter at dispatch, and log ev
   ]);
 
   const settingsTab = context.waitForEvent('page');
-  await panel.getByRole('link', { name: 'Sent-to-model log' }).click();
+  await panel.getByRole('link', { name: 'See what was sent' }).click();
   const settings = await settingsTab;
   const log = settings.getByRole('region', { name: 'Sent-to-model log' });
   const attempts = await (await fetch(mockOrigin + '/test/calls')).json() as {

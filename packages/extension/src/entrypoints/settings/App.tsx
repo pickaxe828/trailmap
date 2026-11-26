@@ -1,11 +1,9 @@
-import { Divider } from '@astryxdesign/core/Divider';
 import { Heading } from '@astryxdesign/core/Heading';
-import { HStack } from '@astryxdesign/core/HStack';
 import { Layout, LayoutContent, LayoutHeader } from '@astryxdesign/core/Layout';
-import { Link } from '@astryxdesign/core/Link';
+import { Tab, TabList } from '@astryxdesign/core/TabList';
 import { Text } from '@astryxdesign/core/Text';
 import { VStack } from '@astryxdesign/core/VStack';
-import { useEffect } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { CompanionSetup } from '../../companion/CompanionSetup';
 import { useCompanionStatus } from '../../companion/useCompanionStatus';
 import { ProviderSettings } from '../../llm/ProviderSettings';
@@ -22,7 +20,13 @@ const sections = [
   ['privacy', 'Privacy'], ['companion', 'Companion'], ['model-providers', 'Model providers'],
   ['obsidian', 'Obsidian sync'], ['history-import', 'History import'], ['exports', 'Exports'],
   ['sent-to-model', 'Sent-to-model log'], ['diagnostics', 'Diagnostics'],
-];
+] as const;
+
+type Section = typeof sections[number][0];
+
+function sectionFromUrl(): Section {
+  return sections.find(([id]) => `#${id}` === location.hash)?.[0] ?? 'privacy';
+}
 
 async function readExtractionFailures(db: TrailmapDb) {
   let count = 0;
@@ -44,10 +48,35 @@ function CaptureDiagnostics() {
 
 export function App() {
   const companion = useCompanionStatus();
+  const [section, setSection] = useState(sectionFromUrl);
   useEffect(() => {
-    // WXT mounts React after the browser may have tried the initial fragment.
-    document.getElementById(location.hash.slice(1))?.scrollIntoView();
+    const syncSection = () => setSection(sectionFromUrl());
+    window.addEventListener('hashchange', syncSection);
+    return () => window.removeEventListener('hashchange', syncSection);
   }, []);
+
+  function selectSection(value: string) {
+    const next = sections.find(([id]) => id === value)?.[0];
+    if (!next || next === section) return;
+    history.pushState(null, '', `#${next}`);
+    setSection(next);
+  }
+
+  const panels = {
+    privacy: <PrivacySettings />,
+    companion: (
+      <VStack as="section" id="companion" gap={2}>
+        <Heading level={2}>Set up the companion</Heading>
+        <CompanionSetup companion={companion} />
+      </VStack>
+    ),
+    'model-providers': <ProviderSettings companion={companion} />,
+    obsidian: <VaultSettings companion={companion} headingLevel={2} />,
+    'history-import': <HistoryImportSettings />,
+    exports: <ExportSettings />,
+    'sent-to-model': <SentToModelLog />,
+    diagnostics: <CaptureDiagnostics />,
+  } satisfies Record<Section, ReactNode>;
 
   return (
     <Layout contentWidth="44rem"
@@ -56,34 +85,20 @@ export function App() {
           <VStack gap={2}>
             <Heading level={1}>Settings</Heading>
             <Text as="p" type="supporting">Manage what Trailmap records and how it writes, syncs, and exports your notes.</Text>
-            <HStack as="nav" aria-label="Settings sections" gap={2} wrap="wrap">
-              {sections.map(([id, label]) => <Link key={id} href={`#${id}`}>{label}</Link>)}
-            </HStack>
+            <TabList role="tablist" aria-label="Settings sections" size="sm" hasDivider value={section} onChange={selectSection}>
+              {sections.map(([id, label]) => <Tab key={id} value={id} label={label} panelId={`panel-${id}`} />)}
+            </TabList>
           </VStack>
         </LayoutHeader>
       )}
       content={(
         <LayoutContent padding={4} role="main">
-          <VStack gap={4}>
-            <PrivacySettings />
-            <Divider />
-            <VStack as="section" id="companion" gap={2}>
-              <Heading level={2}>Set up the companion</Heading>
-              <CompanionSetup companion={companion} />
+          {sections.map(([id, label]) => (
+            <VStack as="section" key={id} id={`panel-${id}`} role="tabpanel" aria-label={label}
+              tabIndex={id === section ? 0 : undefined} className={id === section ? undefined : 'hidden'}>
+              {id === section && panels[id]}
             </VStack>
-            <Divider />
-            <ProviderSettings companion={companion} />
-            <Divider />
-            <VaultSettings companion={companion} headingLevel={2} />
-            <Divider />
-            <HistoryImportSettings />
-            <Divider />
-            <ExportSettings />
-            <Divider />
-            <SentToModelLog />
-            <Divider />
-            <CaptureDiagnostics />
-          </VStack>
+          ))}
         </LayoutContent>
       )}
     />

@@ -14,8 +14,8 @@ export function SuggestionChips({ expedition, group, merges, busy, run }: {
   function chip(label: string, verb: string, action: JournalAction, target?: SuggestionTarget): ReactNode {
     return <Token key={target ? `${verb}:${target.kind}:${target.id}` : verb} className="max-w-full" size="sm" label={label} endContent={
       <HStack gap={0.5} align="center">
-        <Button label={verb} aria-label={`${verb}: ${label}`} size="sm" variant="ghost" isDisabled={busy} onClick={() => void run(action)} />
-        {target && <Button label="Dismiss" aria-label={`Dismiss: ${label}`} size="sm" variant="ghost" isDisabled={busy}
+        <Button label={verb} aria-label={`${verb}: ${label}`} size="sm" isDisabled={busy} onClick={() => void run(action)} />
+        {target && <Button label="Dismiss" aria-label={`Dismiss: ${label}`} size="sm" isDisabled={busy}
           onClick={() => void run({ action: 'dismiss', expeditionId: expedition.id, target })} />}
       </HStack>
     } />;

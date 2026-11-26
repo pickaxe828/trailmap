@@ -64,13 +64,13 @@ export function SessionTimeline({ sessions, recurrences, onDetach }: Pick<Thread
             <HStack gap={2} justify="between" wrap="wrap" data-session-anchor={expedition.id}>
               <VStack gap={1}>
                 <Text type="supporting">{formatExpeditionDate(expedition.startedAt)}</Text>
-                <Heading level={3}><Link href={expeditionHref(expedition.id)}>{expedition.title}</Link></Heading>
+                <Heading level={3} maxLines={2} className="wrap-anywhere"><Link hasUnderline href={expeditionHref(expedition.id)}>{expedition.title}</Link></Heading>
               </VStack>
-              <Button variant="ghost" size="sm" label="Detach session" onClick={() => onDetach(expedition.id)} />
+              <Button variant="destructive" size="sm" label="Detach session" onClick={() => onDetach(expedition.id)} />
             </HStack>
             {recurrences.filter(({ to }) => to === expedition.id).map(({ from, pages, concepts }) => (
               <VStack gap={1} key={from} padding={2} className="rounded-lg border border-border bg-body">
-                <Text type="supporting">From <Link href={`#${encodeURIComponent(sessionAnchor(from))}`}>{titles.get(from)}</Link></Text>
+                <Text type="supporting">From <Link hasUnderline href={`#${encodeURIComponent(sessionAnchor(from))}`}>{titles.get(from)}</Link></Text>
                 {!!pages.length && <Text type="supporting">Revisited: {pages.join(', ')}</Text>}
                 {!!concepts.length && <Text type="supporting">Concepts returned: {concepts.join(', ')}</Text>}
               </VStack>

@@ -64,6 +64,7 @@ test('Google results and passive AI Mode never store reply text; a broken typed 
   expect(JSON.stringify(await readCapture('pages'))).not.toMatch(/Unsent draft|Sidebar junk|Overview-only answer/);
   const diagnostics = settings.locator('#diagnostics');
   if (process.env.PROOF_DIR) await diagnostics.screenshot({ path: join(process.env.PROOF_DIR, 'diagnostics.png') });
+  await settings.getByRole('tab', { name: 'Privacy' }).click();
   await settings.locator('#privacy').getByRole('textbox', { name: 'Site to skip' }).fill('google.com');
   await settings.locator('#privacy').getByRole('button', { name: /add site/i }).click();
   await expect.poll(() => readCapture('pages')).toEqual([]);

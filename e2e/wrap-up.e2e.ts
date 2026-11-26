@@ -67,7 +67,7 @@ test.describe('automatic wrap-up', () => {
   test('Expedition inactivity writes field notes while the computer stays active', async ({
     context, openExtensionPage, fixtureUrl, readCapture, serviceWorker,
   }, testInfo) => {
-    const settings = await openExtensionPage('settings.html');
+    const settings = await openExtensionPage('settings.html#model-providers');
     await signInToMockChatGpt(context, settings);
     const research = await context.newPage();
     await research.goto(fixtureUrl('learn.test', '/content/article.html'));
@@ -98,6 +98,7 @@ test.describe('automatic wrap-up', () => {
     await expect.poll(async () => (await readCapture('expeditions')).length).toBe(2);
 
     await settings.bringToFront();
+    await settings.getByRole('tab', { name: 'Privacy' }).click();
     const inactivity = settings.getByLabel('Expedition inactivity');
     await expect(inactivity).toHaveValue('20');
     const topicSwitch = settings.getByLabel('Topic switch');

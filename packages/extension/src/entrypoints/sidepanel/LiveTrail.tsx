@@ -61,7 +61,7 @@ export function LiveTrail({ trail, currentVisitId, priorReads }: {
       label: (
         <VStack gap={0.5}>
           <HStack gap={1} align="center" wrap="wrap">
-            <Text weight={here ? 'semibold' : undefined}>{visit.title || visit.url}</Text>
+            <Text display="block" maxLines={2} className="min-w-0" weight={here ? 'semibold' : undefined}>{visit.title || visit.url}</Text>
             {here && <Text type="supporting">You are here</Text>}
             {visit.starred && <Text type="supporting">Key page</Text>}
             {prior && <Token size="sm" label={`Read on ${readDate.format(prior.at)}`} />}
@@ -74,8 +74,8 @@ export function LiveTrail({ trail, currentVisitId, priorReads }: {
       children: children.length > 0 ? children.map((child) => toItem(child, group)) : undefined,
       isExpanded: true,
       endContent: (
-        <HStack gap={1} align="center">
-          <Button size="sm" variant="ghost" label={visit.starred ? 'Unstar page' : 'Star page'}
+        <HStack gap={1} align="center" className="shrink-0">
+          <Button size="sm" label={visit.starred ? 'Unstar page' : 'Star page'}
             tooltip={visit.starred ? 'Remove key page' : 'Mark as a key page'}
             clickAction={() => run(correct('star', { visitId: visit.id, starred: !visit.starred }))} />
           <MoreMenu size="sm" alignment="end" label={`Actions for ${visit.title || host}`} items={[
@@ -118,8 +118,8 @@ export function LiveTrail({ trail, currentVisitId, priorReads }: {
               <TreeList key={expedition.id}
                 header={
                   <HStack gap={1} align="center" justify="between">
-                    <Heading level={3}>{expedition.title}</Heading>
-                    <HStack gap={1} align="center">
+                    <Heading level={3} maxLines={2} className="min-w-0">{expedition.title}</Heading>
+                    <HStack gap={1} align="center" className="shrink-0">
                     <Button size="sm" label="Wrap up" aria-label={`Wrap up expedition ${expedition.title}`}
                       clickAction={async () => { await chrome.runtime.sendMessage({ type: WRAP_UP_MESSAGE, expeditionId: expedition.id }).catch(() => {}); }} />
                     <MoreMenu size="sm" alignment="end" label={`Actions for expedition ${expedition.title}`} items={[

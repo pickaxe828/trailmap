@@ -73,7 +73,7 @@ export function ChatGptConnection() {
           isLoading={status.signingIn}
         />
       )}
-      {status?.signedIn && <Button label="Sign out" variant="ghost" size="sm" clickAction={signOut} />}
+      {status?.signedIn && <Button label="Sign out" variant="secondary" size="sm" clickAction={signOut} />}
       {status?.signingIn && <Text role="status" type="supporting">Finish signing in in the ChatGPT tab.</Text>}
       {error && <Text role="alert" type="supporting">{error}</Text>}
     </VStack>
