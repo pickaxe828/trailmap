@@ -38,7 +38,7 @@ test('onboarding detects the companion live and offers optional setup', async ({
   await expect(onboarding.getByRole('heading', { name: 'Model providers' })).toBeVisible();
   await onboarding.getByRole('button', { name: 'Next: Optional extras' }).click();
   await expect(onboarding.getByRole('heading', { name: 'Obsidian sync' })).toBeVisible();
-  await expect(onboarding.getByRole('button', { name: 'Import history' })).toBeDisabled();
+  await expect(onboarding.getByRole('button', { name: 'Import history' })).toBeEnabled();
   await onboarding.screenshot({ path: process.env.PROOF_DIR
     ? join(process.env.PROOF_DIR, 'optional-extras.png') : info.outputPath('optional-extras.png') });
   await onboarding.getByRole('link', { name: 'Finish setup' }).click();
