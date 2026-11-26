@@ -35,7 +35,8 @@ test('Wrap up titles the Expedition, writes field notes with citations and loose
   });
   expect(expedition!.fieldNotes).toContain('## Key ideas');
   expect(expedition!.fieldNotes).toContain('A tombstone records that an item was deleted. ([Deleting items in a replicated list](');
-  expect(expedition!.fieldNotes).toContain('Opened but never read: [');
+  expect(expedition!.unreadStops?.length).toBeGreaterThan(0);
+  expect(expedition!.fieldNotes).not.toContain('Opened but never read:');
 
   const badge = async () => (await serviceWorker()).evaluate(async () => {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });

@@ -71,6 +71,7 @@ test('two topics stay separate and related searches and linked pages join after 
 
 test.describe('real local Embedder integration', () => {
   test.use({ realEmbedder: true });
+  test.skip(process.env.TRAILMAP_REAL_MINILM !== '1' || !!process.env.CI, 'Manual MiniLM smoke test; not part of CI');
 
   test('offscreen MiniLM returns normalized vectors and caches model files', async ({ serviceWorker }) => {
     const worker = await serviceWorker();

@@ -78,7 +78,28 @@ test('the side panel pauses immediately, resumes on the next navigation and upda
   expect(await readCapture('highlights')).toEqual([]);
 });
 
-test('the side panel skips a site across navigations without forgetting earlier Visits', async ({
+test('a password field in a frame purges the top Visit and its captured Page', async ({ context, fixtureUrl, readCapture, serviceWorker }) => {
+  const page = await context.newPage();
+  const top = fixtureUrl('learn.test', '/content/article.html');
+  const child = fixtureUrl('frame.test', '/login.html');
+  await page.route(child, (route) => route.fulfill({ contentType: 'text/html', body: '<input type="password">' }));
+  await page.goto(top);
+  await expect.poll(async () => (await readCapture('pages')).some(({ text }) => text.includes('Tombstones'))).toBe(true);
+  await page.evaluate((url) => {
+    const frame = document.createElement('iframe');
+    frame.src = url;
+    document.body.append(frame);
+  }, child);
+  const worker = await serviceWorker();
+  await expect.poll(() => worker.evaluate(async (url) => {
+    const tab = (await chrome.tabs.query({})).find((tab) => tab.url === url);
+    return tab?.id === undefined ? undefined : chrome.action.getBadgeText({ tabId: tab.id });
+  }, top)).toBe('SKIP');
+  await expect.poll(async () => (await readCapture('visits')).some(({ url }) => url === top)).toBe(false);
+  expect(await readCapture('pages')).toEqual([]);
+});
+
+test('the side panel purges earlier Visits and Queries for a skipped site and prevents new capture', async ({
   context, fixtureUrl, openExtensionPage, readCapture, serviceWorker,
 }, testInfo) => {
   const panel = await openExtensionPage('sidepanel.html');
@@ -106,13 +127,13 @@ test('the side panel skips a site across navigations without forgetting earlier 
 
   const allowed = fixtureUrl('learn.test', '/trail/start.html');
   await page.goto(allowed);
-  await expect.poll(async () => (await readCapture('visits')).map((row) => row.url).sort()).toEqual([first, allowed].sort());
-  expect((await readCapture('queries')).map((row) => row.q)).toEqual(['before']);
+  await expect.poll(async () => (await readCapture('visits')).map((row) => row.url)).toEqual([allowed]);
+  expect(await readCapture('queries')).toEqual([]);
 
   await page.goto(second);
   await expect(site).not.toBeChecked();
   await site.evaluate((input: HTMLInputElement) => input.click());
   await expect(site).toBeChecked();
   await page.goto('https://www.google.com/search?q=after');
-  await expect.poll(async () => (await readCapture('queries')).map((row) => row.q).sort()).toEqual(['after', 'before']);
+  await expect.poll(async () => (await readCapture('queries')).map((row) => row.q).sort()).toEqual(['after']);
 });

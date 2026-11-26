@@ -1,4 +1,5 @@
 import type { Page } from '@playwright/test';
+import type { RecorderState } from '../packages/extension/src/capture/state-store';
 import { FAKE_HOSTS } from './constants';
 import { expect, test } from './fixtures';
 
@@ -75,23 +76,37 @@ test('the side panel lists today\'s Visits indented under their parents and upda
   expect(articleBox!.x).toBeGreaterThan(startBox!.x);
 });
 
-test('active time stops while the tab is in the background', async ({ context, fixtureUrl, readVisits }) => {
-  const startUrl = fixtureUrl(FAKE_HOSTS.learn, START);
-  const otherUrl = fixtureUrl(FAKE_HOSTS.learn, '/trail/other.html');
-  const a = await openStart(context, fixtureUrl);
-  await visitFor(readVisits, startUrl);
-  await a.waitForTimeout(1500);
+test.describe('controlled capture clock', () => {
+  test.use({ controlledCaptureClock: true });
 
-  const b = await context.newPage(); // takes over as the active tab, so A is hidden
-  await b.goto(otherUrl);
-  await visitFor(readVisits, otherUrl);
-  const whileInFront = (await visitFor(readVisits, startUrl)).activeMs;
-  expect(whileInFront).toBeGreaterThanOrEqual(1000);
+  test('active time stops while the tab is in the background', async ({ context, fixtureUrl, readVisits, serviceWorker }) => {
+    const startUrl = fixtureUrl(FAKE_HOSTS.learn, START);
+    const otherUrl = fixtureUrl(FAKE_HOSTS.learn, '/trail/other.html');
+    const worker = await serviceWorker();
+    const advance = (ms: number) => worker.evaluate((ms) => {
+      (globalThis as typeof globalThis & { captureTestTime: number }).captureTestTime += ms;
+    }, ms);
+    const active = (tabId: number) => worker.evaluate(async (tabId) => {
+      const stored = await chrome.storage.session.get('trailmap.recorderState');
+      const state = stored['trailmap.recorderState'] as RecorderState | undefined;
+      return state?.activeTabByWindow[state.focusedWindowId] === tabId && !state.hiddenTabs.includes(tabId);
+    }, tabId);
 
-  await b.waitForTimeout(2500);
-  await a.bringToFront();
-  await expect.poll(async () => (await visitFor(readVisits, otherUrl)).activeMs).toBeGreaterThanOrEqual(2000);
-  expect((await visitFor(readVisits, startUrl)).activeMs).toBe(whileInFront);
+    const a = await openStart(context, fixtureUrl);
+    const first = await visitFor(readVisits, startUrl);
+    await expect.poll(() => active(first.tabId)).toBe(true);
+    await advance(1_500);
+    const b = await context.newPage();
+    await b.goto(otherUrl);
+    const second = await visitFor(readVisits, otherUrl);
+    await expect.poll(() => active(second.tabId)).toBe(true);
+    expect((await visitFor(readVisits, startUrl)).activeMs).toBe(1_500);
+    await advance(2_500);
+    await a.bringToFront();
+    await expect.poll(() => active(first.tabId)).toBe(true);
+    expect((await visitFor(readVisits, otherUrl)).activeMs).toBe(2_500);
+    expect((await visitFor(readVisits, startUrl)).activeMs).toBe(1_500);
+  });
 });
 
 test('the tab-to-Visit mapping survives the service worker being stopped', async ({ context, fixtureUrl, readVisits, extensionId }) => {
