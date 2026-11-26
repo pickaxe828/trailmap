@@ -62,7 +62,7 @@ type Fixtures = {
    * Always includes `TRAILMAP_COMPANION_DATA_DIR` and `TRAILMAP_SECRET_STORE=file` (the real Keychain is never touched).
    */
   companionEnv: Record<string, string>;
-  /** Runs the real `trailmap-companion install --user-data-dir <userDataDir>`. Call it any time, even while the browser runs. */
+  /** Runs the real `trailmap-companion install --browser chromium --user-data-dir <userDataDir>`. Call it any time, even while the browser runs. */
   installCompanion: () => void;
   context: BrowserContext;
   extensionId: string;
@@ -131,7 +131,7 @@ export const test = base.extend<Fixtures & Options, WorkerFixtures>({
 
   installCompanion: async ({ userDataDir }, use) => {
     await use(() => {
-      execFileSync(COMPANION_BIN, ['install', '--user-data-dir', userDataDir], { stdio: 'pipe' });
+      execFileSync(COMPANION_BIN, ['install', '--browser', 'chromium', '--user-data-dir', userDataDir], { stdio: 'pipe' });
     });
   },
 

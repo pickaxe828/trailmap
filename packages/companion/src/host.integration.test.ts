@@ -122,9 +122,26 @@ test('the host exits cleanly when the browser closes its stdin', async () => {
   expect(await host.proc.exited).toBe(0);
 });
 
-test('a host started for a different origin refuses to serve', async () => {
-  const host = startHost(['chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/']);
-  expect(await host.proc.exited).not.toBe(0);
+test('the Firefox launch arguments allow Trailmap to complete the handshake', async () => {
+  const host = startHost(['/tmp/com.trailmap.companion.json', 'trailmap@pickaxe828']);
+  expect(await host.next()).toMatchObject({ type: 'event', name: 'companion.ready' });
+  host.write(encodeFrame({ type: 'companion.hello', id: 'gecko' }));
+  expect(await host.next()).toMatchObject({ type: 'companion.hello', id: 'gecko', version: expect.any(String) });
+});
+
+test.each([
+  ['chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/'],
+  ['/tmp/com.trailmap.companion.json', 'other@example.org'],
+  ['/tmp/com.trailmap.companion.json', 'other-id'],
+  ['other@example.org', 'trailmap@pickaxe828'],
+  ['trailmap@pickaxe828'],
+  [],
+])('the host refuses an unknown or missing caller (%p)', (...args) => {
+  const proc = Bun.spawn(['bun', MAIN, ...args], {
+    stdin: 'ignore', stdout: 'pipe', stderr: 'ignore',
+    env: { ...process.env, TRAILMAP_COMPANION_DATA_DIR: temp, TRAILMAP_SECRET_STORE: 'file' },
+  });
+  return expect(proc.exited).resolves.toBe(2);
 });
 
 test('vault.write atomically replaces a note in the selected folder across host restarts', async () => {
