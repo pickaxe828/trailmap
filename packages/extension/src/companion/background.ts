@@ -70,17 +70,18 @@ export function startCompanion(): void {
       respond({ ok: false, code: 'vault_unavailable', message: 'Finish choosing the vault folder in the other tab.' });
       return;
     }
-    async function requestAndSaveFolder() {
+    async function requestAndSaveFolder(path?: string | null) {
       selectingVault = true;
       try {
-        const response = await companion.request('vault.setFolder', payload);
+        const response = await companion.request('vault.setFolder', { path });
         if (!response.cancelled) await chrome.storage.local.set({ [VAULT_FOLDER_KEY]: response.folder });
         return response;
       } finally {
         selectingVault = false;
       }
     }
-    const operation = type === 'vault.setFolder' ? requestAndSaveFolder() : companion.request(type, payload);
+    const operation = request.data.type === 'vault.setFolder'
+      ? requestAndSaveFolder(request.data.path) : companion.request(type, payload);
     void operation.then(
       (response) => respond({ ok: true, response }),
       (error: unknown) => respond({
