@@ -1,0 +1,57 @@
+import type { Expedition, Thread } from '@trailmap/shared';
+import { displayFieldNotes } from '../wrapup/markdown';
+
+export type NoteLink = { path: string; title: string };
+export type MarkdownNote = NoteLink & { markdown: string };
+
+export async function sha256(text: string): Promise<string> {
+  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+/** Titles can change; note paths and incoming wikilinks should not. */
+export async function notePath(kind: 'expedition' | 'concept' | 'thread', id: string): Promise<string> {
+  return `trailmap-${kind}-${await sha256(id)}.md`;
+}
+
+export function wikilink({ path, title }: NoteLink): string {
+  const label = title.replace(/[\[\]|#^\\\s]/g, ' ').replace(/ +/g, ' ').trim();
+  const target = path.replace(/\.md$/, '');
+  return label ? `[[${target}|${label}]]` : `[[${target}]]`;
+}
+
+export function frontmatter(fields: Record<string, string | string[] | null>): string {
+  const lines = Object.entries(fields).map(([key, value]) => {
+    const scalar = JSON.stringify(value).replace(/[\u007f-\u009f\u2028\u2029]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`);
+    return `${key}: ${scalar}`;
+  });
+  return `---\n${lines.join('\n')}\n---\n`;
+}
+
+const headingTitle = (title: string) => title.replace(/\s+/g, ' ').trim().replace(/[\\`*_{}\[\]<>#~&]/g, '\\$&');
+
+export function renderThreadNote(thread: Thread, sessions: readonly NoteLink[]): string {
+  const metadata = frontmatter({ title: thread.title, aliases: [thread.title], kind: 'thread', question: thread.question,
+    lastActiveAt: new Date(thread.lastActiveAt).toISOString() });
+  const sections = [`# ${headingTitle(thread.title) || 'Thread'}`, thread.livingNote,
+    sessions.length ? `## Sessions\n\n${sessions.map((session) => `- ${wikilink(session)}`).join('\n')}` : ''];
+  return `${metadata}\n${sections.flatMap((section) => section?.trimEnd() || []).join('\n\n')}\n`;
+}
+
+export function renderExpeditionNote(
+  expedition: Expedition, sourceUrls: readonly string[], concepts: readonly NoteLink[], notes: readonly string[] = [],
+): string {
+  const metadata = frontmatter({
+    title: expedition.title,
+    question: expedition.drivingQuestion,
+    startedAt: new Date(expedition.startedAt).toISOString(),
+    endedAt: expedition.endedAt === null ? null : new Date(expedition.endedAt).toISOString(),
+    kind: expedition.kind,
+    sourceUrls: [...new Set(sourceUrls)],
+  });
+  const title = headingTitle(expedition.title);
+  const sections = [title ? `# ${title}` : '# Expedition', displayFieldNotes(expedition),
+    notes.length ? `## Notes\n\n${notes.join('\n\n')}` : '',
+    concepts.length ? `## Concepts\n\n${concepts.map((concept) => `- ${wikilink(concept)}`).join('\n')}` : ''];
+  return `${metadata}\n${sections.flatMap((section) => section?.trimEnd() || []).join('\n\n')}\n`;
+}

@@ -64,7 +64,7 @@ The rule: **nothing requires your action.** Every button is a correction or an e
 - **Coming back to a topic days later (M3):** the side panel shows "Picking up: *CRDTs* (last session 4 days ago)", with what you found last time and your loose ends. Pages you've already read are marked, so you don't reread them by accident.
 
 **3. When an expedition ends (automatic)**
-- The expedition closes after 30 minutes idle, or when you click **Wrap up**.
+- The expedition closes automatically when you stop working on it. You can also click **Wrap up** to close it now.
 - Field notes are written in the background and appear in the Journal and in Obsidian.
 - The toolbar icon shows a small count of new notes. There are no pop-ups.
 
@@ -154,15 +154,15 @@ capture ──▶ filter ──▶ segment ──▶ enrich (LLM) ──▶ reso
 ### 4.2 Filter (keeping the mess out)
 - **Engagement levels:** `bounced` is under 10 s active and no scroll. `skimmed` is 10–60 s. `read` is more than 60 s active, or more than 50% scrolled, or any selection or copy. Bounced visits stay as faint nodes in the trail and are never sent to the LLM.
 - **Default deny-list:** mail, banking, calendars, chat, social feeds, checkout pages, localhost and intranet hosts, and any page with a password field.
-- **Per-site toggle** in the side panel, plus a global pause hotkey.
+- **Per-site toggle** in the side panel, plus a global pause hotkey. Skipping a site purges its Trailmap records and blocks future capture; pausing does not erase previous history.
 - **URL canonicalization:** use `rel=canonical`, drop `utm_*` parameters and session tokens.
 
 ### 4.3 Segment into expeditions (the make-or-break step)
 Rules, in order:
 1. **Lineage wins.** A visit reached by link, or opened from another tab, joins its parent's expedition.
 2. **New roots** are typed URLs, new searches and bookmarks. Embed the root's title or query and compare it with the centroids of expeditions open in the last 2 h. Join the best match if cosine is above about 0.6; otherwise start a new expedition. Several expeditions can run in parallel tabs at once.
-3. **30 min idle** closes every open expedition.
-4. **On close,** one LLM pass gives the expedition a title, states its driving question, classifies it as `learning` or `errand`, and suggests merges with same-day expeditions on the same topic.
+3. **Close rules.** An expedition closes when it has had neither a new Visit nor active reading time for 20 minutes. Starting a new expedition also closes other open expeditions that have been inactive for at least 10 minutes. Both thresholds are adjustable in recording Settings and take effect without reloading. Browser startup and service-worker wake close expeditions left open from a previous browser session; waking the worker does not close still-active expeditions from the current session. Thirty minutes of computer idle or a screen lock closes every open expedition. **Wrap up** closes just the selected expedition now. Record `endedAt` at the last known activity, not at the time of the check. One close alarm tracks the earliest pending deadline.
+4. **On close,** queue one durable wrap-up job in the same transaction as the close. One LLM pass gives the expedition a title, states its driving question, classifies it as `learning` or `errand`, and suggests merges with same-day expeditions on the same topic.
 5. **Manual fixes** are first-class: merge, split here, or drag a page to another expedition. Log every correction so the thresholds can be tuned later.
 
 Errand expeditions (shopping, admin) collapse into the Journal and stay out of the Atlas.
@@ -188,6 +188,8 @@ Input: title, URL, Readability text capped at about 3k tokens, any highlights (m
 - Every concept edge carries evidence visit IDs, so you can always click through to "where did I learn this?"
 
 ### 4.6 Synthesize field notes (when an expedition closes, or on demand)
+Automatic closure (§4.3) and **Wrap up** use the same durable job. After wrap-up, queue field notes for learning expeditions with eligible content. Jobs survive service-worker restarts; the end time used by thread matching is the expedition's last activity.
+
 Input: the expedition's page summaries, takeaways and highlights, in trail order. Output is Markdown:
 - **Question:** what you set out to learn.
 - **What you found:** a short answer.
@@ -299,14 +301,15 @@ Keep it as a fallback only, in case OpenAI ever accepts custom schemes and loopb
 
 | Message | What it does |
 |---|---|
-| `auth.status` / `auth.signIn` / `auth.signOut` | ChatGPT sign-in (§7.1). Returns the account email and whether plan usage is on. Never returns tokens. |
-| `keys.set` | Saves an Anthropic API key to the Keychain. The extension never stores the key. |
-| `llm.models` | Lists the models available from each connected provider |
-| `llm.complete` | Runs one model call (prompt, input, JSON schema). Refreshes tokens when needed. Returns validated JSON, or a typed error from the §7.1 table. |
-| `vault.write` | Writes a Markdown file, only inside the chosen Obsidian folder |
+| `auth.signIn` / `auth.status` / `auth.signOut` | Open an authorize URL, read the account status, or end the session (§7.1). The companion pushes `auth.completed` when sign-in succeeds. Tokens stay in the companion. |
+| `keys.set` / `keys.status` | Saves the Anthropic API key to the companion's secret store and reports whether a key is saved. The extension does not persist the key; the companion never returns it. |
+| `llm.models` | Lists displayable `{ provider, slug, displayName }` models from all connected providers. Reports provider status separately so an unavailable provider doesn't hide the other catalogs. |
+| `llm.complete` | Takes `{ provider?, task, model?, instructions, input, schema, schemaName }`. The prompt and input are strings; pass a JSON Schema 2020-12 object (e.g. from Zod). Returns `{ output }` only after validation, or a typed error. |
+| `vault.write` | Writes a Markdown file, only inside the chosen Obsidian folder. |
+| `vault.remove` | Removes a stale generated Trailmap note after Forget or reconciliation, only in the pinned Obsidian folder. Accepts only generated flat Markdown filenames, refuses symlinks and folder changes, and removes the file only if its digest matches the last generated content. |
 
 - **No general-purpose commands.** There is nothing like "fetch any URL" or "read any file", so a bug in the extension can't turn the companion into a general proxy. Every incoming message is checked against the shared Zod schemas.
-- **Secrets** live in the macOS Keychain. The `security` command-line tool is enough for the prototype.
+- **Secrets** on macOS live in owner-only, AES-256-GCM encrypted files in the companion data dir. Only the data key is written to Keychain via `security` on stdin.
 - **Browsing data stays in the extension.** Visits, pages and the graph remain in IndexedDB. Moving them into SQLite in the companion is possible later, but not needed now.
 - **The extension still works without the companion.** Capture, trails and expeditions run without it, and so does Chrome's on-device model. Cloud and Ollama AI features and Obsidian sync need it.
 - **Distribution:** sharing the binary beyond your own machine means code-signing and notarizing it on macOS. For a personal prototype, building it locally avoids that.
@@ -330,58 +333,60 @@ Assumed volume: about 50 enriched pages a day (about 3k tokens in and 500 out ea
 
 ### 7.1 Sign in with ChatGPT (use your ChatGPT plan instead of an API key)
 
-OpenAI added plan usage to Sign in with ChatGPT at DevDay (2026-09-29).
-- **Who can use it:** eligible **Plus and Pro** users. Each user sets a **weekly cap for each app** they authorize.
-- **Open-source and locally hosted apps** can use it without approval or a client secret. This is the path Trailmap fits.
-- **Paid or hosted apps** must go through OpenAI's interest form.
+- Eligible **Plus and Pro** subscribers set a weekly usage cap for each app. Plus also has a five-hour limit shared across apps. ChatGPT Settings → Usage shows the user's caps and credit settings. [OpenAI accounts and sessions](https://developers.openai.com/siwc/token-sharing-open-source/profiles-and-sessions#tracking-usage)
+- Trailmap uses the public client flow for open-source and locally hosted apps. It uses dynamic registration without a client secret. Paid or hosted integrations use OpenAI's interest form. [OpenAI open-source integration overview](https://developers.openai.com/siwc/token-sharing-open-source)
 
-**Sign-in flow.** The companion (§6.1) does all the OAuth work. The extension only opens a tab.
-1. In onboarding or Settings, the user clicks **Continue with ChatGPT**. OpenAI requires that wording or "Sign in with ChatGPT". The extension sends `auth.signIn` to the companion.
-2. The companion starts a listener on `http://127.0.0.1:1455/auth/callback`, or on another free port if 1455 is busy (the Codex CLI uses it too).
-   - It builds the authorize URL (`https://auth.openai.com/api/accounts/authorize`) and hands it to the extension.
-   - The extension opens it in a normal tab, where you're probably already signed in to ChatGPT.
+**Sign-in flow**
 
-   The authorize URL carries:
-   - PKCE (`S256`) and a fresh `state` and `nonce` for every attempt.
-   - Scopes: `openid profile email offline_access resource.invoke chatgpt.tokens.use.direct`.
-   - `resource=https://api.openai.com/v1`.
-   - On first sign-in only: `client_id=dynamic_agent_client`, plus `agent_name_hint=Trailmap` and a stable `ext_agent_host_id` (a random UUID kept in storage). The callback returns an `oaiapp_…` client ID. Store it and reuse it from then on.
-3. OpenAI redirects the tab to the loopback address. There the companion:
-   - checks `state`, then exchanges the code at `https://auth.openai.com/api/accounts/oauth/token` using the PKCE verifier;
-   - verifies the ID token (issuer, audience, expiry, nonce);
-   - saves the tokens to the Keychain and shows "Signed in. You can close this tab.";
-   - closes the listener and sends `auth.completed` to the extension.
+1. In onboarding or the side panel, the user clicks **Continue with ChatGPT**. The extension sends `auth.signIn` and opens the companion's authorize URL in a normal tab.
+2. The companion starts a loopback listener at `http://127.0.0.1:1455/auth/callback`, with a free port as a fallback. The scheme, IP and path stay fixed from first registration onward. The same complete redirect URI goes into the authorize request and code exchange.
+   - Send `GET https://auth.openai.com/api/accounts/authorize` with `response_type=code`, PKCE `S256`, fresh `state` and `nonce`, and the installation's stable `ext_agent_host_id=urn:uuid:<uuidv4>`.
+   - Request `openid profile email offline_access resource.invoke chatgpt.tokens.use.direct` and `resource=https://api.openai.com/v1`.
+   - The first registration sends `client_id=dynamic_agent_client` and `agent_name_hint=Trailmap`. The callback supplies the issued `oaiapp_…` client ID. Returning sign-ins reuse that registration and can send a verified email as `login_hint`. OpenAI also supports a retained `id_token_hint` to skip account selection. Trailmap uses the documented account-selector flow to keep the ID token out of the extension and browser.
+3. Validate the callback's `state` before processing its result. A state-matched OAuth error ends the attempt. Enforce one exchange per attempt. For a returning sign-in, reject a callback that supplies a different client ID.
+   - POST a form-encoded `authorization_code` grant to `https://auth.openai.com/api/accounts/oauth/token` with the issued client ID, code, verifier, exact redirect URI and resource.
+   - Verify the ID token against the issuer's discovery JWKS and check the issuer, audience, expiry and nonce. Use its verified subject as the account identity. Check that a returning account matches the registration before replacing credentials. Treat email as verified only when the token marks it verified.
+   - Store the validated identity, installed client ID, tokens and expiry in the companion's secret store. Derive account status from the token response's granted scopes. Keep the sign-in with plan usage off if `chatgpt.tokens.use.direct` is absent. An explicit attempt to enable the grant requests consent with the complete scope set.
+   - Close the listener, show "Signed in. You can close this tab.", and emit `auth.completed`. The listener also closes after timeout, cancellation or a failure on the matched callback.
 
-   The listener binds to 127.0.0.1 only, is open only during sign-in, and accepts exactly one request whose `state` matches. This is the redirect OpenAI documents, so the flow doesn't depend on anything undocumented.
-4. **Requests:** the companion calls `POST https://api.openai.com/v1/responses` with `Authorization: Bearer <access_token>`.
-   - You **must** send `store: false` and `stream: true`. Count a call as successful only when `response.completed` arrives.
-   - Fill the model picker from `GET /v1/models`, keeping entries with `visibility == "list"`. Don't hard-code model names.
-5. **Structured output** isn't documented for plan usage.
-   - First try a JSON-schema response format.
-   - If the API returns `subscription_sharing_unsupported_capability` (400), fall back to asking for JSON in the prompt, validating it with the shared Zod schema, and retrying once to repair it.
+[OpenAI registration and sign-in](https://developers.openai.com/siwc/token-sharing-open-source/sign-in) · [OpenAI ID-token validation](https://developers.openai.com/siwc/website#6-verify-the-id-token)
 
-**Token handling** (all inside the companion)
-- The access token lasts 1 h. The refresh token lasts 30 days and is **replaced on every refresh**.
-- Only one refresh may run at a time. If two model calls refreshed at once, the second would trigger `refresh_token_reused` and sign the user out. Because the companion is a single process, a simple in-process lock is enough.
-- On `invalid_grant` or any `refresh_token_*` error, clear the tokens and sign in again with the saved client ID.
-- Tokens live in the macOS Keychain. They are never logged and never sent to the extension. The extension only learns the account email and whether plan usage is on.
+**Token handling**
+
+- Access tokens last one hour. Refresh tokens last 30 days and rotate after each successful refresh. Refresh near expiry with a form-encoded `refresh_token` grant that sends the issued client ID, current refresh token and resource, and omits `scope`. Serialize refreshes and replace the saved credential set together.
+- Clear unusable credentials on `invalid_grant`, `invalid_refresh_token`, `token_expired`, or `refresh_token_*` from refresh. Sign in again with the saved client ID. Preserve credentials on temporary failures and check the configuration on `invalid_client`. A confirmed disconnect also requires a fresh sign-in.
+- On sign-out, discover the issuer's `revocation_endpoint` and POST the refresh token, `token_type_hint=refresh_token` and issued client ID as form fields. Retry temporary failures with bounded backoff. Clear local access, refresh and ID tokens while retaining the account/client mapping and stable host ID. Tell the user when revocation could not be confirmed and point them to ChatGPT Settings.
+- Store tokens in the companion's Keychain-backed encrypted files on macOS, or in the owner-only file store elsewhere. The extension receives only the URL to start sign-in, lifecycle notifications and account status. The companion provides fresh access tokens to its inference callers.
+
+[OpenAI session management](https://developers.openai.com/siwc/token-sharing-open-source/profiles-and-sessions) · [OpenAI token reference](https://developers.openai.com/siwc/token-sharing-open-source/token-reference) · [OpenAI refresh errors](https://developers.openai.com/siwc/token-sharing-open-source/errors-and-recovery#refresh-errors)
+
+**Inference and structured output**
+
+- Call `POST https://api.openai.com/v1/responses` with `Authorization: Bearer <access_token>`. Use `store: false`, `stream: true` and an array for `input`. Put instructions in `instructions` or developer messages. The route rejects system-role items and fields such as `max_output_tokens`, `temperature` and `previous_response_id`. Budget prompt size locally and follow OpenAI's supported input and tool lists. [OpenAI preview limitations](https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations)
+- Read the account's catalog from `GET /v1/models`, keeping entries with `visibility == "list"` in server order. Until per-task model settings exist, use the first listed slug when `model` is omitted. Treat only `response.completed` as success. Handle `response.failed`, `response.incomplete`, explicit errors and interrupted streams. For example, a usage limit can arrive as `response.failed` after streaming starts. [OpenAI models and inference](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference)
+- Try JSON Schema via `text.format`. Plan usage support for this format is unconfirmed. If `subscription_sharing_unsupported_capability` identifies the `text` format in `error.param`, ask for JSON in the prompt and allow one repair attempt if that output is invalid. In both paths, the companion validates against the caller's JSON Schema before returning the output; task callers can additionally check their Zod schema.
+- **Summarize this page** runs only on click. It uses the active tab's current Visit to read the Page's stored text, sends only that text as the source, and shows a summary and takeaways in the side panel. It does not re-extract text or write enrichment fields to the Page.
 
 **Errors the UI must handle**
 
-| Error | Meaning | What Trailmap does |
-|---|---|---|
-| `subscription_sharing_user_not_eligible` (403) | Plan, workspace or admin policy doesn't allow it. Business and Enterprise admins can turn third-party apps off. | Stop and explain. Offer the other providers. **Don't retry and don't loop back through sign-in.** |
-| `subscription_sharing_usage_limit_exceeded` (429) | The weekly per-app cap is used up | Pause the enrichment queue and link to ChatGPT Settings → Usage. Capture keeps running and pages wait in the queue. |
-| `subscription_sharing_usage_unavailable` (503) | Temporary outage | Back off and retry later |
-| `chatgpt.tokens.use.direct` not granted | Signed in, but the user declined plan usage | Keep the sign-in, turn the ChatGPT provider off and offer another one |
+Before the stream opens, the response may carry a `detail` field. Use the HTTP status for recovery and retain the request ID for diagnosis. A 401 calls for checking identity and grants, a 403 for checking serving policy or region, and a 503 for bounded backoff. [OpenAI errors and recovery](https://developers.openai.com/siwc/token-sharing-open-source/errors-and-recovery)
 
-**Budgeting against the weekly cap.** There is no batch discount, and the cap applies to each app. So the queue spends in priority order:
-1. `read` pages.
-2. Field notes.
-3. `skimmed` pages, only if there is room left.
-4. Concept-merge verdicts last.
+`@trailmap/shared` exports `LlmErrorCode`. Both model verbs use these stable codes in the companion error reply. `CompanionRequestError` exposes `code` and `details` (optional `requestId` and `retryAfterMs`). Other transport errors, such as `not_connected`, are separate. The companion never includes raw provider messages, page text or credentials in error replies or logs.
 
-Show how much of the week's usage Trailmap has spent, but only if the API reports it (not yet confirmed).
+| Provider condition | Trailmap code and recovery |
+|---|---|
+| `subscription_sharing_user_not_eligible` (403) | `not_eligible`: stop plan requests. Explain the plan, workspace or policy restriction; do not retry or loop through OAuth. |
+| `subscription_sharing_usage_limit_exceeded` (429) | `usage_limit_exceeded`: pause new plan requests and link to ChatGPT Settings → Usage. Preserve the queue and do not guess which cap applied or when it resets. |
+| `subscription_sharing_usage_unavailable`, `subscription_sharing_user_unavailable`, a temporary OAuth or transport failure, or a stream ending before completion | `usage_unavailable`: keep credentials and retry later with bounded backoff (the error includes a 5-second initial hint, not a reset time). |
+| `subscription_sharing_unsupported_capability` (400) | Fall back only for `text` per `error.param`. Otherwise `provider_rejected`: change the request before trying again. |
+| `subscription_sharing_route_not_supported` (403) | `provider_rejected`: verify the HTTP method and endpoint. |
+| `subscription_sharing_invalid_user` (401) or direct admission 401/403 | `provider_rejected`: check account, grant, policy or region; keep credentials unless a disconnect or terminal refresh failure is confirmed. |
+| `chatpass_v2_scope_not_authorized` or `chatpass_v2_invalid_authorization_context` (403) | `provider_rejected`: check client configuration and grants; do not silently switch billing. |
+| `chatgpt.tokens.use.direct` absent | `plan_usage_not_granted`: show plan usage as off and offer explicit reauthorization or another provider. |
+| No session or terminal refresh failure | `not_signed_in`: sign in again using the saved client registration if present. |
+| Refusal, incomplete response, or output that fails JSON or schema validation | `invalid_output`: do not present the output as a success. |
+
+**Budgeting against plan limits.** Run `read` page enrichment first, then field notes, then `skimmed` page enrichment when there's room, and concept-merge verdicts last. Link to ChatGPT Settings → Usage for app usage and credit settings.
 
 ## 8. Privacy and permissions
 
@@ -390,7 +395,7 @@ Show how much of the week's usage Trailmap has spent, but only if the API report
 - **Permissions needed:** `<all_urls>` host access, `webNavigation`, `tabs`, `history`, `idle`, `storage`, `unlimitedStorage`, `sidePanel`, `offscreen`, `alarms`, and `nativeMessaging` (to talk to the companion).
   - For personal use, load it unpacked; no store review is needed.
   - Publishing to the Chrome Web Store with `<all_urls>` and `history` means extra review and a privacy policy.
-- **Credentials** (ChatGPT tokens and API keys) live in the companion, in the macOS Keychain. The browser never stores them.
+- **Credentials** (ChatGPT tokens and API keys) live in the companion. On macOS, the Keychain protects their encryption key. The browser never stores them.
 - **The companion only accepts Trailmap.** Native Messaging only lets the extension ID in its manifest connect. The companion offers a short, fixed set of commands with no general fetch or file access. It opens a loopback port only during sign-in.
 
 ## 9. Milestones

@@ -1,0 +1,65 @@
+import { ChromeEventSource, ChromeSessionStateStore, ensureTickAlarm } from '../capture/chrome-events';
+import { VisitRecorder } from '../capture/recorder';
+import { openTrailmapDb } from '../db/db';
+import { startCorrections } from '../corrections/background';
+import { forgetCascade } from '../corrections/forget';
+import { startJobs } from '../jobs/background';
+import { startPageSummary } from '../llm/background';
+import { startSegmentation } from '../segmentation/background';
+import { startCompanion } from '../companion/background';
+import { createRecordingPrivacy } from '../privacy/background';
+import { startThreadCorrections } from '../threads/background';
+import { watchUnseenNotes } from '../wrapup/badge';
+import { startVaultSync } from '../vault/background';
+import { startHistoryImport } from '../history/background';
+import { startSearch } from '../search/background';
+
+export default defineBackground(() => {
+  startCompanion();
+
+  // Clicking the toolbar icon opens the side panel.
+  void chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+
+  // First install: open the onboarding tab.
+  chrome.runtime.onInstalled.addListener(({ reason }) => {
+    if (reason === 'install') {
+      void chrome.tabs.create({ url: chrome.runtime.getURL('/onboarding.html') });
+    }
+  });
+
+  // Capture (docs/PLAN.md §4.1). Listeners must be registered synchronously here;
+  // the recorder restores its state from `chrome.storage.session` before handling any of them.
+  const db = openTrailmapDb();
+  let unseenNotes = 0;
+  const privacy = createRecordingPrivacy(() => unseenNotes, (host) => forgetCascade(db, {
+    kind: 'forget-site', host, denied: host === undefined, targetIds: host ? [`site:${host}`] : [],
+    now: Date.now, newId: () => crypto.randomUUID(), quiet: true,
+  }));
+  const recorder = new VisitRecorder({
+    db,
+    source: new ChromeEventSource(),
+    store: new ChromeSessionStateStore(),
+    now: Date.now,
+    shouldRecord: privacy.shouldRecord,
+    policyReady: privacy.ready,
+    screenDocuments: true,
+    onPasswordStatusChanged: privacy.onPasswordStatusChanged,
+    newId: () => crypto.randomUUID(),
+  });
+  recorder.start();
+  const expeditions = startSegmentation(db, recorder, privacy.getSettings);
+  startHistoryImport(expeditions, privacy);
+  privacy.start(recorder);
+  startCorrections(db, recorder, privacy);
+  startThreadCorrections(db);
+  startPageSummary(db, recorder, privacy.getSettings);
+  startJobs(db, privacy.ready, privacy.getSettings);
+  startVaultSync(db);
+  startSearch(db);
+  // The toolbar badge counts field notes nobody has viewed yet. No pop-ups.
+  watchUnseenNotes(db, (count) => {
+    unseenNotes = count;
+    void privacy.refreshBadges().catch(() => {});
+  });
+  void ensureTickAlarm();
+});

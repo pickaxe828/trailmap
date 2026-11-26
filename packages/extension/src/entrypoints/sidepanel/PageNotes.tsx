@@ -1,0 +1,27 @@
+import { Collapsible, CollapsibleGroup } from '@astryxdesign/core/Collapsible';
+import { Heading } from '@astryxdesign/core/Heading';
+import { List, ListItem } from '@astryxdesign/core/List';
+import { Text } from '@astryxdesign/core/Text';
+import { VStack } from '@astryxdesign/core/VStack';
+import type { TrailPageNotes } from '../../trail/useLiveTrail';
+
+export function PageNotes({ pages }: { pages: TrailPageNotes[] }) {
+  if (!pages.length) return null;
+  return (
+    <VStack gap={2}>
+      <Heading level={2}>Page notes</Heading>
+      <CollapsibleGroup type="single" hasDividers defaultValue={pages[0]?.canonicalUrl}>
+        {pages.map(({ canonicalUrl, title, summary, takeaways }) => (
+          <Collapsible key={canonicalUrl} value={canonicalUrl} trigger={<Text weight="semibold">{title}</Text>}>
+            <VStack gap={1}>
+              <Text as="p">{summary}</Text>
+              <List density="compact" listStyle="disc" edge="flush" header={<Heading level={3}>Key takeaways</Heading>}>
+                {takeaways.map((takeaway, index) => <ListItem key={index} label={<Text>{takeaway}</Text>} align="first-line" />)}
+              </List>
+            </VStack>
+          </Collapsible>
+        ))}
+      </CollapsibleGroup>
+    </VStack>
+  );
+}

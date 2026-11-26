@@ -1,0 +1,37 @@
+export const JOB_PRIORITY = { readPage: 0, conceptResolution: 0, fieldNotes: 1, skimmedPage: 2, mergeVerdict: 3 } as const;
+export type JobPriority = (typeof JOB_PRIORITY)[keyof typeof JOB_PRIORITY];
+
+export type JobPayloads = {
+  page_enrichment: { canonicalUrl: string; textHash: string; visitId: string; textRevision?: number };
+  /** `endedAt` identifies the closure this job belongs to; `revision` lets a later ticket request a new pass. */
+  expedition_wrap_up: { expeditionId: string; endedAt: number; revision: number };
+  field_notes: { expeditionId: string; endedAt: number; revision: number };
+  concept_resolution: { canonicalUrl: string; visitId: string; enrichedAt: number; textHash: string; textRevision?: number };
+  merge_verdict: { pairs: { candidateId: string; existingId: string }[] };
+  thread_match: { expeditionId: string; notesWrittenAt?: number };
+  living_note: { threadId: string; revision: number; checkpoint: number };
+};
+
+export type JobKind = keyof JobPayloads;
+export type JobSpec<K extends JobKind = JobKind> = {
+  kind: K;
+  key: string;
+  priority: JobPriority;
+  payload: JobPayloads[K];
+};
+
+export type Job<K extends JobKind = JobKind> = JobSpec<K> & {
+  id: string;
+  createdAt: number;
+  status: 'pending' | 'leased' | 'done' | 'failed';
+  availableAt: number;
+  failures: number;
+  lease?: { token: string; until: number };
+};
+
+export type QueueHold = {
+  id: 'ai';
+} & (
+  | { reason: 'usage_limit_exceeded'; retryAt: number; probes: number }
+  | { reason: 'not_eligible' | 'not_signed_in' | 'plan_usage_not_granted' }
+);
