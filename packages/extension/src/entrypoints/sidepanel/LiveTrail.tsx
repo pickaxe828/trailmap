@@ -7,6 +7,7 @@ import { MoreMenu } from '@astryxdesign/core/MoreMenu';
 import { Text } from '@astryxdesign/core/Text';
 import { TextArea } from '@astryxdesign/core/TextArea';
 import { TextInput } from '@astryxdesign/core/TextInput';
+import { Token } from '@astryxdesign/core/Token';
 import { TreeList, type TreeListItemData } from '@astryxdesign/core/TreeList';
 import { VStack } from '@astryxdesign/core/VStack';
 import type { Expedition, Visit } from '@trailmap/shared';
@@ -17,7 +18,10 @@ import { buildTrail, type TrailNode } from '../../trail/tree';
 import type { useLiveTrail } from '../../trail/useLiveTrail';
 import { WRAP_UP_MESSAGE } from '../../wrapup/messages';
 import { correct } from '../../corrections/client';
-import { useCurrentVisitId, useSiteSkipped } from './corrections-client';
+import type { PriorRead } from '../../threads/picking-up';
+import { useSiteSkipped } from './corrections-client';
+
+const readDate = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });
 
 type Trail = NonNullable<ReturnType<typeof useLiveTrail>>;
 type Open = Trail['open'][number];
@@ -32,8 +36,9 @@ type Dialogue =
 const hostOf = (url: string) => siteKey(url) ?? url;
 
 /** The open Expeditions as small trees with a "you are here" marker, plus today's other Visits. One-click fixes live on each row. */
-export function LiveTrail({ trail }: { trail: Trail }) {
-  const currentVisitId = useCurrentVisitId(trail);
+export function LiveTrail({ trail, currentVisitId, priorReads }: {
+  trail: Trail; currentVisitId: string | null; priorReads?: ReadonlyMap<string, PriorRead>;
+}) {
   const isSkipped = useSiteSkipped();
   const [dialogue, setDialogue] = useState<Dialogue>();
   const [failed, setFailed] = useState(false);
@@ -49,14 +54,19 @@ export function LiveTrail({ trail }: { trail: Trail }) {
     const others = trail.open.filter(({ expedition }) => expedition.id !== group?.expedition.id);
     const host = hostOf(visit.url);
     const note = trail.notes[visit.id];
+    const prior = priorReads?.get(visit.id);
     return {
       id: visit.id,
       label: (
-        <HStack gap={1} align="center" wrap="wrap">
-          <Text weight={here ? 'semibold' : undefined}>{visit.title || visit.url}</Text>
-          {here && <Text type="supporting">You are here</Text>}
-          {visit.starred && <Text type="supporting">Key page</Text>}
-        </HStack>
+        <VStack gap={0.5}>
+          <HStack gap={1} align="center" wrap="wrap">
+            <Text weight={here ? 'semibold' : undefined}>{visit.title || visit.url}</Text>
+            {here && <Text type="supporting">You are here</Text>}
+            {visit.starred && <Text type="supporting">Key page</Text>}
+            {prior && <Token size="sm" label={`Read on ${readDate.format(prior.at)}`} />}
+          </HStack>
+          {prior?.summary && <Text type="supporting">{prior.summary}</Text>}
+        </VStack>
       ),
       description: [`${host} · ${visit.transition} · ${formatActiveTime(visit.activeMs)}`, note && `Note: ${note}`]
         .filter(Boolean).join(' · '),

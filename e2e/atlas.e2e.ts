@@ -2,12 +2,12 @@ import { join } from 'node:path';
 import type { Page as BrowserPage } from '@playwright/test';
 import type { Concept, Edge, Expedition, Page, Visit } from '../packages/shared/src/domain';
 import type { ConceptEvidence } from '../packages/extension/src/concepts/evidence';
-import { expect, test } from './fixtures';
+import { expect, seedCapture, test } from './fixtures';
 
 const earlier = Date.UTC(2025, 4, 12, 12);
 const later = Date.UTC(2025, 4, 19, 12);
 
-async function seedAtlas(setup: BrowserPage, count: number) {
+async function seedAtlas(setup: BrowserPage, count: number, withThread = false) {
   const makeConcept = (id: string, name: string, exposure: number, firstSeen = later): Concept => ({
     id, name, exposure, firstSeen, aliases: id === 'tombstone' ? ['Deletion marker'] : [],
     gloss: id === 'tombstone' ? 'A marker that keeps a replicated delete from being undone.' : `About ${name}.`,
@@ -50,23 +50,15 @@ async function seedAtlas(setup: BrowserPage, count: number) {
     if (i % 10 !== 9) edges.push({ id: `edge-${i}`, from: `reference-${i}`, to: `reference-${i + 1}`,
       type: 'related_to', weight: 1, evidence: ['reference'] });
   }
-  await setup.evaluate(async (rows) => {
-    const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open('trailmap');
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    });
-    try {
-      await new Promise<void>((resolve, reject) => {
-        const tx = db.transaction(Object.keys(rows), 'readwrite');
-        tx.oncomplete = () => resolve();
-        tx.onabort = () => reject(tx.error);
-        for (const [table, records] of Object.entries(rows)) {
-          for (const row of records) tx.objectStore(table).put(row);
-        }
-      });
-    } finally { db.close(); }
-  }, { concepts, expeditions, visits, pages, conceptEvidence, edges });
+  const threadId = 'replication-basics';
+  if (withThread) {
+    expeditions[0]!.threadId = threadId;
+    expeditions.push({ ...expeditions[0]!, id: 'review', title: 'Review replica types', startedAt: earlier + 2000,
+      endedAt: earlier + 3000 });
+  }
+  await seedCapture(setup, { concepts: [...concepts], expeditions, visits: [...visits], pages, conceptEvidence, edges,
+    threads: withThread ? [{ id: threadId, title: 'Replication foundations', status: 'dormant', question: null,
+      lastActiveAt: earlier + 3000, livingNote: null, centroid: null, conceptIds: ['tombstone'] }] : [] });
 }
 
 test('the Atlas focuses a Concept through search and shows its Pages, Expeditions and neighbours', async ({ context, openExtensionPage }, info) => {
@@ -117,6 +109,30 @@ test('the Atlas focuses a Concept through search and shows its Pages, Expedition
   await atlas.getByRole('option', { name: 'CRDT', exact: true }).click();
   await expect(card.getByRole('link', { name: 'Replication basics' })).toBeVisible();
   await expect(card.getByRole('link', { name: 'Replicated deletes' })).toBeVisible();
+});
+
+test('the Atlas Thread filter shows only Concepts with evidence in its sessions', async ({ openExtensionPage }, info) => {
+  const setup = await openExtensionPage('sidepanel.html');
+  await seedAtlas(setup, 24, true);
+  const atlas = await openExtensionPage('atlas.html');
+  const thread = atlas.getByRole('combobox', { name: 'Filter by thread' });
+  const search = atlas.getByRole('combobox', { name: 'Find a concept' });
+  await search.fill('Tombstone');
+  await atlas.getByRole('option', { name: 'Tombstone' }).click();
+  await expect(atlas.getByRole('heading', { name: 'Tombstone' })).toBeVisible();
+  await thread.click({ timeout: 5000 });
+  await atlas.getByRole('option', { name: 'Replication foundations' }).click();
+  await expect(atlas.getByText('1 of 24 concepts on the map')).toBeVisible();
+  await expect(atlas.getByRole('heading', { name: 'Tombstone' })).toHaveCount(0);
+  await search.fill('Tombstone');
+  await expect(atlas.getByRole('option', { name: 'No matching concepts' })).toBeVisible();
+  await search.fill('CRDT');
+  await atlas.getByRole('option', { name: 'CRDT', exact: true }).click();
+  await expect(atlas.getByRole('link', { name: 'Replication primer' })).toBeVisible();
+  await atlas.screenshot({ path: process.env.PROOF_DIR ? join(process.env.PROOF_DIR, 'atlas-thread.png') : info.outputPath('atlas-thread.png') });
+  await thread.click();
+  await atlas.getByRole('option', { name: 'All threads' }).click();
+  await expect(atlas.getByText('24 of 24 concepts on the map')).toBeVisible();
 });
 
 test('the Atlas caps the default map and can focus lower-ranked Concepts in a 2,000-Concept collection', async ({ openExtensionPage }) => {

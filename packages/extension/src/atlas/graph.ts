@@ -50,13 +50,18 @@ export function buildAtlasGraph(concepts: readonly Concept[], edges: readonly Ed
   return graph;
 }
 
-export function topConceptIds(graph: AtlasGraph, limit = 80): ReadonlySet<string> {
-  return new Set(graph.nodes().slice(0, Math.max(0, limit)));
+export function topConceptIds(graph: AtlasGraph, limit = 80, scope?: ReadonlySet<string>): ReadonlySet<string> {
+  const ids = graph.nodes();
+  return new Set((scope ? ids.filter((id) => scope.has(id)) : ids).slice(0, Math.max(0, limit)));
 }
 
-export type AtlasFilter = { top: ReadonlySet<string>; cutoff: number; focused?: string };
+export type AtlasFilter = { top: ReadonlySet<string>; cutoff: number; focused?: string; scope?: ReadonlySet<string> };
+
+export function isConceptInScope(id: string, firstSeen: number, { cutoff, scope }: Pick<AtlasFilter, 'cutoff' | 'scope'>) {
+  return firstSeen <= cutoff && (!scope || scope.has(id));
+}
 
 /** Keep a fixed top set while scrubbing, so advancing time only adds nodes. */
-export function isConceptShown(id: string, firstSeen: number, { top, cutoff, focused }: AtlasFilter) {
-  return firstSeen <= cutoff && (top.has(id) || id === focused);
+export function isConceptShown(id: string, firstSeen: number, filter: AtlasFilter) {
+  return isConceptInScope(id, firstSeen, filter) && (filter.top.has(id) || id === filter.focused);
 }
