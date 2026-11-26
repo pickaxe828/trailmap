@@ -28,6 +28,7 @@ export const Visit = z.object({
   transition: Transition,
   startedAt: z.number(),
   activeMs: z.number(),
+  lastActiveAt: z.number().optional(), // Wall-clock end of the last recorded reading interval.
   scrollDepth: z.number().min(0).max(1),
   engagement: Engagement,
   privacyBlocked: z.literal(true).optional(),

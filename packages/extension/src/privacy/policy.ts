@@ -1,7 +1,12 @@
 import type { Page, Visit } from '@trailmap/shared';
 import { DENIED_HOSTS, DENIED_PATH_SEGMENTS, DENIED_SERVICE_LABELS, LOCAL_SUFFIXES } from './default-deny-list';
 
-export type RecordingSettings = { paused: boolean; skippedHosts: string[] };
+export type RecordingSettings = {
+  paused: boolean;
+  skippedHosts: string[];
+  expeditionInactivityMinutes?: number;
+  topicSwitchMinutes?: number;
+};
 export type RecordingState = 'recording' | 'paused' | 'skipped';
 
 const hostname = (url: URL) => url.hostname.toLowerCase().replace(/\.+$/, '');

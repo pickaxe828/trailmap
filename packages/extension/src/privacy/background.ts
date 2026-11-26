@@ -108,7 +108,7 @@ export function createRecordingPrivacy(unseenNotes: () => number, purge: (host?:
         if (!page) return;
         const fromSettings = settingsPages.has(page);
         if (page !== panel && !fromSettings) return;
-        if (input.action === 'edit-skip-list' && !fromSettings) return;
+        if ((input.action === 'edit-skip-list' || input.action === 'set-expedition-threshold') && !fromSettings) return;
         if (fromSettings && (input.action === 'set-site' || (input.action === 'status' && input.tabId !== undefined))) return;
         void (async () => {
           switch (input.action) {
@@ -120,6 +120,9 @@ export function createRecordingPrivacy(unseenNotes: () => number, purge: (host?:
               await setSiteSkipped(site.host, input.skip);
               return true;
             }
+            case 'set-expedition-threshold':
+              await changeSettings((current) => ({ ...current, [input.threshold]: input.minutes }));
+              return true;
             case 'edit-skip-list': {
               const value = input.site.trim();
               const url = URL.parse(value.includes('://') ? value : `https://${value}`);

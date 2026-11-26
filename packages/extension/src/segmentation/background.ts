@@ -1,83 +1,112 @@
 import { IDLE_SECONDS, TICK_ALARM } from '../capture/chrome-events';
 import type { IdleState } from '../capture/events';
 import type { VisitRecorder } from '../capture/recorder';
+import type { TrailmapDb } from '../db/db';
 import { getEmbedder } from '../embeddings/background';
+import type { RecordingSettings } from '../privacy/policy';
+import { expeditionCloseSettings, RECORDING_SETTINGS_KEY } from '../privacy/settings';
+import { isWrapUpRequest } from '../wrapup/messages';
+import { CLOSE_ALARM, scheduleExpeditionClose } from './close-alarm';
 import { EXPEDITION_IDLE_SECONDS } from './config';
 import { ExpeditionRecorder } from './expedition-recorder';
 import { expeditionIdle } from './idle';
-import type { TrailmapDb } from '../db/db';
-import { isWrapUpRequest } from '../wrapup/messages';
 
 const IDLE_KEY = 'trailmap.expeditionIdleDeadline';
-const CLOSE_ALARM = 'trailmap.expedition-close';
+const SESSION_START_KEY = 'trailmap.expeditionSessionStartedAt';
 
-export function startSegmentation(db: TrailmapDb, recorder: VisitRecorder) {
-  const expeditions = new ExpeditionRecorder({ db, embedder: getEmbedder(), now: Date.now });
+export function startSegmentation(db: TrailmapDb, recorder: VisitRecorder, getSettings: () => RecordingSettings) {
+  const workerStartedAt = Date.now();
+  async function idleDeadline() {
+    return (await chrome.storage.session.get({ [IDLE_KEY]: null }))[IDLE_KEY] as number | null;
+  }
+  const expeditions = new ExpeditionRecorder({
+    db, embedder: getEmbedder(), now: Date.now,
+    timing: () => {
+      const { expeditionInactivityMinutes, topicSwitchMinutes } = expeditionCloseSettings(getSettings());
+      return { inactivityMs: expeditionInactivityMinutes * 60_000, topicSwitchMs: topicSwitchMinutes * 60_000 };
+    },
+    onDeadline: async (deadline) => {
+      const idle = await idleDeadline();
+      await scheduleExpeditionClose(chrome.alarms, deadline, idle !== null && idle > Date.now() ? idle : null);
+    },
+  });
   let queue = Promise.resolve();
-
   const enqueue = (work: () => Promise<void>) => {
-    queue = queue.then(work).catch(() => {});
+    const result = queue.then(work);
+    queue = result.catch(() => {});
+    return result;
   };
 
   async function checkIdle(at: number, event?: IdleState) {
-    const previous = (await chrome.storage.session.get({ [IDLE_KEY]: null }))[IDLE_KEY] as number | null;
+    const previous = await idleDeadline();
     const state = event ?? await chrome.idle.queryState(IDLE_SECONDS);
     const transition = expeditionIdle(previous, state, at);
     if (state === 'idle' && transition.closeAt === null &&
         await chrome.idle.queryState(EXPEDITION_IDLE_SECONDS) === 'idle') {
-      // On startup the user may already have been idle for the full interval.
+      // On wake the user may already have been idle for the full interval.
       transition.deadline = transition.closeAt = at;
     }
 
-    // Save a newly discovered deadline before draining Visits, and retain
-    // an overdue one until its closure commits. Either can outlive this worker.
+    // Preserve the cutoff if the worker stops before the closure transaction.
     if (transition.deadline !== null && transition.deadline !== previous) {
       await chrome.storage.session.set({ [IDLE_KEY]: transition.deadline });
     }
     if (transition.closeAt !== null) await expeditions.close(transition.closeAt);
-    if (transition.deadline === null && previous !== null) {
-      await chrome.storage.session.remove(IDLE_KEY);
-    }
-    if (transition.deadline !== null && transition.deadline > at) {
-      if (!(await chrome.alarms.get(CLOSE_ALARM))) {
-        await chrome.alarms.create(CLOSE_ALARM, { when: transition.deadline });
-      }
-    } else {
-      await chrome.alarms.clear(CLOSE_ALARM);
-    }
-  }
-
-  function observeIdle(event?: IdleState) {
-    const at = Date.now();
-    enqueue(() => checkIdle(at, event));
+    if (transition.deadline === null && previous !== null) await chrome.storage.session.remove(IDLE_KEY);
   }
 
   function sync() {
-    // Inference has its own queue. Let idle notifications register while a
-    // model is loading, and preserve their order against subsequent Visits.
-    enqueue(async () => { void expeditions.sync().catch(() => {}); });
+    // Assignment has its own queue. Let idle observations save their cutoff
+    // even while a Visit is waiting for its embedding.
+    void expeditions.sync().catch(() => {});
   }
 
-  // Wrap up closes one Expedition now instead of waiting for 30 minutes of idle.
+  async function reconcile(idleEvent?: { at: number; state: IdleState }) {
+    // Always settle current reading before deciding that an Expedition is stale.
+    await recorder.flushActiveTime();
+    await checkIdle(idleEvent?.at ?? Date.now(), idleEvent?.state);
+    sync();
+  }
+
+  void enqueue(async () => {
+    // Session storage survives worker suspension, but not a browser restart.
+    // Persist the boundary before closing so an interrupted sweep is retried.
+    const stored = (await chrome.storage.session.get(SESSION_START_KEY))[SESSION_START_KEY] as number | undefined;
+    const start = stored ?? workerStartedAt;
+    if (stored === undefined) await chrome.storage.session.set({ [SESSION_START_KEY]: start });
+    await recorder.ready;
+    await expeditions.recover(start);
+    await reconcile();
+  });
+
   chrome.runtime.onMessage.addListener((input: unknown, sender, reply) => {
     if (sender.url !== chrome.runtime.getURL('/sidepanel.html') || !isWrapUpRequest(input)) return;
-    const done = Promise.withResolvers<boolean>();
-    queue = queue.then(() => expeditions.close(Date.now(), input.expeditionId)).then(() => done.resolve(true), () => done.resolve(false));
-    void done.promise.then(reply);
+    const at = Date.now();
+    const closed = enqueue(async () => {
+      await recorder.flushActiveTime();
+      await expeditions.close(at, input.expeditionId);
+    });
+    void closed.then(() => reply(true), () => reply(false));
+    void enqueue(async () => sync());
     return true;
   });
 
   recorder.subscribe((change) => {
-    if (change.type === 'created' || change.titleChanged) sync();
+    if (change.type === 'created' || change.titleChanged) void enqueue(async () => sync());
   });
-  chrome.idle.onStateChanged.addListener(observeIdle);
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local' || !changes[RECORDING_SETTINGS_KEY]) return;
+    const change = changes[RECORDING_SETTINGS_KEY] as { oldValue?: RecordingSettings; newValue?: RecordingSettings };
+    const { oldValue, newValue } = change;
+    if (oldValue?.expeditionInactivityMinutes !== newValue?.expeditionInactivityMinutes ||
+        oldValue?.topicSwitchMinutes !== newValue?.topicSwitchMinutes) void enqueue(() => reconcile());
+  });
+  chrome.idle.onStateChanged.addListener((state) => {
+    const at = Date.now();
+    void enqueue(() => reconcile({ at, state }));
+  });
   chrome.alarms.onAlarm.addListener(({ name }) => {
-    if (name === TICK_ALARM || name === CLOSE_ALARM) {
-      observeIdle();
-      sync();
-    }
+    if (name === TICK_ALARM || name === CLOSE_ALARM) void enqueue(() => reconcile());
   });
-  observeIdle();
-  sync();
   return expeditions;
 }

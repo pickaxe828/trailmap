@@ -13,6 +13,10 @@ test('a brief idle interval clears the deadline while continued idle closes at 3
     .toEqual({ deadline, closeAt: deadline });
 });
 
+test('a screen lock closes every open Expedition immediately', () => {
+  expect(expeditionIdle(1_800_000, 'locked', 120_000)).toEqual({ deadline: 120_000, closeAt: 120_000 });
+});
+
 test('a deadline read after worker restart closes overdue Expeditions even as activity resumes', () => {
   const deadline = 1_800_000;
   expect(expeditionIdle(deadline, 'active', deadline + 100))

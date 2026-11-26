@@ -64,7 +64,7 @@ The rule: **nothing requires your action.** Every button is a correction or an e
 - **Coming back to a topic days later (M3):** the side panel shows "Picking up: *CRDTs* (last session 4 days ago)", with what you found last time and your loose ends. Pages you've already read are marked, so you don't reread them by accident.
 
 **3. When an expedition ends (automatic)**
-- The expedition closes after 30 minutes idle, or when you click **Wrap up**.
+- The expedition closes automatically when you stop working on it. You can also click **Wrap up** to close it now.
 - Field notes are written in the background and appear in the Journal and in Obsidian.
 - The toolbar icon shows a small count of new notes. There are no pop-ups.
 
@@ -161,8 +161,8 @@ capture ──▶ filter ──▶ segment ──▶ enrich (LLM) ──▶ reso
 Rules, in order:
 1. **Lineage wins.** A visit reached by link, or opened from another tab, joins its parent's expedition.
 2. **New roots** are typed URLs, new searches and bookmarks. Embed the root's title or query and compare it with the centroids of expeditions open in the last 2 h. Join the best match if cosine is above about 0.6; otherwise start a new expedition. Several expeditions can run in parallel tabs at once.
-3. **30 min idle** closes every open expedition.
-4. **On close,** one LLM pass gives the expedition a title, states its driving question, classifies it as `learning` or `errand`, and suggests merges with same-day expeditions on the same topic.
+3. **Close rules.** An expedition closes when it has had neither a new Visit nor active reading time for 20 minutes. Starting a new expedition also closes other open expeditions that have been inactive for at least 10 minutes. Both thresholds are adjustable in recording Settings and take effect without reloading. Browser startup and service-worker wake close expeditions left open from a previous browser session; waking the worker does not close still-active expeditions from the current session. Thirty minutes of computer idle or a screen lock closes every open expedition. **Wrap up** closes just the selected expedition now. Record `endedAt` at the last known activity, not at the time of the check. One close alarm tracks the earliest pending deadline.
+4. **On close,** queue one durable wrap-up job in the same transaction as the close. One LLM pass gives the expedition a title, states its driving question, classifies it as `learning` or `errand`, and suggests merges with same-day expeditions on the same topic.
 5. **Manual fixes** are first-class: merge, split here, or drag a page to another expedition. Log every correction so the thresholds can be tuned later.
 
 Errand expeditions (shopping, admin) collapse into the Journal and stay out of the Atlas.
@@ -188,6 +188,8 @@ Input: title, URL, Readability text capped at about 3k tokens, any highlights (m
 - Every concept edge carries evidence visit IDs, so you can always click through to "where did I learn this?"
 
 ### 4.6 Synthesize field notes (when an expedition closes, or on demand)
+Automatic closure (§4.3) and **Wrap up** use the same durable job. After wrap-up, queue field notes for learning expeditions with eligible content. Jobs survive service-worker restarts; the end time used by thread matching is the expedition's last activity.
+
 Input: the expedition's page summaries, takeaways and highlights, in trail order. Output is Markdown:
 - **Question:** what you set out to learn.
 - **What you found:** a short answer.

@@ -2,7 +2,8 @@ import Dexie from 'dexie';
 import type { Expedition, Query, Visit } from '@trailmap/shared';
 import type { TrailmapDb } from '../db/db';
 import { type Embedder, quantize } from '../embeddings/embedder';
-import { EXPEDITION_WINDOW_MS, VISIT_TITLE_GRACE_MS } from './config';
+import { DEFAULT_EXPEDITION_INACTIVITY_MINUTES, DEFAULT_TOPIC_SWITCH_MINUTES, EXPEDITION_WINDOW_MS, VISIT_TITLE_GRACE_MS } from './config';
+import { planExpeditionClosures, type ExpeditionTiming } from './close-rules';
 import { enqueueWrapUp } from '../wrapup/enqueue';
 import { segmentVisit } from './segmenter';
 
@@ -22,6 +23,8 @@ type Options = {
   db: TrailmapDb;
   embedder: Embedder;
   now: () => number;
+  timing?: () => ExpeditionTiming;
+  onDeadline?: (deadline: number | null) => Promise<void>;
   /** Called once for each closure transaction, after the closed rows are visible. */
   onClosed?: (expeditions: Expedition[]) => void;
 };
@@ -32,15 +35,53 @@ type Replay = {
   canImport: (visit: Visit) => boolean;
 };
 
+type Closure = { id: string; endedAt: number };
+const defaultTiming: ExpeditionTiming = {
+  inactivityMs: DEFAULT_EXPEDITION_INACTIVITY_MINUTES * 60_000,
+  topicSwitchMs: DEFAULT_TOPIC_SWITCH_MINUTES * 60_000,
+};
+
 export class ExpeditionRecorder {
   private queue = Promise.resolve();
   private titleTimer?: ReturnType<typeof setTimeout>;
+  private previousSessionCutoff?: number;
 
   constructor(private readonly options: Options) {}
 
+  private timing() {
+    return this.options.timing?.() ?? defaultTiming;
+  }
+
+  recover(sessionStartedAt: number) {
+    return this.enqueue(async () => {
+      this.previousSessionCutoff = sessionStartedAt;
+      await this.drainPreviousSession();
+    });
+  }
+
   sync() {
     const through = this.options.now();
-    return this.enqueue(() => this.drain(through, true));
+    return this.enqueue(async () => {
+      await this.drainPreviousSession();
+      // A Visit waiting for its title may extend an Expedition. The title timer
+      // (or next capture tick after a worker restart) retries the deadline check.
+      if (!await this.drain(through, true)) return;
+      const deadline = await this.closeByRules(through);
+      await this.options.onDeadline?.(deadline);
+    });
+  }
+
+  private async drainPreviousSession() {
+    const sessionStartedAt = this.previousSessionCutoff;
+    if (sessionStartedAt === undefined) return;
+    try {
+      await this.drain(sessionStartedAt - 1, false);
+    } finally {
+      // Include pending Visits before ending their Expeditions. If assignment
+      // fails, still close prior sessions and leave pending rows for retry.
+      await this.closeByRules(sessionStartedAt - 1, { sessionStartedAt });
+    }
+    this.previousSessionCutoff = undefined;
   }
 
   /**
@@ -50,19 +91,56 @@ export class ExpeditionRecorder {
    */
   close(at: number, only?: string) {
     return this.enqueue(async () => {
+      await this.drainPreviousSession();
       await this.drain(at, false);
-      const { db, onClosed, now } = this.options;
-      const closed = await db.transaction('rw', db.expeditions, db.jobs, async () => {
-        const open = await db.expeditions.filter((expedition) =>
-          expedition.endedAt === null && expedition.startedAt <= at && (only === undefined || expedition.id === only),
-        ).toArray();
-        const ended = open.map((expedition) => ({ ...expedition, endedAt: at }));
-        await db.expeditions.bulkPut(ended);
-        for (const expedition of ended) await enqueueWrapUp(db, expedition, now());
-        return ended;
+      const { db, onClosed } = this.options;
+      const closed = await db.transaction('rw', db.visits, db.expeditions, db.jobs, async () => {
+        const activity = await this.readOpenActivity(at, only);
+        return this.endExpeditions(activity.map(({ id, lastActiveAt }) => ({ id, endedAt: Math.min(at, lastActiveAt) })));
       });
       if (closed.length) onClosed?.(closed);
     });
+  }
+
+  private async readOpenActivity(through: number, only?: string) {
+    const { db } = this.options;
+    const open = (only === undefined
+      ? await db.expeditions.filter(({ endedAt }) => endedAt === null).toArray()
+      : [await db.expeditions.get(only)]).filter((expedition): expedition is Expedition =>
+      !!expedition && expedition.endedAt === null && expedition.startedAt <= through);
+    const activity = new Map(open.map(({ id, startedAt }) => [id, startedAt]));
+    await db.visits.where('expeditionId').anyOf([...activity.keys()]).each((visit) => {
+      if (visit.privacyBlocked || visit.startedAt > through) return;
+      // For older rows, total reading time is a lower bound on when reading ended.
+      const last = visit.lastActiveAt ?? visit.startedAt + visit.activeMs;
+      const id = visit.expeditionId!;
+      activity.set(id, Math.max(activity.get(id)!, visit.startedAt, last));
+    });
+    return open.map(({ id, startedAt, endedAt }) => ({ id, startedAt, endedAt, lastActiveAt: activity.get(id)! }));
+  }
+
+  private async endExpeditions(closures: Closure[]) {
+    const { db, now } = this.options;
+    const ended: Expedition[] = [];
+    for (const { id, endedAt } of closures) {
+      const expedition = await db.expeditions.get(id);
+      if (expedition?.endedAt !== null) continue;
+      await db.expeditions.update(id, { endedAt });
+      const closed = { ...expedition, endedAt };
+      await enqueueWrapUp(db, closed, now());
+      ended.push(closed);
+    }
+    return ended;
+  }
+
+  private async closeByRules(at: number, trigger?: { sessionStartedAt: number }) {
+    const { db, onClosed } = this.options;
+    const { closed, nextDeadline } = await db.transaction('rw', db.visits, db.expeditions, db.jobs, async () => {
+      const { closures, nextDeadline } = planExpeditionClosures(await this.readOpenActivity(at), at, this.timing(), trigger);
+      return { closed: await this.endExpeditions(closures), nextDeadline };
+    });
+    if (closed.length) onClosed?.(closed);
+    return nextDeadline;
   }
 
   /** Commit a historical stop and its assignment together. Replay never opens live Expeditions. */
@@ -83,7 +161,7 @@ export class ExpeditionRecorder {
     for (;;) {
       const pending = await db.visits.where('[segmentationPending+startedAt]')
         .between([1, Dexie.minKey], [1, through], true, true).first();
-      if (!pending) return;
+      if (!pending) return true;
       const visit = await this.unassignedAncestor(pending);
       const query = await db.queries.where('visitId').equals(visit.id).first();
       const wait = visit.startedAt + VISIT_TITLE_GRACE_MS - now();
@@ -91,8 +169,11 @@ export class ExpeditionRecorder {
         // Chrome normally reports the title shortly after committing the Visit.
         // The capture alarm retries this row if the service worker stops first.
         this.titleTimer = setTimeout(() => void this.sync().catch(() => {}), wait);
-        return;
+        return false;
       }
+      // When an alarm is late (e.g. after sleep), don't let a new Visit join
+      // an Expedition whose inactivity deadline had already passed.
+      if (!visit.expeditionId) await this.closeByRules(visit.startedAt);
       await this.assign(visit, query?.q);
     }
   }
@@ -131,13 +212,13 @@ export class ExpeditionRecorder {
       ? { expeditionId: null, embedding: visit.expeditionEmbedding }
       : await segmentVisit({ visit, query, parent, candidates, embedder });
 
-    return db.transaction('rw', db.visits, db.queries, db.expeditions, async () => {
+    const changed = await db.transaction('rw', db.visits, db.queries, db.expeditions, db.jobs, async () => {
       const saved = await db.visits.get(visit.id);
-      if (replay ? !!saved : !saved?.segmentationPending) return false;
+      if (replay ? !!saved : !saved?.segmentationPending) return;
       const current = saved ?? visit;
       const selected = expeditionId ? open(await db.expeditions.get(expeditionId)) : undefined;
       const currentParent = replay && visit.parentVisitId ? await db.visits.get(visit.parentVisitId) : undefined;
-      if (replay && !replay.canImport(current)) return false;
+      if (replay && !replay.canImport(current)) return;
       const parentVisitId = currentParent && replay?.canImport(currentParent) ? currentParent.id : null;
       const joined = selected && (!replay || !parent || (parentVisitId && currentParent?.expeditionId === selected.id));
       const id = current.expeditionId ?? (joined ? selected.id : `expedition:${current.id}`);
@@ -169,7 +250,12 @@ export class ExpeditionRecorder {
         if (!current.expeditionId) await db.queries.where('visitId').equals(current.id).modify({ expeditionId: id });
       }
       if (embedding && visit.expeditionEmbedding === undefined) await refreshExpeditionCentroid(db, id);
-      return true;
+      if (replay || existing) return [];
+      const at = current.startedAt;
+      const { closures } = planExpeditionClosures(await this.readOpenActivity(at), at, this.timing(), { newExpeditionId: id });
+      return this.endExpeditions(closures);
     });
+    if (changed?.length) this.options.onClosed?.(changed);
+    return changed !== undefined;
   }
 }
