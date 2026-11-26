@@ -44,6 +44,7 @@ export default defineConfig({
       extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'",
     },
     action: { default_title: 'Open Trailmap' },
+    omnibox: { keyword: 'tm' },
     options_ui: { page: 'settings.html', open_in_tab: true },
     commands: {
       'toggle-recording': {

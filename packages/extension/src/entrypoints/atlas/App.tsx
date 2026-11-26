@@ -34,7 +34,7 @@ function AtlasView({ concepts, edges, threads }: AtlasData) {
     return { graph, byId, dates, matches };
   }, [concepts, edges]);
   const [replayAt, setReplayAt] = useState<number>();
-  const [selection, setSelection] = useState<string>();
+  const [selection, setSelection] = useState(() => new URLSearchParams(window.location.search).get('concept') ?? undefined);
   const [threadId, setThreadId] = useState('');
   const thread = threads.find(({ id }) => id === threadId);
   const scope = thread?.conceptIds;
