@@ -11,6 +11,7 @@ import { createRecordingPrivacy } from '../privacy/background';
 import { startThreadCorrections } from '../threads/background';
 import { watchUnseenNotes } from '../wrapup/badge';
 import { startVaultSync } from '../vault/background';
+import { startSearch } from '../search/background';
 
 export default defineBackground(() => {
   startCompanion();
@@ -49,6 +50,7 @@ export default defineBackground(() => {
   startPageSummary(db, recorder, privacy.getSettings);
   startJobs(db, privacy.ready, privacy.getSettings);
   startVaultSync(db);
+  startSearch(db);
   // The toolbar badge counts field notes nobody has viewed yet. No pop-ups.
   watchUnseenNotes(db, (count) => {
     unseenNotes = count;
