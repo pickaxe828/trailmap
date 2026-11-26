@@ -1,10 +1,11 @@
 /**
  * Secret store for the companion (API keys, ChatGPT tokens: docs/PLAN.md §8).
- * macOS: the login Keychain through the `security` CLI. Elsewhere, and in
- * tests (`TRAILMAP_SECRET_STORE=file`): a JSON file with 0600 permissions.
+ * macOS: encrypted files with a data key in the login Keychain. Elsewhere,
+ * and with `TRAILMAP_SECRET_STORE=file`: a JSON file with 0600 permissions.
  * Secrets never leave the companion: no message returns one.
  */
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from 'node:crypto';
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { withFileLock } from './file-lock';
@@ -16,21 +17,36 @@ export interface SecretStore {
   lockChatGptAccount<T>(work: () => Promise<T>): Promise<T>;
 }
 
+function readIfPresent(path: string): Buffer | null {
+  try {
+    return readFileSync(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
+function writePrivateFile(path: string, content: string | Buffer): void {
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  const tmp = `${path}.${randomUUID()}.tmp`;
+  try {
+    writeFileSync(tmp, content, { mode: 0o600, flag: 'wx' });
+    renameSync(tmp, path);
+  } finally {
+    rmSync(tmp, { force: true });
+  }
+}
+
 export class FileSecretStore implements SecretStore {
   constructor(private readonly path: string) {}
 
   private read(): Record<string, string> {
-    if (!existsSync(this.path)) return {};
-    return JSON.parse(readFileSync(this.path, 'utf8')) as Record<string, string>;
+    const stored = readIfPresent(this.path);
+    return stored === null ? {} : JSON.parse(stored.toString('utf8')) as Record<string, string>;
   }
 
   private write(secrets: Record<string, string>) {
-    mkdirSync(dirname(this.path), { recursive: true, mode: 0o700 });
-    // Write a private temp file then rename, so the secrets are never briefly world-readable or half-written.
-    const tmp = `${this.path}.${process.pid}.tmp`;
-    writeFileSync(tmp, JSON.stringify(secrets), { mode: 0o600 });
-    chmodSync(tmp, 0o600);
-    renameSync(tmp, this.path);
+    writePrivateFile(this.path, JSON.stringify(secrets));
   }
 
   async get(account: string) {
@@ -38,7 +54,10 @@ export class FileSecretStore implements SecretStore {
   }
 
   async set(account: string, value: string) {
-    await withFileLock(`${this.path}.lock`, async () => { this.write({ ...this.read(), [account]: value }); });
+    await withFileLock(`${this.path}.lock`, async () => {
+      this.write({ ...this.read(), [account]: value });
+      if (await this.get(account) !== value) throw new Error('Secret file write verification failed');
+    });
   }
 
   async delete(account: string) {
@@ -68,49 +87,130 @@ const runSecurity: SecurityRunner = async (args, stdin) => {
 };
 
 const NOT_FOUND = 44; // `security`'s exit code for "item could not be found"
+const DATA_KEY = 'trailmap.data-key';
+const KEY_BYTES = 32;
+const NONCE_BYTES = 12;
+const TAG_BYTES = 16;
 
 export class KeychainSecretStore implements SecretStore {
   private readonly service: string;
   private readonly run: SecurityRunner;
+  private readonly directory: string;
 
-  constructor({ service = 'com.trailmap.companion', run = runSecurity }: { service?: string; run?: SecurityRunner } = {}) {
-    this.service = service;
+  constructor({
+    service = 'com.trailmap.companion', run = runSecurity, dataDir = join(homedir(), '.trailmap'),
+  }: { service?: string; run?: SecurityRunner; dataDir?: string } = {}) {
+    this.service = safeName(service);
     this.run = run;
+    this.directory = join(dataDir, 'keychain-secrets');
   }
 
   async get(account: string) {
-    const { code, stdout } = await this.run(['find-generic-password', '-s', this.service, '-a', account, '-w']);
-    if (code === NOT_FOUND) return null;
-    if (code !== 0) throw new Error('Keychain read failed');
-    return Buffer.from(stdout.trim(), 'base64').toString('utf8');
+    const encrypted = await this.readEncrypted(account, this.path(account));
+    if (encrypted !== null) return encrypted;
+    const legacy = await this.readKeychain(account);
+    return legacy === null ? null : Buffer.from(legacy, 'base64').toString('utf8');
   }
 
   async set(account: string, value: string) {
-    // `security -i` reads its command from stdin, so the secret never appears in `ps`. The value is base64 so
-    // it needs no quoting and is always printable ASCII (`-w` would print non-ASCII as hex).
-    const encoded = Buffer.from(value, 'utf8').toString('base64');
-    const { code } = await this.run(
-      ['-i'],
-      `add-generic-password -U -s ${this.service} -a ${encodeAccount(account)} -w ${encoded}\n`,
-    );
-    if (code !== 0) throw new Error('Keychain write failed');
+    const path = this.path(account);
+    await this.lockWrites(async () => {
+      const key = await this.readDataKey() ?? await this.createDataKey();
+      const nonce = randomBytes(NONCE_BYTES);
+      const cipher = createCipheriv('aes-256-gcm', key, nonce);
+      cipher.setAAD(this.associatedData(account));
+      const ciphertext = Buffer.concat([cipher.update(JSON.stringify(value), 'utf8'), cipher.final()]);
+      // File format: 12-byte nonce, 16-byte authentication tag, then ciphertext.
+      writePrivateFile(path, Buffer.concat([nonce, cipher.getAuthTag(), ciphertext]));
+      const verified = await this.readEncrypted(account, path).catch((cause) => {
+        throw new Error('Encrypted secret write verification failed', { cause });
+      });
+      if (verified !== value) throw new Error('Encrypted secret write verification failed');
+      await this.deleteKeychain(account); // Don't leave an older secret available as a fallback.
+    });
   }
 
   async delete(account: string) {
-    const { code } = await this.run(['delete-generic-password', '-s', this.service, '-a', account]);
-    if (code !== 0 && code !== NOT_FOUND) throw new Error('Keychain delete failed');
+    const path = this.path(account);
+    await this.lockWrites(async () => {
+      await this.deleteKeychain(account);
+      // No decryption required: a damaged ciphertext must still be removable.
+      rmSync(path, { force: true });
+    });
   }
 
   lockChatGptAccount<T>(work: () => Promise<T>) {
-    // Keychain accounts are shared even if the hosts use different data dirs.
+    // Keep the same lock across browser hosts, including hosts still using legacy Keychain items.
     return withFileLock(join(homedir(), '.trailmap', 'chatgpt-keychain.lock'), work);
+  }
+
+  private lockWrites<T>(work: () => Promise<T>) {
+    // Key creation must be serialized even across different companion data dirs.
+    return withFileLock(join(homedir(), '.trailmap', 'keychain-secrets.lock'), work);
+  }
+
+  private path(account: string): string {
+    if (account === DATA_KEY) throw new Error('Reserved secret account name');
+    // Keep Keychain identifiers distinct on case-insensitive APFS volumes.
+    const name = createHash('sha256').update(`${this.service}:${safeName(account)}`).digest('hex');
+    return join(this.directory, `${name}.enc`);
+  }
+
+  private associatedData(account: string): Buffer {
+    return Buffer.from(`trailmap:secret:v1:${this.service}:${account}`);
+  }
+
+  private async readEncrypted(account: string, path: string): Promise<string | null> {
+    const stored = readIfPresent(path);
+    if (stored === null) return null;
+    if (stored.length < NONCE_BYTES + TAG_BYTES) throw new Error('Encrypted secret is truncated');
+    const key = await this.readDataKey();
+    if (!key) throw new Error('Keychain data key is missing');
+    const decipher = createDecipheriv('aes-256-gcm', key, stored.subarray(0, NONCE_BYTES), { authTagLength: TAG_BYTES });
+    decipher.setAAD(this.associatedData(account));
+    decipher.setAuthTag(stored.subarray(NONCE_BYTES, NONCE_BYTES + TAG_BYTES));
+    const plaintext = Buffer.concat([decipher.update(stored.subarray(NONCE_BYTES + TAG_BYTES)), decipher.final()]);
+    return JSON.parse(plaintext.toString('utf8')) as string;
+  }
+
+  private async readDataKey(): Promise<Buffer | null> {
+    const encoded = await this.readKeychain(DATA_KEY);
+    if (encoded === null) return null;
+    const key = Buffer.from(encoded, 'base64');
+    if (key.length !== KEY_BYTES || key.toString('base64') !== encoded) throw new Error('Invalid Keychain data key');
+    return key;
+  }
+
+  private async createDataKey(): Promise<Buffer> {
+    const key = randomBytes(KEY_BYTES);
+    const encoded = key.toString('base64');
+    // `security -i` limits each input line. Only the short data key goes over stdin, never in argv.
+    const { code } = await this.run(['-i'], `add-generic-password -s ${this.service} -a ${DATA_KEY} -w ${encoded}\n`);
+    if (code !== 0) throw new Error('Keychain data key write failed');
+    if (await this.readKeychain(DATA_KEY) !== encoded) {
+      await this.deleteKeychain(DATA_KEY);
+      throw new Error('Keychain data key write verification failed');
+    }
+    return key;
+  }
+
+  private async readKeychain(account: string): Promise<string | null> {
+    const { code, stdout } = await this.run(['find-generic-password', '-s', this.service, '-a', account, '-w']);
+    if (code === NOT_FOUND) return null;
+    if (code !== 0) throw new Error('Keychain read failed');
+    return stdout.trim();
+  }
+
+  private async deleteKeychain(account: string): Promise<void> {
+    const { code } = await this.run(['delete-generic-password', '-s', this.service, '-a', account]);
+    if (code !== 0 && code !== NOT_FOUND) throw new Error('Keychain delete failed');
   }
 }
 
-/** Account names are our own fixed identifiers; refuse anything that would need quoting. */
-function encodeAccount(account: string): string {
-  if (!/^[A-Za-z0-9._-]+$/.test(account)) throw new Error('Invalid secret account name');
-  return account;
+/** Names enter both filenames and an interactive command; allow only safe path segments/bare arguments. */
+function safeName(name: string): string {
+  if (!/^[A-Za-z0-9_][A-Za-z0-9._-]*$/.test(name)) throw new Error('Invalid secret name');
+  return name;
 }
 
 /** Where the companion keeps its own files (secret file, log): `~/.trailmap`, or `TRAILMAP_COMPANION_DATA_DIR`. */
@@ -128,6 +228,6 @@ export function createSecretStore({
   dataDir: string;
 }): SecretStore {
   const kind = env.TRAILMAP_SECRET_STORE ?? (platform === 'darwin' ? 'keychain' : 'file');
-  return kind === 'keychain' ? new KeychainSecretStore() : new FileSecretStore(join(dataDir, 'secrets.json'));
+  return kind === 'keychain' ? new KeychainSecretStore({ dataDir }) : new FileSecretStore(join(dataDir, 'secrets.json'));
 }
 

@@ -307,7 +307,7 @@ Keep it as a fallback only, in case OpenAI ever accepts custom schemes and loopb
 | `vault.remove` | Removes a stale generated Trailmap note after Forget or reconciliation, only in the pinned Obsidian folder. Accepts only generated flat Markdown filenames, refuses symlinks and folder changes, and removes the file only if its digest matches the last generated content. |
 
 - **No general-purpose commands.** There is nothing like "fetch any URL" or "read any file", so a bug in the extension can't turn the companion into a general proxy. Every incoming message is checked against the shared Zod schemas.
-- **Secrets** live in the macOS Keychain. The `security` command-line tool is enough for the prototype.
+- **Secrets** on macOS live in owner-only, AES-256-GCM encrypted files in the companion data dir. Only the data key is written to Keychain via `security` on stdin.
 - **Browsing data stays in the extension.** Visits, pages and the graph remain in IndexedDB. Moving them into SQLite in the companion is possible later, but not needed now.
 - **The extension still works without the companion.** Capture, trails and expeditions run without it, and so does Chrome's on-device model. Cloud and Ollama AI features and Obsidian sync need it.
 - **Distribution:** sharing the binary beyond your own machine means code-signing and notarizing it on macOS. For a personal prototype, building it locally avoids that.
@@ -354,7 +354,7 @@ Assumed volume: about 50 enriched pages a day (about 3k tokens in and 500 out ea
 - Access tokens last one hour. Refresh tokens last 30 days and rotate after each successful refresh. Refresh near expiry with a form-encoded `refresh_token` grant that sends the issued client ID, current refresh token and resource, and omits `scope`. Serialize refreshes and replace the saved credential set together.
 - Clear unusable credentials on `invalid_grant`, `invalid_refresh_token`, `token_expired`, or `refresh_token_*` from refresh. Sign in again with the saved client ID. Preserve credentials on temporary failures and check the configuration on `invalid_client`. A confirmed disconnect also requires a fresh sign-in.
 - On sign-out, discover the issuer's `revocation_endpoint` and POST the refresh token, `token_type_hint=refresh_token` and issued client ID as form fields. Retry temporary failures with bounded backoff. Clear local access, refresh and ID tokens while retaining the account/client mapping and stable host ID. Tell the user when revocation could not be confirmed and point them to ChatGPT Settings.
-- Store tokens in the macOS Keychain or the companion's owner-only file store. The extension receives only the URL to start sign-in, lifecycle notifications and account status. The companion provides fresh access tokens to its inference callers.
+- Store tokens in the companion's Keychain-backed encrypted files on macOS, or in the owner-only file store elsewhere. The extension receives only the URL to start sign-in, lifecycle notifications and account status. The companion provides fresh access tokens to its inference callers.
 
 [OpenAI session management](https://developers.openai.com/siwc/token-sharing-open-source/profiles-and-sessions) · [OpenAI token reference](https://developers.openai.com/siwc/token-sharing-open-source/token-reference) · [OpenAI refresh errors](https://developers.openai.com/siwc/token-sharing-open-source/errors-and-recovery#refresh-errors)
 
@@ -393,7 +393,7 @@ Before the stream opens, the response may carry a `detail` field. Use the HTTP s
 - **Permissions needed:** `<all_urls>` host access, `webNavigation`, `tabs`, `history`, `idle`, `storage`, `unlimitedStorage`, `sidePanel`, `offscreen`, `alarms`, and `nativeMessaging` (to talk to the companion).
   - For personal use, load it unpacked; no store review is needed.
   - Publishing to the Chrome Web Store with `<all_urls>` and `history` means extra review and a privacy policy.
-- **Credentials** (ChatGPT tokens and API keys) live in the companion, in the macOS Keychain. The browser never stores them.
+- **Credentials** (ChatGPT tokens and API keys) live in the companion. On macOS, the Keychain protects their encryption key. The browser never stores them.
 - **The companion only accepts Trailmap.** Native Messaging only lets the extension ID in its manifest connect. The companion offers a short, fixed set of commands with no general fetch or file access. It opens a loopback port only during sign-in.
 
 ## 9. Milestones

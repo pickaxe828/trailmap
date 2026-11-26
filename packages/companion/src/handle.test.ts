@@ -39,11 +39,16 @@ test('a frame that is not JSON gets invalid_json and does not throw', async () =
   expect(await handleFrame('{not json', ctx)).toMatchObject({ type: 'error', code: 'invalid_json', id: null });
 });
 
-test('a handler that throws becomes an internal error without leaking its message', async () => {
+test('logs the failed handler and error class, but never the thrown message or mutable name', async () => {
+  const lines: string[] = [];
+  const error = new SyntaxError('token sk-secret-123');
+  error.name = 'private page title';
   const broken: CompanionContext = {
     ...ctx,
-    handlers: { 'companion.hello': () => Promise.reject(new Error('token sk-secret-123')) },
+    log: (line) => lines.push(line),
+    handlers: { 'companion.hello': () => Promise.reject(error) },
   };
   const reply = await handleMessage({ type: 'companion.hello', id: 'a1' }, broken);
   expect(reply).toEqual({ type: 'error', id: 'a1', code: 'internal', message: 'The companion failed to handle this message' });
+  expect(lines).toEqual(['handler for companion.hello failed (SyntaxError)']);
 });

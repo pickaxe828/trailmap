@@ -69,7 +69,21 @@ export class ChatGptAuth {
   }
 
   async status(): Promise<ChatGptStatus> {
-    const account = await this.readAccount();
+    const account = await this.readAccount().catch(() => this.exclusive(async () => {
+      try {
+        // Another host may have already replaced the bad record while we waited for the lock.
+        return await this.readAccount();
+      } catch {
+        try {
+          await this.ctx.secrets.delete(ACCOUNT_KEY);
+          this.ctx.log('Removed unreadable ChatGPT account');
+        } catch {
+          // A locked Keychain or inaccessible directory may prevent cleanup; still show signed out.
+          this.ctx.log('Could not remove unreadable ChatGPT account');
+        }
+        return null;
+      }
+    }));
     return {
       signedIn: Boolean(account?.session),
       email: account?.session ? account.email : null,

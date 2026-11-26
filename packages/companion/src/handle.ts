@@ -5,6 +5,7 @@ import { LlmFailure } from './llm/provider';
 import { complete, modelCatalog } from './llm/providers';
 import { VaultError, type Vault } from './vault';
 import { CompanionRequest, type CompanionEvent, type CompanionRequestType, type CompanionResponse, type ErrorCode, type ModelDispatch } from '@trailmap/shared';
+import { ZodError } from 'zod';
 
 export const COMPANION_VERSION = '0.0.0';
 
@@ -12,7 +13,7 @@ export const COMPANION_VERSION = '0.0.0';
 export interface CompanionContext {
   /** Environment the companion was started with; this is how E2E points it at mock servers (e.g. `TRAILMAP_*` variables). */
   env: Record<string, string | undefined>;
-  /** Keychain (macOS) or 0600 file. Secrets are never returned in a message. */
+  /** Encrypted files with a Keychain key (macOS), or a 0600 file. Secrets are never returned in a message. */
   secrets: SecretStore;
   /** Diagnostics only: never pass tokens, keys or page text. */
   log: (line: string) => void;
@@ -79,6 +80,16 @@ function idOf(raw: unknown): string | null {
   return typeof raw === 'object' && raw !== null && 'id' in raw && typeof raw.id === 'string' ? raw.id : null;
 }
 
+/** Fixed labels only: even an error's `name` or `code` can contain untrusted data. */
+function errorClass(error: unknown): string {
+  if (error instanceof ZodError) return 'ZodError';
+  if (error instanceof SyntaxError) return 'SyntaxError';
+  if (error instanceof TypeError) return 'TypeError';
+  if (error instanceof RangeError) return 'RangeError';
+  if (error instanceof Error) return 'Error';
+  return 'NonError';
+}
+
 /** Validates one decoded message against the shared schema and answers it. Never throws. */
 export async function handleMessage(raw: unknown, ctx: CompanionContext): Promise<CompanionResponse> {
   const parsed = CompanionRequest.safeParse(raw);
@@ -102,7 +113,7 @@ export async function handleMessage(raw: unknown, ctx: CompanionContext): Promis
       type: 'error', id: request.id, code: error.code, message: error.message, ...error.details,
     };
     // Deliberately drops the error text: handlers touch secrets and page text.
-    ctx.log(`handler for ${request.type} failed`);
+    ctx.log(`handler for ${request.type} failed (${errorClass(error)})`);
     return errorReply(request.id, 'internal', 'The companion failed to handle this message');
   }
 }
