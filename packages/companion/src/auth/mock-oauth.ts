@@ -14,6 +14,7 @@ export function startMockOAuth(otherRoutes = (_request: Request): Response | Pro
     scope: MOCK_SCOPE,
     claims: {} as Record<string, unknown>,
     refreshError: null as string | null,
+    rejectStaleRefresh: false,
     beforeRefresh: undefined as (() => Promise<void>) | undefined,
     revokeStatus: 200,
     badSignature: false,
@@ -54,6 +55,9 @@ export function startMockOAuth(otherRoutes = (_request: Request): Response | Pro
           if (form.get('grant_type') === 'refresh_token') {
             await behavior.beforeRefresh?.();
             if (behavior.refreshError) return Response.json({ error: behavior.refreshError }, { status: 400 });
+            if (behavior.rejectStaleRefresh && form.get('refresh_token') !== `mock-refresh-${rotation}`) {
+              return Response.json({ error: 'invalid_grant' }, { status: 400 });
+            }
             rotation += 1;
             return Response.json({
               access_token: 'mock-access-' + rotation,

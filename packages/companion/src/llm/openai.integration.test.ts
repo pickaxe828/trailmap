@@ -21,6 +21,7 @@ beforeEach(() => {
       get: async (key) => secrets.get(key) ?? null,
       set: async (key, value) => { secrets.set(key, value); },
       delete: async (key) => { secrets.delete(key); },
+      lockChatGptAccount: (work) => work(),
     },
   };
 });

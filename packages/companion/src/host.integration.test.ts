@@ -6,6 +6,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { EXTENSION_ID } from '../../extension/extension-key';
 import { FrameDecoder, encodeFrame } from './framing';
+import { runHost } from './host';
+import { FileSecretStore } from './secrets';
 
 const MAIN = new URL('./main.ts', import.meta.url).pathname;
 const ORIGIN = `chrome-extension://${EXTENSION_ID}/`;
@@ -66,17 +68,34 @@ const textFrame = (text: string) => {
   return frame;
 };
 
-test('the host announces itself, then answers hello even when the request arrives in pieces', async () => {
+test('the stdio host announces itself and answers hello', async () => {
   const host = startHost();
   expect(await host.next()).toMatchObject({ type: 'event', name: 'companion.ready' });
-
-  const frame = encodeFrame({ type: 'companion.hello', id: 'h1' });
-  host.write(frame.subarray(0, 2));
-  await Bun.sleep(30);
-  host.write(frame.subarray(2, 9));
-  await Bun.sleep(30);
-  host.write(frame.subarray(9));
+  host.write(encodeFrame({ type: 'companion.hello', id: 'h1' }));
   expect(await host.next()).toMatchObject({ type: 'companion.hello', id: 'h1', version: expect.any(String) });
+});
+
+test('the host reads a frame explicitly split across its header and body', async () => {
+  const frame = encodeFrame({ type: 'companion.hello', id: 'split' });
+  const reply = Promise.withResolvers<unknown>();
+  const decoder = new FrameDecoder();
+  let wroteReply = false;
+  async function* input() {
+    yield frame.subarray(0, 2);
+    expect(wroteReply).toBe(false);
+    yield frame.subarray(2, 9);
+    expect(wroteReply).toBe(false);
+    yield frame.subarray(9);
+    await reply.promise;
+  }
+  const closed = runHost(input(), (bytes) => {
+    for (const json of decoder.push(bytes)) {
+      const message = JSON.parse(json);
+      if (message.type !== 'event') { wroteReply = true; reply.resolve(message); }
+    }
+  }, { env: {}, secrets: new FileSecretStore(join(temp, 'secrets.json')), log: () => {} });
+  expect(await reply.promise).toMatchObject({ type: 'companion.hello', id: 'split' });
+  expect(await closed).toBe(true);
 });
 
 test('invalid messages get typed errors and the host keeps serving', async () => {
@@ -186,4 +205,11 @@ test('vault.remove prunes an unchanged generated note but keeps a manually edite
   remove();
   expect(await host.next()).toEqual({ type: 'vault.remove', id: 'remove' });
   expect(existsSync(note)).toBe(false);
+
+  const outside = join(temp, 'outside.md');
+  writeFileSync(outside, markdown);
+  symlinkSync(outside, note);
+  remove();
+  expect(await host.next()).toMatchObject({ type: 'error', code: 'vault_unsafe_path' });
+  expect(readFileSync(outside, 'utf8')).toBe(markdown);
 });
