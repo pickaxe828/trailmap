@@ -6,6 +6,7 @@ import { enqueueJob, JOB_PRIORITY, type JobHandlers } from '../jobs/queue';
 import type { JobPayloads } from '../jobs/types';
 import { requestModel } from '../llm/dispatch';
 import { maySendToModel, type RecordingSettings } from '../privacy/policy';
+import { allowsSources, modelSources } from '../privacy/sources';
 import { edgeSupport, putConceptEdge } from './edges';
 import { refreshConcept, type ConceptEvidence } from './evidence';
 
@@ -24,7 +25,8 @@ export async function enqueueMergeVerdicts(db: TrailmapDb, pairs: Pair[], now: n
   }
 }
 
-const provenance = (row: ConceptEvidence) => [row.visitId, ...(row.sourceVisitId ? [row.sourceVisitId] : [])];
+const provenance = (row: ConceptEvidence) => [row.visitId, ...(row.sourceVisitId ? [row.sourceVisitId] : []),
+  ...(row.enrichmentSources?.visitIds ?? [])];
 
 type VerdictModel = (...args: Parameters<typeof requestModel>) => Promise<{ output: unknown }>;
 
@@ -36,12 +38,15 @@ export function decideConceptMerges(db: TrailmapDb, getSettings: () => Recording
     if (settings.paused) return;
     const ids = [...new Set(payload.pairs.flatMap(({ candidateId, existingId }) => [candidateId, existingId]))];
     const eligible = new Map<string, ConceptEvidence>();
-    for (const row of await db.conceptEvidence.bulkGet(ids)) {
-      if (!row) continue;
-      const [page, visit, sourceVisit] = await Promise.all([
-        db.pages.get(row.canonicalUrl), db.visits.get(row.visitId), row.sourceVisitId ? db.visits.get(row.sourceVisitId) : undefined,
-      ]);
-      if (visit && page && maySendToModel(visit, { ...page, sourceUrl: row.sourceUrl, sourceVisitId: row.sourceVisitId }, settings, sourceVisit)) {
+    const rows = (await db.conceptEvidence.bulkGet(ids)).filter((row) => row !== undefined);
+    const sourceVisits = await db.visits.bulkGet([...new Set(rows.flatMap(provenance))]);
+    const byId = new Map(sourceVisits.flatMap((visit) => visit ? [[visit.id, visit]] : []));
+    for (const row of rows) {
+      const page = await db.pages.get(row.canonicalUrl);
+      const visit = byId.get(row.visitId);
+      if (visit && page && allowsSources(row.enrichmentSources, byId, settings) &&
+        maySendToModel(visit, { ...page, sourceUrl: row.sourceUrl, sourceVisitId: row.sourceVisitId }, settings,
+          row.sourceVisitId ? byId.get(row.sourceVisitId) : undefined)) {
         eligible.set(row.id, row);
       }
     }
@@ -52,11 +57,10 @@ export function decideConceptMerges(db: TrailmapDb, getSettings: () => Recording
     });
     if (!matching.length) return;
     const description = ({ name, gloss, kind }: ConceptEvidence) => ({ name: name.slice(0, 200), gloss: gloss.slice(0, 240), kind });
-    return {
+    const used = matching.flatMap(({ candidate, existing }) => [candidate, existing]);
+    const sources = modelSources(used.flatMap(provenance).map((id) => byId.get(id)!).filter(Boolean), ...used.map((row) => row.enrichmentSources));
+    return { ...sources, matching,
       input: JSON.stringify({ pairs: matching.map(({ id, candidate, existing }) => ({ id, candidate: description(candidate), existing: description(existing) })) }),
-      visitIds: [...new Set(matching.flatMap(({ candidate, existing }) => [...provenance(candidate), ...provenance(existing)]))],
-      canonicalUrls: [...new Set(matching.flatMap(({ candidate, existing }) => [candidate.canonicalUrl, existing.canonicalUrl]))],
-      matching,
     };
   }
 

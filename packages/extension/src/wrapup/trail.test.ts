@@ -1,10 +1,11 @@
 import { expect, test } from 'bun:test';
 import type { Expedition, Highlight, Page, Query, Visit } from '@trailmap/shared';
+import { displayFieldNotes } from './markdown';
 import { buildFieldNotesInput, buildWrapUpInput, renderFieldNotes, type TrailSources } from './trail';
 
 const settings = { paused: false, skippedHosts: ['skipped.test'] };
 const expedition: Expedition = {
-  id: 'expedition:v1', rootVisitId: 'v1', title: 'crdt tombstones', drivingQuestion: null, kind: 'learning',
+  id: 'expedition:v1', rootVisitId: 'search', title: 'crdt tombstones', drivingQuestion: null, kind: 'learning',
   startedAt: 1000, endedAt: 9000, fieldNotes: null, userEdited: false, threadId: null,
 };
 const visit = (id: string, host: string, extra: Partial<Visit> = {}): Visit => ({
@@ -45,6 +46,19 @@ test('the wrap-up input lists searches and read Pages in trail order and leaves 
   for (const hidden of ['unread.test', 'skipped.test', 'blocked.test', 'Body of']) expect(text).not.toContain(hidden);
 });
 
+test('an allowed alias never sends a skipped alias highlight or cached enrichment', () => {
+  const s = sources();
+  const first = s.visits.find(({ id }) => id === 'first')!;
+  const skipped = s.visits.find(({ id }) => id === 'skipped')!;
+  skipped.canonicalUrl = first.canonicalUrl;
+  s.pages = [page(first, { enrichmentVisitId: skipped.id, summary: 'private summary' })];
+  s.highlights.push({ id: 'secret', visitId: skipped.id, text: 'private highlight', at: 2200, source: 'copy' });
+  for (const built of [buildWrapUpInput({ ...s, sameDay: [] }, settings), buildFieldNotesInput(s, settings)]) {
+    expect(JSON.stringify(built?.input)).toContain('tombstones keep deletes');
+    expect(JSON.stringify(built?.input)).not.toContain('private');
+  }
+});
+
 test('an Expedition with nothing eligible to send produces no input', () => {
   const everything = sources();
   const onlyBounced = { ...everything, visits: everything.visits.filter((v) => v.engagement === 'bounced' && v.id !== 'search'),
@@ -76,7 +90,8 @@ test('field notes follow the §4.6 sections, cite each key idea by Page, and lis
     trail: 'Started with a search, then read two pages.',
     loose_ends: ['How are tombstones garbage collected?'],
   }, built);
-  expect(markdown).toBe([
+  expect(markdown).not.toContain('unread.test');
+  expect(displayFieldNotes({ fieldNotes: markdown, unreadStops: built.unread })).toBe([
     '## Question', '', 'How do CRDTs delete?', '',
     '## What you found', '', 'Tombstones mark deletes.', '',
     '## Key ideas', '',

@@ -66,7 +66,7 @@ export function resolveConcepts(db: TrailmapDb, embedder: Embedder, now: () => n
         }
         await db.conceptEvidence.add({
           ...mention, id: evidenceId, conceptId, visitId: visit.id, canonicalUrl: visit.canonicalUrl,
-          sourceUrl: current.sourceUrl, sourceVisitId: current.sourceVisitId,
+          sourceUrl: current.sourceUrl, sourceVisitId: current.sourceVisitId, enrichmentSources: current.page.enrichmentSources,
           startedAt: visit.startedAt, embedding,
         });
         if (uncertain) {

@@ -1,9 +1,11 @@
 import { z } from 'zod';
 import { LlmCompletion } from '@trailmap/shared';
+import { canonicalizeUrl } from '../capture/canonical';
 import type { VisitRecorder } from '../capture/recorder';
 import { CompanionRequestError } from '../companion/client';
 import type { TrailmapDb } from '../db/db';
 import { maySendToModel, type RecordingSettings } from '../privacy/policy';
+import { modelSources } from '../privacy/sources';
 import { requestModel } from './dispatch';
 import { PageSummary, SIDE_PANEL_PATH, SUMMARIZE_PAGE, type PageSummaryReply } from './page-summary';
 import { readModelRoutes } from './settings';
@@ -16,15 +18,20 @@ async function summarize(db: TrailmapDb, recorder: VisitRecorder, getSettings: (
   const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
   if (tab?.id === undefined || !tab.url || tab.pendingUrl) return noText;
   const visit = recorder.getCurrentVisit(tab.id);
-  if (!visit || visit.url.split('#')[0] !== tab.url.split('#')[0]) return noText;
+  if (!visit || visit.url !== canonicalizeUrl(tab.url)) return noText;
   const page = await db.pages.get(visit.canonicalUrl);
   const current = recorder.getCurrentVisit(tab.id);
   if (!page?.text.trim() || current?.id !== visit.id || current.canonicalUrl !== visit.canonicalUrl) return noText;
+  const sourceVisit = page.sourceVisitId ? await db.visits.get(page.sourceVisitId) : undefined;
+  const provenance = modelSources(sourceVisit ? [visit, sourceVisit] : [visit], {
+    visitIds: [], canonicalUrls: page.sourceUrl ? [page.sourceUrl] : [],
+  });
   const allowed = async () => {
     const latest = await db.visits.get(visit.id);
     const captured = await db.pages.get(visit.canonicalUrl);
     const source = captured?.sourceVisitId ? await db.visits.get(captured.sourceVisitId) : undefined;
-    return !!latest && captured?.text === page.text && maySendToModel(latest, captured, getSettings(), source);
+    return !!latest && captured?.text === page.text && captured.sourceVisitId === page.sourceVisitId &&
+      captured.sourceUrl === page.sourceUrl && maySendToModel(latest, captured, getSettings(), source);
   };
   if (!await allowed()) return { ok: false, code: 'privacy_filtered', message: 'This page is not eligible for a model summary.' };
   const { extraction: route } = await readModelRoutes();
@@ -39,9 +46,11 @@ async function summarize(db: TrailmapDb, recorder: VisitRecorder, getSettings: (
     schemaName: 'page_summary',
   }, {
     canonicalUrl: page.canonicalUrl,
+    ...provenance,
     tables: [db.visits, db.pages, db.queueHolds],
     allow: async () => (route.provider !== 'chatgpt' || !await db.queueHolds.get('ai')) && await allowed(),
   }, route);
+  if (!await allowed()) return noText;
   const summary = PageSummary.safeParse(output);
   if (!summary.success) return { ok: false, code: 'invalid_output', message: 'The model did not return a valid Page summary.' };
   return { ok: true, title: visit.title || new URL(visit.url).hostname, summary: summary.data };

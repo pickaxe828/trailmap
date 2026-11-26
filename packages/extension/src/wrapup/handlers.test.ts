@@ -53,7 +53,7 @@ const notes = { found: 'With tombstones.', key_ideas: [{ idea: 'Deletes are mark
 
 function queueWith(request: ModelRequester, hooks = new NotesWrittenHooks()) {
   const handlers = wrapUpHandlers(db, () => settings, { request, now: () => now, hooks });
-  return new JobQueue(db, () => now, { ...discardJobs, ...handlers }, [db.expeditions, db.visits]);
+  return new JobQueue(db, () => now, { ...discardJobs, ...handlers }, [db.expeditions, db.visits, db.pages, db.highlights, db.queries]);
 }
 const queue = (outputs: Record<string, unknown>, calls?: Call[], hooks?: NotesWrittenHooks) => queueWith(fake(outputs, calls), hooks);
 const drain = async (q: JobQueue) => { while (await q.runNext()) { /* drain */ } };
@@ -84,7 +84,8 @@ test('field notes are stored as Markdown, flagged unseen, and announced to the n
   expect(stored).toMatchObject({ unseenNotes: 1, notesWrittenAt: now, userEdited: false });
   expect(stored!.fieldNotes).toContain('## Question\n\nHow do CRDTs represent deletes?');
   expect(stored!.fieldNotes).toContain('- Deletes are markers ([Title v1](https://learn.test/v1))');
-  expect(stored!.fieldNotes).toContain('- Opened but never read: [Title v2](https://unread.test/v2)');
+  expect(stored!.fieldNotes).not.toContain('unread.test');
+  expect(stored!.unreadStops).toEqual([{ visitId: 'v2', title: 'Title v2', url: 'https://unread.test/v2' }]);
   expect(written).toEqual(['expedition:v1']);
   expect(await countUnseenNotes(db)).toBe(1);
   await markNotesSeen(db, 'expedition:v1');
@@ -105,6 +106,25 @@ test('an errand gets a title but no field notes and no notes-written event', asy
   expect(fired).toBe(0);
 });
 
+test('Wrap up classifies and titles a read Visit without Page text, and handles a bounced-only Expedition locally', async () => {
+  await seed();
+  await db.pages.clear();
+  const calls: Call[] = [];
+  const result = { ...wrapUp, title: 'Look up a delivery', kind: 'errand' };
+  await drain(queue({ expedition_wrap_up: result }, calls));
+  expect(calls).toHaveLength(1);
+  expect(calls[0]?.input).toContain('Title v1');
+  expect(await db.expeditions.get('expedition:v1')).toMatchObject({ title: 'Look up a delivery', kind: 'errand', wrappedUpAt: now });
+
+  await seed();
+  await db.pages.clear();
+  await db.visits.update('v1', { engagement: 'bounced', title: 'Bounced fixture' });
+  calls.length = 0;
+  await drain(queue({ expedition_wrap_up: result }, calls));
+  expect(calls).toEqual([]);
+  expect(await db.expeditions.get('expedition:v1')).toMatchObject({ title: 'Bounced fixture', kind: 'errand', wrappedUpAt: now });
+});
+
 test('merge suggestions keep only real same-day Expeditions and are stored for the Journal', async () => {
   await seed();
   await db.expeditions.put(expedition({ id: 'expedition:other', rootVisitId: 'o', title: 'CRDT basics', startedAt: 500, endedAt: 800 }));
@@ -116,6 +136,38 @@ test('merge suggestions keep only real same-day Expeditions and are stored for t
   await q.runNext();
   expect(JSON.parse(calls[0]!.input).sameDay).toEqual([{ id: 'e1', title: 'CRDT basics', drivingQuestion: null }]);
   expect((await db.expeditions.get('expedition:v1'))!.mergeSuggestions).toEqual([{ expeditionId: 'expedition:other', reason: 'Same topic' }]);
+});
+
+test('a wrap-up audit includes the selected stop and all sources behind same-day context', async () => {
+  await seed();
+  const other = 'expedition:other';
+  const root = visit('other', 'other.test', { expeditionId: other });
+  const detail = visit('detail', 'docs.test', { expeditionId: other });
+  await db.expeditions.add(expedition({ id: other, rootVisitId: root.id, wrappedUpAt: 500,
+    wrapUpSource: { visitIds: [root.id, detail.id], canonicalUrls: [root.canonicalUrl, detail.canonicalUrl] } }));
+  await db.visits.bulkAdd([root, detail]);
+  await queueWith(async (_db, payload, guard) => {
+    expect(await guard.allow()).toBe(true);
+    expect(JSON.parse(payload.input).sameDay).toHaveLength(1);
+    expect(guard.visitIds?.slice().sort()).toEqual(['detail', 'other', 'v1']);
+    return { output: wrapUp };
+  }).runNext();
+  expect(await db.expeditions.get('expedition:v1')).toMatchObject({ title: wrapUp.title });
+});
+
+test('an in-flight wrap-up cannot commit after a same-day source is forgotten', async () => {
+  await seed();
+  const other = 'expedition:other';
+  await db.expeditions.add(expedition({ id: other, rootVisitId: 'o', title: 'Forgotten subject' }));
+  await db.visits.add(visit('o', 'forgotten.test', { expeditionId: other }));
+  const corrections = createCorrections({ db, now: () => now, newId: () => crypto.randomUUID() });
+  await queueWith(async (_db, payload, guard) => {
+    expect(await guard.allow()).toBe(true);
+    expect(payload.input).toContain('Forgotten subject');
+    await corrections.forgetSite('forgotten.test');
+    return { output: { ...wrapUp, title: 'Forgotten subject' } };
+  }).runNext();
+  expect(await db.expeditions.get('expedition:v1')).toMatchObject({ title: 'crdt', drivingQuestion: null });
 });
 
 test('a title the user chose and notes the user edited are never overwritten', async () => {

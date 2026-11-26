@@ -18,7 +18,7 @@ export async function repairExpedition(db: TrailmapDb, expeditionId: string, { d
   }
   const changes: Partial<typeof expedition> = {};
   const existingRoot = members.find(({ id }) => id === expedition.rootVisitId);
-  if (!existingRoot || (derivedContentRemoved && (expedition.threadId || expedition.notesSource))) {
+  if (!existingRoot || (derivedContentRemoved && (expedition.threadId || expedition.notesSource || expedition.wrappedUpAt !== undefined))) {
     const root = existingRoot ?? members[0]!;
     changes.rootVisitId = root.id;
     if (!expedition.userEdited) {
@@ -31,8 +31,11 @@ export async function repairExpedition(db: TrailmapDb, expeditionId: string, { d
     if (!expedition.userEdited || expedition.notesSource) {
       changes.fieldNotes = null;
       changes.notesSource = undefined;
-      changes.drivingQuestion = null;
+      changes.unreadStops = undefined;
     }
+    changes.drivingQuestion = null;
+    changes.wrapUpSource = undefined;
+    changes.wrappedUpAt = undefined;
     // Wrap-up output (merge suggestions) and notes never survive their source, so the badge can't count them either.
     if (expedition.mergeSuggestions) changes.mergeSuggestions = [];
     if (changes.fieldNotes === null) {

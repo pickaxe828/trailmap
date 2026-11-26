@@ -9,6 +9,7 @@ export type ConceptEvidence = NonNullable<Page['conceptMentions']>[number] & {
   canonicalUrl: string;
   sourceUrl?: string;
   sourceVisitId?: string;
+  enrichmentSources?: Page['enrichmentSources'];
   startedAt: number;
   embedding: Concept['embedding'];
 };

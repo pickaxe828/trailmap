@@ -5,6 +5,7 @@ import type { TrailmapDb } from '../db/db';
 import type { JobHandlers } from '../jobs/queue';
 import { requestModel } from '../llm/dispatch';
 import type { RecordingSettings } from '../privacy/policy';
+import { modelSources } from '../privacy/sources';
 import { queueLivingNote, readThreadMembers } from './model';
 import { allowedNotesSources, readNotesProvenance } from './provenance';
 
@@ -26,19 +27,18 @@ export function updateLivingNote(db: TrailmapDb, getSettings: () => RecordingSet
       const noted = thread?.notedExpeditionIds ?? [];
       if (!thread || (thread.noteRevision ?? 0) !== revision || noted.length !== checkpoint) return;
       const members = await readThreadMembers(db, threadId);
-      const next = members.find((session) => session.fieldNotes?.trim() && !noted.includes(session.id));
-      if (members.length < 2 || !next || noted.some((id) => !members.some((session) => session.id === id))) return;
-      const nextSource = await readNotesProvenance(db, next);
-      const sources = [nextSource, ...await Promise.all(members.filter(({ id }) => noted.includes(id))
-        .map((member) => readNotesProvenance(db, member)))];
-      const provenance = {
-        canonicalUrls: [...new Set(sources.flatMap(({ canonicalUrls }) => canonicalUrls))].sort(),
-        visitIds: [...new Set(sources.flatMap(({ visitIds }) => visitIds))].sort(),
-      };
-      if (!await allowedNotesSources(db, provenance, getSettings())) return 'blocked' as const;
-      // The field-notes renderer puts unread tabs here for local use only.
-      const fieldNotes = next.fieldNotes!.split('\n').filter((line) => !line.startsWith('- Opened but never read: ')).join('\n');
-      return { input: JSON.stringify({ livingNote: thread.livingNote, fieldNotes }), nextId: next.id, nextSource, provenance };
+      if (members.length < 2 || noted.some((id) => !members.some((session) => session.id === id))) return;
+      const settings = getSettings();
+      if (settings.paused) return 'blocked' as const;
+      const prior = await Promise.all(members.filter(({ id }) => noted.includes(id)).map((member) => readNotesProvenance(db, member)));
+      if (thread.livingNote && !await allowedNotesSources(db, modelSources([], ...prior), settings)) return 'blocked' as const;
+      for (const next of members) {
+        if (noted.includes(next.id) || !next.fieldNotes?.trim()) continue;
+        const nextSource = await readNotesProvenance(db, next);
+        const provenance = modelSources([], nextSource, ...prior);
+        if (!await allowedNotesSources(db, provenance, settings)) continue;
+        return { input: JSON.stringify({ livingNote: thread.livingNote, fieldNotes: next.fieldNotes }), nextId: next.id, nextSource, provenance };
+      }
     };
     const prepared = await db.transaction('r', tables, prepare);
     if (!prepared) return 'discard';

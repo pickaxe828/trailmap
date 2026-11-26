@@ -1,6 +1,6 @@
 import type { Expedition, Highlight, Page, Visit } from '@trailmap/shared';
 import { PAGE_TEXT_BYTE_LIMIT } from '../capture/page-messages';
-import { maySendToModel, recordingState, type RecordingSettings } from '../privacy/policy';
+import { eligibleMetadata, maySendToModel, type RecordingSettings } from '../privacy/policy';
 
 type Sources = {
   visit: Visit;
@@ -21,10 +21,8 @@ export function cap(text: string, bytes: number): string {
 export function buildEnrichmentInput({ visit, page, highlights, sourceVisit, expedition, root, parent }: Sources, settings: RecordingSettings) {
   // Context titles are navigation metadata, not Page excerpts. Do not include
   // even that metadata from a skipped/private Visit or one we can't identify.
-  const allowedContext = (context: Visit | undefined) => context && !context.privacyBlocked &&
-    recordingState(context.url, settings) === 'recording' && recordingState(context.canonicalUrl, settings) === 'recording';
   if (!maySendToModel(visit, page, settings, sourceVisit)) return;
-  const question = expedition?.rootVisitId && root?.id === expedition.rootVisitId && allowedContext(root)
+  const question = expedition?.rootVisitId && root?.id === expedition.rootVisitId && eligibleMetadata(root, settings)
     ? expedition.drivingQuestion || expedition.title : null;
   return {
     title: cap(visit.title || new URL(page.canonicalUrl).hostname, 768),
@@ -33,6 +31,6 @@ export function buildEnrichmentInput({ visit, page, highlights, sourceVisit, exp
     highlights: highlights.filter((item) => item.visitId === visit.id && (!item.canonicalUrl || item.canonicalUrl === page.canonicalUrl))
       .slice(0, 10).map(({ text }) => ({ text: cap(text, 800), important: true })),
     drivingQuestion: question ? cap(question, 768) : null,
-    parentTitle: parent?.id === visit.parentVisitId && allowedContext(parent) && parent.title ? cap(parent.title, 768) : null,
+    parentTitle: parent?.id === visit.parentVisitId && eligibleMetadata(parent, settings) && parent.title ? cap(parent.title, 768) : null,
   };
 }

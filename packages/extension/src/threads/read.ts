@@ -35,7 +35,12 @@ export function readJournalResearch(db: TrailmapDb, at = Date.now()) {
       }),
     ];
     const time = (item: ThreadCard | ExpeditionCard) => item.kind === 'thread' ? item.thread.lastActiveAt : sessionEnd(item.expedition);
-    return { items: items.sort((a, b) => time(b) - time(a)), targets, errands: expeditions.filter(({ kind }) => kind === 'errand') };
+    const expeditionsById = new Map(expeditions.map((expedition) => [expedition.id, expedition]));
+    const mergeSuggestions = expeditions.flatMap((source) => (source.mergeSuggestions ?? []).flatMap(({ expeditionId, reason }) => {
+      const target = expeditionsById.get(expeditionId);
+      return target && target.id !== source.id ? [{ source, target, reason }] : [];
+    }));
+    return { items: items.sort((a, b) => time(b) - time(a)), targets, mergeSuggestions, errands: expeditions.filter(({ kind }) => kind === 'errand') };
   });
 }
 

@@ -1,4 +1,5 @@
 import type { Expedition, Thread } from '@trailmap/shared';
+import { displayFieldNotes } from '../wrapup/markdown';
 
 export type NoteLink = { path: string; title: string };
 export type MarkdownNote = NoteLink & { markdown: string };
@@ -49,7 +50,7 @@ export function renderExpeditionNote(
     sourceUrls: [...new Set(sourceUrls)],
   });
   const title = headingTitle(expedition.title);
-  const sections = [title ? `# ${title}` : '# Expedition', expedition.fieldNotes,
+  const sections = [title ? `# ${title}` : '# Expedition', displayFieldNotes(expedition),
     notes.length ? `## Notes\n\n${notes.join('\n\n')}` : '',
     concepts.length ? `## Concepts\n\n${concepts.map((concept) => `- ${wikilink(concept)}`).join('\n')}` : ''];
   return `${metadata}\n${sections.flatMap((section) => section?.trimEnd() || []).join('\n\n')}\n`;
