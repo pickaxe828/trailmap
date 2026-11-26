@@ -14,6 +14,11 @@ import { onModelRoutesChanged, readModelRoutes, saveModelRoute, type ModelRoutes
 
 type Catalog = ResponseFor<'llm.models'>;
 
+const TASK_HINTS: Record<LlmTaskGroup, string> = {
+  extraction: 'Lighter models are usually faster and use less of your plan or budget for frequent Page extraction.',
+  notes: 'Mid-tier models balance quality, speed, and cost for notes and merge decisions.',
+};
+
 function statusText(catalog: Catalog, provider: LlmProviderId, keySet: boolean | undefined) {
   const status = catalog.providers?.find((entry) => entry.provider === provider);
   if (provider === 'anthropic' && keySet === false) return 'No key saved';
@@ -112,7 +117,11 @@ export function ProviderSettings({ companion }: { companion: CompanionStatus }) 
     const choices = LlmProviderId.options.map((provider) => ({ value: provider, label: LLM_PROVIDER_NAMES[provider],
       disabled: provider !== 'chatgpt' && provider !== route.provider && modelsFor(provider).length === 0 }));
     const missing = route.model && !models.some(({ value }) => value === route.model) ? route.model : undefined;
-    const automatic = { value: '', label: 'Automatic (provider default)' };
+    const defaults = catalog?.providers?.find(({ provider }) => provider === route.provider)?.defaultModels;
+    // Older companions used the first listed ChatGPT model. Ollama still does.
+    const defaultSlug = defaults?.[group] ?? (route.provider === 'anthropic' ? ANTHROPIC_DEFAULT_MODELS[group] : models[0]?.value);
+    const defaultName = models.find(({ value }) => value === defaultSlug)?.label ?? defaultSlug;
+    const automatic = { value: '', label: defaultName ? `Default: ${defaultName}` : 'Automatic (no model available)' };
     const save = (provider: LlmProviderId, model?: string) => {
       setError(undefined);
       void saveModelRoute(group, { provider, model }).catch(() => setError('Could not save the model choice.'));
@@ -122,13 +131,15 @@ export function ProviderSettings({ companion }: { companion: CompanionStatus }) 
         <Heading level={3}>{title}</Heading>
         <Selector label={`${title} provider`} options={choices} value={route.provider} onChange={(value) => {
           const provider = LlmProviderId.parse(value);
+          if (provider === 'chatgpt') return save(provider);
           const available = modelsFor(provider);
           const preferred = provider === 'anthropic' ? ANTHROPIC_DEFAULT_MODELS[group] : undefined;
           save(provider, available.find(({ value }) => value === preferred)?.value ?? available[0]?.value);
         }} />
-        <Selector label={`${title} model`} value={route.model ?? ''} hasSearch={models.length > 8}
+        <Selector label={`${title} model`} description={TASK_HINTS[group]} value={route.model ?? ''} hasSearch={models.length > 8}
           options={[automatic, ...(missing ? [{ value: missing, label: `${missing} (unavailable)`, disabled: true }] : []), ...models]}
           onChange={(model) => save(route.provider, model || undefined)} />
+        {route.model && defaultName && <Text as="p" type="supporting">{automatic.label}</Text>}
       </VStack>
     );
   }
@@ -154,7 +165,7 @@ export function ProviderSettings({ companion }: { companion: CompanionStatus }) 
               value={key} onChange={setKey} width="100%" />
           )}
           <HStack gap={2} wrap="wrap">
-            {(keySet !== undefined || catalog) && <Button label="Save API key" clickAction={saveKey} isDisabled={!key.trim()} />}
+            {(keySet !== undefined || catalog) && <Button label="Save API key" size="sm" clickAction={saveKey} isDisabled={!key.trim()} />}
             <Button label="Refresh providers" size="sm" onClick={() => refresh((n) => n + 1)} />
           </HStack>
         </VStack>

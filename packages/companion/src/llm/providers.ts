@@ -1,6 +1,7 @@
 import { LlmProviderId, type LlmCompletion } from '@trailmap/shared';
 import type { CompanionContext } from '../handle';
 import { anthropicProvider } from './anthropic';
+import { resolveChatGptDefault } from './chatgpt-default';
 import { ollamaProvider } from './ollama';
 import { openAiProvider } from './openai';
 import { LlmFailure } from './provider';
@@ -25,7 +26,12 @@ export async function modelCatalog(ctx: CompanionContext) {
   const catalogs = await Promise.all(LlmProviderId.options.map(async (provider) => {
     try {
       const models = await providers[provider](ctx).models();
-      return { status: { provider }, models: models.map((model) => ({ ...model, provider })) };
+      const extraction = provider === 'chatgpt' ? resolveChatGptDefault(models, 'extraction') : undefined;
+      const notes = provider === 'chatgpt' ? resolveChatGptDefault(models, 'notes') : undefined;
+      const status = extraction && notes
+        ? { provider, defaultModels: { extraction: extraction.slug, notes: notes.slug } }
+        : { provider };
+      return { status, models: models.map((model) => ({ ...model, provider })) };
     } catch (error) {
       return { status: { provider, error: error instanceof LlmFailure ? error.code : 'internal' as const }, models: [] };
     }

@@ -69,7 +69,11 @@ export const LlmModel = z.object({ slug: z.string().min(1).max(200), displayName
 export type LlmModel = z.infer<typeof LlmModel>;
 
 export const ProviderModel = LlmModel.extend({ provider: LlmProviderId });
-export const ProviderCatalogStatus = z.object({ provider: LlmProviderId, error: LlmErrorCode.or(z.literal('internal')).optional() });
+export const ProviderCatalogStatus = z.object({
+  provider: LlmProviderId,
+  error: LlmErrorCode.or(z.literal('internal')).optional(),
+  defaultModels: z.object({ extraction: LlmModel.shape.slug, notes: LlmModel.shape.slug }).optional(),
+});
 
 /** Leaves room for the companion's upstream deadline and Native Messaging. */
 export const LLM_REQUEST_TIMEOUT_MS = 190_000;

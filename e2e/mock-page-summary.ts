@@ -5,6 +5,9 @@ type Inference = {
   stream?: boolean; store?: boolean; text?: { format: { name: string } };
 };
 const calls: Inference[] = [];
+const modelSlugs = process.argv.slice(2);
+const catalog = modelSlugs.length ? modelSlugs.map((slug) => ({ slug, display_name: slug.toUpperCase(), visibility: 'list' }))
+  : [{ slug: 'fixture-model', display_name: 'Fixture Model', visibility: 'list' }];
 let planErrorCleared = false;
 let failWrapUp = false;
 const mock = startMockOAuth(async (request) => {
@@ -20,16 +23,17 @@ const mock = startMockOAuth(async (request) => {
   }
   if (request.headers.get('authorization') !== 'Bearer mock-access-0') return new Response(null, { status: 401 });
   if (path === '/v1/models' && request.method === 'GET') {
-    return Response.json({ models: [{ slug: 'fixture-model', display_name: 'Fixture Model', visibility: 'list' }] });
+    return Response.json({ models: catalog });
   }
   if (path !== '/v1/responses' || request.method !== 'POST') return new Response(null, { status: 404 });
   const body = await request.json() as Inference;
   calls.push(body);
+  if (!catalog.some(({ slug }) => slug === body.model)) return new Response(null, { status: 400 });
   const text = body.input?.[0]?.content ?? '';
   const task = body.text?.format.name;
   if (task === 'living_note') {
     const { livingNote, fieldNotes } = JSON.parse(text) as { livingNote: string | null; fieldNotes: string };
-    if (body.model !== 'fixture-model' || !fieldNotes.includes('A tombstone records')) return new Response(null, { status: 400 });
+    if (!fieldNotes.includes('A tombstone records')) return new Response(null, { status: 400 });
     return stream(JSON.stringify({ markdown: livingNote ? 'Both sessions support the revised conclusion.' : 'The first session explains tombstones.' }));
   }
   if (task === 'expedition_wrap_up' && failWrapUp) {
@@ -37,7 +41,6 @@ const mock = startMockOAuth(async (request) => {
   }
   if (task === 'expedition_wrap_up' || task === 'field_notes') {
     // Wrap-up inputs carry Page notes, never Page text.
-    if (body.model !== 'fixture-model') return new Response(null, { status: 400 });
     const input = JSON.parse(text) as { trail: { ref: string; summary?: string; contentKind?: string }[] };
     const page = input.trail.find((entry) => entry.summary);
     const ai = input.trail.find((entry) => entry.contentKind === 'ai_conversation');
@@ -72,7 +75,7 @@ const mock = startMockOAuth(async (request) => {
     ],
     relations: [{ from: 'Rayleigh scattering', to: 'Wavelength', type: 'related_to' }],
   }));
-  if (body.model !== 'fixture-model' || body.store !== false || body.stream !== true ||
+  if (body.store !== false || body.stream !== true ||
     !text.includes('Tombstones preserve causal history across replicas.') || text.includes('This paragraph appears after the extraction limit.')) {
     return new Response(null, { status: 400 });
   }

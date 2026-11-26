@@ -190,9 +190,42 @@ test('lists displayable models from every connected provider and retains ChatGPT
       { provider: 'anthropic', slug: 'claude-sonnet-5-5', displayName: 'Claude Sonnet' },
       { provider: 'ollama', slug: 'gemma:latest', displayName: 'gemma:latest' },
     ],
-    providers: [{ provider: 'chatgpt' }, { provider: 'anthropic' }, { provider: 'ollama' }],
+    providers: [
+      { provider: 'chatgpt', defaultModels: { extraction: 'visible', notes: 'visible' } },
+      { provider: 'anthropic' }, { provider: 'ollama' },
+    ],
   });
   expect(await complete({ model: undefined })).toMatchObject({ type: 'llm.complete', output: { summary: 'A Page' } });
+});
+
+test('dispatches and audits the ChatGPT tier default when no model is chosen for a task', async () => {
+  await signIn();
+  const catalog = [
+    'gpt-6.2-sol', 'gpt-6.2-astra', 'gpt-6.1-terra', 'gpt-6.1-sol', 'gpt-6-astra',
+    'gpt-6-sol', 'gpt-6-luna', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna',
+  ];
+  for (const [task, model, explicit] of [
+    ['page_summary', 'gpt-6-luna', undefined],
+    ['field_notes', 'gpt-6.1-terra', undefined],
+    ['page_enrichment', 'gpt-6.2-sol', 'gpt-6.2-sol'],
+  ] as const) {
+    const audited: string[] = [];
+    const sent: string[] = [];
+    ctx.authorizeDispatch = async (_id, dispatch) => {
+      audited.push(dispatch.model);
+      return () => {};
+    };
+    respond = async (request) => {
+      if (new URL(request.url).pathname === '/v1/models') {
+        return Response.json({ models: catalog.map((slug) => ({ slug, display_name: slug, visibility: 'list' })) });
+      }
+      sent.push((await request.json()).model);
+      return stream(delta('{"summary":"A Page"}'), completed);
+    };
+    expect(await complete({ task, model: explicit, auditId: crypto.randomUUID() })).toMatchObject({ type: 'llm.complete' });
+    expect(sent).toEqual([model]);
+    expect(audited).toEqual(sent);
+  }
 });
 
 const errors = [
