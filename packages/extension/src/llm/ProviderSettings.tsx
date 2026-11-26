@@ -155,7 +155,7 @@ export function ProviderSettings({ companion }: { companion: CompanionStatus }) 
           )}
           <HStack gap={2} wrap="wrap">
             {(keySet !== undefined || catalog) && <Button label="Save API key" clickAction={saveKey} isDisabled={!key.trim()} />}
-            <Button label="Refresh providers" variant="ghost" onClick={() => refresh((n) => n + 1)} />
+            <Button label="Refresh providers" size="sm" onClick={() => refresh((n) => n + 1)} />
           </HStack>
         </VStack>
       )}

@@ -67,7 +67,7 @@ export function App() {
     return saved;
   }
   function button(label: string, plan: OrganisationPlan | null) {
-    return <Button label={label} variant="ghost" isDisabled={busy || !plan} onClick={() => plan && void apply(plan)} />;
+    return <Button label={label} variant="secondary" isDisabled={busy || !plan} onClick={() => plan && void apply(plan)} />;
   }
   function dropChoices(sourceId: string, destination: Expedition[], threadId?: string): DropChoice[] {
     const source = standalone.find(({ id }) => id === sourceId);
@@ -126,11 +126,11 @@ export function App() {
                       <Toolbar label="Organise selected cards" size="sm" startContent={
                         <HStack gap={1} wrap="wrap">
                           {button('Start thread', planOrganisation(selected, { action: 'start' }))}
-                          <DropdownMenu button={{ label: 'Add to thread…', variant: 'ghost', isDisabled: busy || !addChoices.length }} items={addChoices} />
+                          <DropdownMenu button={{ label: 'Add to thread…', variant: 'secondary', isDisabled: busy || !addChoices.length }} items={addChoices} />
                           {button('Merge into one expedition', planOrganisation(selected, { action: 'merge' }))}
                           {button('Mark as learning', planOrganisation(selected, { action: 'classify', kind: 'learning' }))}
                           {button('Mark as not learning', planOrganisation(selected, { action: 'classify', kind: 'errand' }))}
-                          <Button label="Cancel" variant="ghost" isDisabled={busy} onClick={cancel} />
+                          <Button label="Cancel" variant="secondary" isDisabled={busy} onClick={cancel} />
                         </HStack>
                       } />
                     </VStack>

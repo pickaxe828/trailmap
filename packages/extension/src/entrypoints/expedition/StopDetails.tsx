@@ -28,13 +28,13 @@ function AiConversation({ turns, visitId }: { turns: AiTurn[]; visitId: string }
         <VStack gap={1} hAlign="start">
           <Heading level={3}>Cited sources</Heading>
           {citations.map((url) => (
-            <Link key={url.href} href={url.href} isExternalLink isStandalone tooltip={url.href}
+            <Link key={url.href} href={url.href} isExternalLink isStandalone hasUnderline tooltip={url.href}
               onClick={(event) => {
                 event.preventDefault();
                 void chrome.runtime.sendMessage({ type: OPEN_AI_CITATION, visitId, url: url.href,
                   background: event.ctrlKey || event.metaKey }).catch(() => {});
               }}>
-              {url.hostname}{url.pathname === '/' ? '' : url.pathname}
+              <Text color="inherit" className="wrap-anywhere">{url.hostname}{url.pathname === '/' ? '' : url.pathname}</Text>
             </Link>
           ))}
         </VStack>
@@ -60,14 +60,15 @@ export function StopDetails({ review, selected, onSelect, onMove, onClose }: {
     : visit ? visitTitle(visit) : 'Trail stop';
   return (
     <VStack as="section" aria-label="Trail stop details" gap={2} paddingBlockEnd={4} className="border-b border-border">
-      <HStack justify="between" align="center" gap={2}>
-        <Heading level={2}>{title}</Heading>
-        <Button variant="ghost" size="sm" label="Close details" onClick={onClose} />
+      <HStack justify="between" align="start" gap={2}>
+        <Heading level={2} maxLines={2} className="min-w-0 flex-1">{title}</Heading>
+        <HStack className="shrink-0"><Button size="sm" label="Close details" onClick={onClose} /></HStack>
       </HStack>
       {members ? (
         <VStack gap={1} hAlign="start">
           <Text type="supporting">These pages were opened but not read.</Text>
-          {members.map((member) => <Button key={member.id} variant="ghost" label={visitTitle(member)} onClick={() => onSelect(member.id)} />)}
+          {members.map((member) => <Button key={member.id} size="sm" label={visitTitle(member)} tooltip={visitTitle(member)}
+            onClick={() => onSelect(member.id)} />)}
         </VStack>
       ) : (
         <>
@@ -81,9 +82,9 @@ export function StopDetails({ review, selected, onSelect, onMove, onClose }: {
               </VStack>
             </>
           )}
-          <HStack gap={2} wrap="wrap">
-            {url && !visit?.aiConversation && <Button label="Reopen page" size="sm" href={url.href} target="_blank" rel="noopener noreferrer" />}
-            {visit && onMove && <Button label="Move page" size="sm" variant="ghost" onClick={() => onMove(visit)} />}
+          <HStack gap={2} align="center" wrap="wrap">
+            {url && !visit?.aiConversation && <Link hasUnderline href={url.href} target="_blank">Reopen page</Link>}
+            {visit && onMove && <Button label="Move page" size="sm" onClick={() => onMove(visit)} />}
           </HStack>
         </>
       )}

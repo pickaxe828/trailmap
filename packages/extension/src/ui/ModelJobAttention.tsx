@@ -13,6 +13,6 @@ export function ModelJobAttention() {
   if (!attention) return null;
   return <Banner role="status" status="warning" title="AI notes are failing" description={<>
     {modelFailureMessage(attention.code, attention.provider)}{' '}
-    <Link href="/settings.html#diagnostics" target="_blank" rel="noopener noreferrer">Details in Diagnostics</Link>
+    <Link hasUnderline href="/settings.html#diagnostics" target="_blank" rel="noopener noreferrer">Details in Diagnostics</Link>
   </>} />;
 }

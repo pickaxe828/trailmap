@@ -50,9 +50,9 @@ export function App() {
       header={(
         <LayoutHeader padding={4}>
           <HStack align="end" justify="between" gap={3} wrap="wrap">
-            <VStack gap={1}>
-              <Link href={chrome.runtime.getURL('/journal.html')}>Journal</Link>
-              <Heading level={1}>{expedition?.title ?? 'Expedition'}</Heading>
+            <VStack gap={1} className="min-w-0">
+              <Link hasUnderline href={chrome.runtime.getURL('/journal.html')}>Journal</Link>
+              <Heading level={1} maxLines={2}>{expedition?.title ?? 'Expedition'}</Heading>
               {expedition?.drivingQuestion && expedition.drivingQuestion !== expedition.title && <Text>{expedition.drivingQuestion}</Text>}
               {expedition && <Text type="supporting">{formatExpeditionDate(expedition.startedAt)} · {
                 expedition.kind === 'unclassified' ? 'Unclassified' : expedition.kind === 'learning' ? 'Learning' : 'Not learning'

@@ -27,10 +27,10 @@ export function ConceptCard({ concept, neighbours, onFocus, onClose }: {
           <VStack gap={2}>
             <HStack align="center" justify="between" gap={2}>
               <Text type="supporting">Concept details</Text>
-              <Button size="sm" variant="ghost" label="Close" onClick={onClose} />
+              <Button size="sm" label="Close" onClick={onClose} />
             </HStack>
-            <Heading level={2}>{concept.name}</Heading>
-            <Text>{concept.gloss || 'No gloss yet.'}</Text>
+            <Heading level={2} maxLines={2}>{concept.name}</Heading>
+            <Text className="wrap-anywhere">{concept.gloss || 'No gloss yet.'}</Text>
             <Text type="supporting">First seen {formatExpeditionDate(concept.firstSeen)}</Text>
           </VStack>
           {!evidence && <Text type="supporting">Looking up evidence…</Text>}

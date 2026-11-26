@@ -117,7 +117,7 @@ export function PrivacySettings() {
             {hosts.map((host) => (
               <HStack as="li" key={host} gap={2} align="center" wrap="wrap">
                 <Text>{host}</Text>
-                <Button label="Remove" aria-label={`Remove ${host} from skip list`} size="sm" variant="ghost"
+                <Button label="Remove" aria-label={`Remove ${host} from skip list`} size="sm" variant="destructive"
                   isDisabled={busy} clickAction={() => edit(host, false)} />
               </HStack>
             ))}

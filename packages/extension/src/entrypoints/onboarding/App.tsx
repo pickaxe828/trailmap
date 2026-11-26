@@ -51,15 +51,15 @@ export function App() {
         </VStack>
       )}
       <HStack gap={2} align="center" wrap="wrap">
-        {stepIndex > 0 && <Button label="Back" variant="ghost" onClick={() => setStep(steps[stepIndex - 1]!)} />}
+        {stepIndex > 0 && <Button label="Back" size="sm" onClick={() => setStep(steps[stepIndex - 1]!)} />}
         {step === 'privacy' && <Button label="Next: AI notes" onClick={() => setStep('companion')} />}
         {step === 'companion' && companion.state === 'connected' && (
           <Button label="Next: Model providers" onClick={() => setStep('providers')} />
         )}
         {step === 'companion' && <Button label="Skip AI setup" variant="secondary" onClick={() => setStep('extras')} />}
         {step === 'providers' && <Button label="Next: Optional extras" onClick={() => setStep('extras')} />}
-        {step === 'extras' && <Button label="Finish setup" href="/journal.html" />}
-        <Link href="/settings.html">Open Settings</Link>
+        {step === 'extras' && <Link hasUnderline href="/journal.html">Finish setup</Link>}
+        <Link hasUnderline href="/settings.html">Open Settings</Link>
       </HStack>
     </VStack>
   );

@@ -55,7 +55,7 @@ const TrailCard = memo(function TrailCard({ data: { stop, review } }: NodeProps<
         {stop.kind === 'question' ? <Icon icon="search" size="sm" /> : url && (
           <img src={faviconUrl(url.href)} alt="" draggable={false} className="size-4 shrink-0" />
         )}
-        <Text type="label" maxLines={1} hasTruncateTooltip={false}>{title}</Text>
+        <Text type="label" maxLines={2} className="min-w-0" hasTruncateTooltip={false}>{title}</Text>
       </HStack>
       <HStack as="span" gap={2} justify="between" align="center">
         <Text type="supporting" maxLines={1} hasTruncateTooltip={false}>{caption}</Text>
@@ -95,9 +95,9 @@ function GraphControls() {
     <Panel position="bottom-right">
       <Card padding={1} elevation="low">
         <HStack gap={1}>
-          <Button size="sm" variant="ghost" label="Zoom out" onClick={() => void zoomOut()} />
-          <Button size="sm" variant="ghost" label="Fit trail" onClick={() => void fitView(fitOptions)} />
-          <Button size="sm" variant="ghost" label="Zoom in" onClick={() => void zoomIn()} />
+          <Button size="sm" label="Zoom out" onClick={() => void zoomOut()} />
+          <Button size="sm" label="Fit trail" onClick={() => void fitView(fitOptions)} />
+          <Button size="sm" label="Zoom in" onClick={() => void zoomIn()} />
         </HStack>
       </Card>
     </Panel>

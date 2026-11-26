@@ -17,7 +17,7 @@ export function ExpeditionCard({ expedition }: { expedition: Expedition }) {
             : endedAt === null ? <Text type="label">In progress</Text>
             : imported && <Text type="label">Imported from history</Text>}
         </HStack>
-        <Heading level={3}>{title}</Heading>
+        <Heading level={3} maxLines={2}>{title}</Heading>
         {drivingQuestion && drivingQuestion !== title && <Text type="supporting" maxLines={2}>{drivingQuestion}</Text>}
         {endedAt !== null && kind !== 'unclassified' && <Text type="label">{kind === 'learning' ? 'Learning' : 'Not learning'}</Text>}
       </VStack>

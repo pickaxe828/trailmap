@@ -12,8 +12,9 @@ test.describe('failing wrap-up', () => {
   test('three failures reach Settings, the side panel and Journal; Retry now restores field notes', async ({
     context, openExtensionPage, fixtureUrl, readCapture, mockOrigin, companionDataDir,
   }, testInfo) => {
-    const settings = await openExtensionPage('settings.html#diagnostics');
+    const settings = await openExtensionPage('settings.html#model-providers');
     await signInToMockChatGpt(context, settings);
+    await settings.getByRole('tab', { name: 'Diagnostics' }).click();
     const setFailure = (body: string) => fetch(mockOrigin + '/test/wrap-up-failure', { method: 'POST', body });
     expect((await setFailure('on')).ok).toBe(true);
     const panel = await openExtensionPage('sidepanel.html');
@@ -40,8 +41,6 @@ test.describe('failing wrap-up', () => {
     await expect(panel.getByText(warning, { exact: true })).toBeVisible();
     await expect(journal.getByText(warning, { exact: true })).toBeVisible();
     await expect(journal.getByRole('link', { name: 'Details in Diagnostics' })).toHaveAttribute('href', '/settings.html#diagnostics');
-    const failures = settings.getByRole('button', { name: /Expedition wrap-up.*Failed.*usage_unavailable/ });
-    await expect(failures).toHaveCount(3);
     const lines = await readFile(join(companionDataDir, 'companion.log'), 'utf8');
     expect(lines.match(/llm\.complete failed provider=chatgpt code=usage_unavailable reason=http_status status=503/g)).toHaveLength(3);
     expect(lines).not.toContain('private provider detail');
@@ -50,12 +49,17 @@ test.describe('failing wrap-up', () => {
     const proof = (name: string) => process.env.PROOF_DIR ? join(process.env.PROOF_DIR, name) : testInfo.outputPath(name);
     await diagnostics.screenshot({ path: proof('model-jobs.png') });
     await panel.screenshot({ path: proof('attention.png') });
+    const logTab = settings.getByRole('tab', { name: 'Sent-to-model log' });
+    await logTab.click();
+    await expect(settings.getByRole('button', { name: /Expedition wrap-up.*Failed.*usage_unavailable/ })).toHaveCount(3);
+    await settings.getByRole('tab', { name: 'Diagnostics' }).click();
 
     expect((await setFailure('off')).ok).toBe(true);
     await retry.click();
     await expect.poll(async () => (await readCapture('expeditions'))[0]?.fieldNotes).toContain('## Key ideas');
     await expect(panel.getByText(warning, { exact: true })).toHaveCount(0);
     await expect(journal.getByText(warning, { exact: true })).toHaveCount(0);
+    await logTab.click();
     const success = settings.getByRole('button', { name: /Expedition wrap-up.*Succeeded/ });
     await success.click();
     const log = settings.getByRole('region', { name: 'Sent-to-model log' });
