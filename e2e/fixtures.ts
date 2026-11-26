@@ -15,14 +15,34 @@ import { cpSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
-import type { Concept, Edge, Expedition, Highlight, Note, Page as CapturedPage, Query, Visit } from '../packages/shared/src/domain';
+import type { ConceptEvidence } from '../packages/extension/src/concepts/evidence';
+import type { Concept, Edge, Expedition, Highlight, Note, Page as CapturedPage, Query, Thread, Visit } from '../packages/shared/src/domain';
 import { COMPANION_BIN, EXTENSION_DIR, FIXTURE_PORT } from './constants';
 
 type CaptureTables = {
   visits: Visit; pages: CapturedPage; queries: Query; highlights: Highlight; expeditions: Expedition; notes: Note;
-  concepts: Concept; edges: Edge;
+  concepts: Concept; edges: Edge; threads: Thread; conceptEvidence: ConceptEvidence;
   corrections: { id: string; at: number; kind: string; targetIds: string[]; before: unknown; after: unknown };
 };
+
+/** Seed before opening the view under test; raw IndexedDB writes don't notify Dexie live queries. */
+export async function seedCapture(page: Page, rows: { [K in keyof CaptureTables]?: CaptureTables[K][] }) {
+  await page.evaluate(async (rows) => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open('trailmap');
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction(Object.keys(rows), 'readwrite');
+        tx.oncomplete = () => resolve();
+        tx.onabort = () => reject(tx.error);
+        for (const [table, records] of Object.entries(rows)) for (const row of records) tx.objectStore(table).put(row);
+      });
+    } finally { db.close(); }
+  }, rows);
+}
 
 type Fixtures = {
   readCapture: <T extends keyof CaptureTables>(table: T) => Promise<CaptureTables[T][]>;

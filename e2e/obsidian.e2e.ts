@@ -1,7 +1,8 @@
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { expect, test as base } from './fixtures';
+import { expect, seedCapture, test as base } from './fixtures';
 import { signInToMockChatGpt, test } from './model-fixtures';
 
 base('Obsidian sync waits for the companion, but both settings exports download', async ({ openExtensionPage }, info) => {
@@ -21,6 +22,38 @@ base('Obsidian sync waits for the companion, but both settings exports download'
     if (filename.endsWith('.zip')) expect(data.subarray(0, 4)).toEqual(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
     else expect(JSON.parse(data.toString()).tables).toMatchObject({ expeditions: [], concepts: [], visits: [] });
   }
+});
+
+base.describe('with the installed companion', () => {
+  base.use({ companionInstalled: true });
+
+  base('the living note links to every session note in the selected vault', async ({ openExtensionPage, companionDataDir }) => {
+    const setup = await openExtensionPage('sidepanel.html');
+    const vault = join(companionDataDir, 'test-vault');
+    await mkdir(vault);
+    const at = Date.UTC(2025, 5, 18, 12);
+    const sessions = ['Replication basics', 'Replicated deletes', 'Tombstone cleanup'];
+    await seedCapture(setup, {
+      threads: [{ id: 'replicas', title: 'Replicated lists', status: 'dormant', question: null, lastActiveAt: at,
+        livingNote: 'Deletes converge when replicas retain tombstones.', conceptIds: [], centroid: null }],
+      expeditions: sessions.map((title, i) => ({ id: `session-${i}`, title, kind: 'learning', userEdited: false,
+        threadId: 'replicas', startedAt: at + i * 1000 - 4000, endedAt: at + i * 1000 - 3000, drivingQuestion: null,
+        fieldNotes: i === 0 ? null : `Notes for ${title}` })),
+    });
+    const settings = await openExtensionPage('settings.html#obsidian');
+    await settings.getByRole('textbox', { name: 'Obsidian vault folder path' }).fill(vault);
+    await settings.getByRole('button', { name: 'Save vault folder' }).click();
+    const hash = (id: string) => createHash('sha256').update(id).digest('hex');
+    const filename = `trailmap-thread-${hash('replicas')}.md`;
+    const load = () => readFile(join(vault, filename), 'utf8').catch(() => '');
+    await expect.poll(load).toContain('Deletes converge when replicas retain tombstones.');
+    const note = await load();
+    for (const [i, title] of sessions.entries()) {
+      const target = `trailmap-expedition-${hash(`session-${i}`)}`;
+      expect(note).toContain(`[[${target}|${title}]]`);
+      expect(await readFile(join(vault, `${target}.md`), 'utf8')).toContain(`# ${title}`);
+    }
+  });
 });
 
 test.describe('with the installed companion and a mock model', () => {
