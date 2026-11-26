@@ -1,8 +1,8 @@
-import { ChromeEventSource, ensureTickAlarm } from '../capture/chrome-events';
+import { ChromeEventSource, ChromeSessionStateStore, ensureTickAlarm } from '../capture/chrome-events';
 import { VisitRecorder } from '../capture/recorder';
-import { ChromeSessionStateStore } from '../capture/state-store';
 import { openTrailmapDb } from '../db/db';
 import { startCorrections } from '../corrections/background';
+import { forgetCascade } from '../corrections/forget';
 import { startJobs } from '../jobs/background';
 import { startPageSummary } from '../llm/background';
 import { startSegmentation } from '../segmentation/background';
@@ -30,7 +30,10 @@ export default defineBackground(() => {
   // the recorder restores its state from `chrome.storage.session` before handling any of them.
   const db = openTrailmapDb();
   let unseenNotes = 0;
-  const privacy = createRecordingPrivacy(() => unseenNotes);
+  const privacy = createRecordingPrivacy(() => unseenNotes, (host) => forgetCascade(db, {
+    kind: 'forget-site', host, denied: host === undefined, targetIds: host ? [`site:${host}`] : [],
+    now: Date.now, newId: () => crypto.randomUUID(), quiet: true,
+  }));
   const recorder = new VisitRecorder({
     db,
     source: new ChromeEventSource(),

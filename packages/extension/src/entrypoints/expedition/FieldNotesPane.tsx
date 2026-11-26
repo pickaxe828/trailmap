@@ -10,6 +10,7 @@ import { correct } from '../../corrections/client';
 import { FIELD_NOTES_LIMIT } from '../../corrections/messages';
 import { openTrailmapDb } from '../../db/db';
 import { markNotesSeen } from '../../wrapup/badge';
+import { displayFieldNotes } from '../../wrapup/markdown';
 import { FieldNotesMarkdown } from '../../wrapup/FieldNotesMarkdown';
 
 export function FieldNotesPane({ expedition }: { expedition: Expedition }) {
@@ -42,7 +43,7 @@ export function FieldNotesPane({ expedition }: { expedition: Expedition }) {
         {draft === undefined && <Button label="Edit field notes" size="sm" onClick={() => setDraft(fieldNotes ?? '')} />}
       </HStack>
       {draft === undefined ? (
-        fieldNotes ? <FieldNotesMarkdown>{fieldNotes}</FieldNotesMarkdown> : (
+        fieldNotes ? <FieldNotesMarkdown>{displayFieldNotes(expedition) ?? ''}</FieldNotesMarkdown> : (
           <Text type="supporting">{kind === 'errand' ? 'Field notes aren’t generated for errands.' : 'No field notes yet.'}</Text>
         )
       ) : (

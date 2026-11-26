@@ -11,9 +11,9 @@ const reviewPath = (page: 'atlas' | 'expedition' | 'thread', key: 'id' | 'concep
 
 /** Project the local sources, rather than persisting a second copy of captured or generated text. */
 export function observeSearchCorpus(db: TrailmapDb) {
-  return liveQuery(() => db.transaction('r', [db.visits, db.pages, db.expeditions, db.threads, db.concepts, db.conceptEvidence, db.edges], async () => {
-    const [visits, pages, expeditions, threads, { concepts }] = await Promise.all([
-      db.visits.toArray(), db.pages.toArray(), db.expeditions.toArray(), db.threads.toArray(), readAtlas(db),
+  return liveQuery(() => db.transaction('r', [db.visits, db.pages, db.queries, db.expeditions, db.threads, db.concepts, db.conceptEvidence, db.edges, db.notes], async () => {
+    const [visits, pages, queries, expeditions, threads, { concepts }, notes] = await Promise.all([
+      db.visits.toArray(), db.pages.toArray(), db.queries.toArray(), db.expeditions.toArray(), db.threads.toArray(), readAtlas(db), db.notes.toArray(),
     ]);
     const blocked = new Set(visits.filter(({ privacyBlocked }) => privacyBlocked).map(({ id }) => id));
     const latest = new Map<string, Visit>();
@@ -24,6 +24,18 @@ export function observeSearchCorpus(db: TrailmapDb) {
     }
 
     const documents: SearchDocument[] = [];
+    const noteTargets = new Map<string, { title: string; href: string }>();
+    const expeditionIds = new Set(expeditions.map(({ id }) => id));
+    for (const visit of visits) {
+      const url = webUrl(visit.url);
+      if (visit.privacyBlocked || !url) continue;
+      noteTargets.set(visit.id, { title: visit.title || url.hostname, href: visit.expeditionId && expeditionIds.has(visit.expeditionId)
+        ? reviewPath('expedition', 'id', visit.expeditionId) : url.href });
+    }
+    for (const query of queries) {
+      const target = query.visitId ? noteTargets.get(query.visitId) : undefined;
+      if (target) noteTargets.set(query.id, { ...target, title: query.q });
+    }
     for (const page of pages) {
       const url = webUrl(page.canonicalUrl);
       if (!url) continue;
@@ -35,6 +47,7 @@ export function observeSearchCorpus(db: TrailmapDb) {
       const visit = latest.get(page.canonicalUrl);
       if (!visit && !text && !summary) continue;
       const title = visit?.title || url.hostname;
+      noteTargets.set(page.canonicalUrl, { title, href: url.href });
       documents.push({
         id: `page:${page.canonicalUrl}`, kind: 'page', title, href: url.href, detail: url.hostname,
         body: [summary, ...takeaways, text].filter(Boolean).join('\n'),
@@ -42,6 +55,7 @@ export function observeSearchCorpus(db: TrailmapDb) {
       });
     }
     for (const concept of concepts) {
+      noteTargets.set(concept.id, { title: concept.name, href: reviewPath('atlas', 'concept', concept.id) });
       documents.push({
         id: `concept:${concept.id}`, kind: 'concept', title: concept.name,
         href: reviewPath('atlas', 'concept', concept.id), detail: 'Atlas',
@@ -50,6 +64,7 @@ export function observeSearchCorpus(db: TrailmapDb) {
       });
     }
     for (const expedition of expeditions) {
+      noteTargets.set(expedition.id, { title: expedition.title, href: reviewPath('expedition', 'id', expedition.id) });
       if (!expedition.fieldNotes?.trim()) continue;
       documents.push({
         id: `field-notes:${expedition.id}`, kind: 'note', title: expedition.title,
@@ -58,12 +73,19 @@ export function observeSearchCorpus(db: TrailmapDb) {
       });
     }
     for (const thread of threads) {
+      noteTargets.set(thread.id, { title: thread.title, href: reviewPath('thread', 'id', thread.id) });
       if (!thread.livingNote?.trim()) continue;
       documents.push({
         id: `living-note:${thread.id}`, kind: 'note', title: thread.title,
         href: reviewPath('thread', 'id', thread.id), detail: 'Living note',
         body: thread.livingNote, semanticText: semanticText(thread.title, thread.question, thread.livingNote),
       });
+    }
+    for (const note of notes) {
+      const target = noteTargets.get(note.nodeId);
+      if (!target || !note.text.trim()) continue;
+      documents.push({ id: `manual-note:${note.id}`, kind: 'note', ...target, detail: 'Manual note',
+        body: note.text, semanticText: semanticText(target.title, note.text) });
     }
     return documents;
   }));
