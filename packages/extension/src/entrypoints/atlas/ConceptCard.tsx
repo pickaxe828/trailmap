@@ -8,15 +8,28 @@ import { List } from '@astryxdesign/core/List';
 import { Text } from '@astryxdesign/core/Text';
 import { VStack } from '@astryxdesign/core/VStack';
 import type { Concept } from '@trailmap/shared';
+import type { EvidenceStrength } from '../../concepts/strength';
 import { useCallback } from 'react';
 import { readAtlasEvidence } from '../../atlas/data';
-import type { TrailmapDb } from '../../db/db';
+import { dismissConcept, restoreConcept } from '../../concepts/dismiss';
+import { openTrailmapDb, type TrailmapDb } from '../../db/db';
 import { useJournalData } from '../../journal/data';
 import { expeditionHref, formatExpeditionDate } from '../../journal/links';
 import { webUrl } from '../../ui/web-url';
 
-export function ConceptCard({ concept, neighbours, onFocus, onClose }: {
-  concept: Concept; neighbours: readonly Pick<Concept, 'id' | 'name'>[];
+async function change(write: (db: TrailmapDb) => Promise<unknown>) {
+  const db = openTrailmapDb();
+  try { await write(db); } finally { db.close(); }
+}
+
+const strengthText: Record<EvidenceStrength, string> = {
+  learned: 'Learned: you wrote or highlighted it, or marked a page where it is central.',
+  studied: 'Studied: it is a main topic of a page you read.',
+  seen: 'Only seen on pages. Write about it in an expedition’s My notes to make it solid.',
+};
+
+export function ConceptCard({ concept, hidden = false, neighbours, onFocus, onClose }: {
+  concept: Concept & { strength?: EvidenceStrength }; hidden?: boolean; neighbours: readonly Pick<Concept, 'id' | 'name'>[];
   onFocus: (id: string) => void; onClose: () => void;
 }) {
   const read = useCallback((db: TrailmapDb) => readAtlasEvidence(db, concept.id), [concept.id]);
@@ -39,9 +52,12 @@ export function ConceptCard({ concept, neighbours, onFocus, onClose }: {
           {evidence?.data && (
             <>
               <Text type="supporting" data-learned={evidence.data.learned ? 'yes' : 'no'}>
-                {evidence.data.learned ? 'Learned: it comes from your own notes.'
-                  : 'Only seen on pages. Write about it in an expedition’s My notes to make it solid.'}
+                {hidden ? 'Hidden: you said you didn’t learn this. Its evidence is kept.'
+                  : evidence.data.learned ? 'Learned: it comes from your own notes.' : strengthText[concept.strength ?? 'seen']}
               </Text>
+              {hidden
+                ? <Button size="sm" variant="secondary" label="Undo: show on the Atlas" onClick={() => void change((db) => restoreConcept(db, concept.id))} />
+                : <Button size="sm" variant="secondary" label="I didn’t learn this" onClick={() => void change((db) => dismissConcept(db, concept.id, Date.now()))} />}
               <VStack gap={1}>
                 <Heading level={3}>Evidence pages</Heading>
                 {evidence.data.pages.length ? (

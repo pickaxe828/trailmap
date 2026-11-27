@@ -8,6 +8,7 @@ import { Text } from '@astryxdesign/core/Text';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import { VStack } from '@astryxdesign/core/VStack';
 import { useEffect, useState, type SubmitEvent } from 'react';
+import { HiddenConcepts } from './HiddenConcepts';
 import { usesMyNotes } from './policy';
 import { MAX_EXPEDITION_MINUTES, MIN_EXPEDITION_MINUTES } from '../segmentation/config';
 import { DENIED_HOSTS } from './default-deny-list';
@@ -147,6 +148,7 @@ export function PrivacySettings() {
         {readFailed && <Text role="alert">Could not read your recording settings.</Text>}
         {error && <Text role="alert">{error}</Text>}
       </VStack>
+      <HiddenConcepts />
     </VStack>
   );
 }

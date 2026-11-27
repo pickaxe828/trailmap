@@ -1,7 +1,9 @@
-import { ConceptRelationType, type Expedition, type Visit } from '@trailmap/shared';
+import { ConceptRelationType, type Concept, type Expedition, type Visit } from '@trailmap/shared';
 import { edgeSupport, withEdgeSupport } from '../concepts/edges';
 import { notesEdgeSupport, summarizeConcept, type ConceptEvidence } from '../concepts/evidence';
-import { readConceptEvidence, readVisibleConceptGraph } from '../concepts/read';
+import { readConceptEvidence } from '../concepts/read';
+import { summarizeStrength, type EvidenceStrength } from '../concepts/strength';
+import { loadStrengthContext } from '../concepts/strength-read';
 import type { TrailmapDb } from '../db/db';
 
 async function expeditionsByVisit(db: TrailmapDb, visits: Visit[]): Promise<Map<string, Expedition>> {
@@ -14,11 +16,15 @@ function isAtlasVisit(visit: Visit, expeditions: ReadonlyMap<string, Expedition>
   return !visit.privacyBlocked && (!visit.expeditionId || expeditions.get(visit.expeditionId)?.kind !== 'errand');
 }
 
-/** Errands cannot make a Concept visible, increase its exposure, or support an Atlas Edge. */
+/**
+ * `concepts` are what the user learned or studied; `seen` only glimpsed, shown when asked; `dismissed` is hidden by
+ * "I didn't learn this". Errands cannot make a Concept visible, increase its exposure, or support an Atlas Edge.
+ */
 export function readAtlas(db: TrailmapDb) {
-  return db.transaction('r', [db.concepts, db.conceptEvidence, db.visits, db.edges, db.expeditions, db.threads], async () => {
-    const { concepts, edges } = await readVisibleConceptGraph(db);
-    const rows = await db.conceptEvidence.where('conceptId').anyOf(concepts.map(({ id }) => id)).toArray();
+  return db.transaction('r', [db.concepts, db.conceptEvidence, db.visits, db.highlights, db.dismissedConcepts, db.edges, db.expeditions, db.threads], async () => {
+    const known = await db.concepts.toArray();
+    const rows = await db.conceptEvidence.toArray();
+    const edges = await db.edges.where('to').anyOf(known.map(({ id }) => id)).filter((edge) => edge.evidence.length > 0).toArray();
     const semantic = edges.filter(({ type }) => ConceptRelationType.safeParse(type).success);
     const ids = new Set(rows.map(({ visitId }) => visitId));
     for (const edge of semantic) for (const id of edge.evidence) ids.add(id);
@@ -42,14 +48,22 @@ export function readAtlas(db: TrailmapDb) {
       if (group) group.push(row);
       else byConcept.set(row.conceptId, [row]);
     }
-    const visible = concepts.flatMap((concept) => {
+    const context = await loadStrengthContext(db, [...byConcept.values()].flat());
+    const dismissals = new Map((await db.dismissedConcepts.toArray()).map((row) => [row.conceptId, row]));
+    type AtlasConcept = Concept & { strength: EvidenceStrength };
+    const onMap: AtlasConcept[] = [];
+    const seen: AtlasConcept[] = [];
+    const dismissed: Concept[] = [];
+    for (const concept of known) {
       const evidence = byConcept.get(concept.id);
-      if (!evidence) return [];
+      if (!evidence) continue;
       const scoped = restricted.has(concept.id) ? summarizeConcept(concept.id, evidence) : concept;
-      const learned = evidence.some((row) => row.role === 'learned');
-      return scoped && (learned || scoped.exposure >= 2 || evidence.some((row) => row.role === 'explains' && allowed.get(row.visitId)?.engagement === 'read'))
-        ? [{ ...scoped, learned }] : [];
-    });
+      if (!scoped) continue;
+      const { strength, exposure, dismissed: hidden } = summarizeStrength(evidence, context, dismissals.get(concept.id));
+      if (hidden) dismissed.push(scoped);
+      else (strength === 'seen' ? seen : onMap).push({ ...scoped, exposure, strength });
+    }
+    const visible = [...onMap, ...seen];
     const visibleIds = new Set(visible.map(({ id }) => id));
     const threads = (await db.threads.toArray()).map(({ id, title }) => ({ id, title, conceptIds: new Set<string>() }));
     const byThread = new Map(threads.map((thread) => [thread.id, thread.conceptIds]));
@@ -61,7 +75,7 @@ export function readAtlas(db: TrailmapDb) {
       }
     }
     threads.sort((a, b) => a.title.localeCompare(b.title) || a.id.localeCompare(b.id));
-    return { concepts: visible, threads, edges: semantic.flatMap((edge) => {
+    return { concepts: onMap, seen, dismissed, threads, edges: semantic.flatMap((edge) => {
       if (!visibleIds.has(edge.from) || !visibleIds.has(edge.to)) return [];
       const { observed, verdicts } = edgeSupport(edge);
       const scoped = withEdgeSupport(edge, observed.filter((id) => allowedIds.has(id)),

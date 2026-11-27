@@ -14,8 +14,8 @@ function centerMap(renderer: AtlasRenderer, filter: AtlasFilter) {
   const camera = renderer.getCamera();
   if (focused) {
     const center = renderer.viewportToFramedGraph(renderer.graphToViewport(focused));
-    camera.animate({ ...center, ratio: Math.min(camera.ratio, 0.8) });
-  } else camera.animatedReset();
+    void camera.animate({ ...center, ratio: Math.min(camera.ratio, 0.8) }).then(() => renderer.scheduleRefresh());
+  } else void camera.animatedReset().then(() => renderer.scheduleRefresh());
 }
 
 export function AtlasMap({ graph, filter, onFocus }: {
@@ -39,8 +39,8 @@ export function AtlasMap({ graph, filter, onFocus }: {
           const view = currentFilter.current;
           const selected = id === view.focused;
           return { ...node, hidden: !isConceptShown(id, node.firstSeen, view),
-            color: (node.learned ? colors.communities : colors.faded)[node.community % colors.communities.length],
-            forceLabel: selected, zIndex: selected ? 1 : 0 };
+            color: (node.strength === 'seen' ? colors.faded : colors.communities)[node.community % colors.communities.length],
+            forceLabel: selected || !!view.labelAll, zIndex: selected ? 1 : 0 };
         },
         edgeReducer: (id, edge) => {
           const [from, to] = graph.extremities(id);

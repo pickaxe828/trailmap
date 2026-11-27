@@ -48,7 +48,7 @@ export async function replaceLearnedEvidence(db: TrailmapDb, expedition: Pick<Ex
     if (!candidates.has(conceptId)) candidates.set(conceptId, embedding);
     touched.add(conceptId);
     await db.conceptEvidence.add({
-      id: crypto.randomUUID(), conceptId, role: 'learned', name: mention.name, kind: mention.kind, gloss: mention.gloss,
+      id: crypto.randomUUID(), conceptId, role: 'learned', salience: 'central', name: mention.name, kind: mention.kind, gloss: mention.gloss,
       visitId: mention.anchorId, expeditionId: expedition.id, canonicalUrl: '', startedAt: expedition.startedAt, embedding,
     });
   }

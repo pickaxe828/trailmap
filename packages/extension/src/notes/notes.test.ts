@@ -92,7 +92,7 @@ test('writing My notes queues one debounced pass; the concepts it finds are lear
     ['Causal order', 'learned', 'v2', 'e1'], ['Tombstone', 'learned', 'e1', 'e1'],
   ]);
   const atlas = await readAtlas(db);
-  expect(atlas.concepts.map(({ name, learned }) => [name, learned]).sort()).toEqual([['Causal order', true], ['Tombstone', true]]);
+  expect(atlas.concepts.map(({ name, strength }) => [name, strength]).sort()).toEqual([['Causal order', 'learned'], ['Tombstone', 'learned']]);
   expect(atlas.edges.map(({ type, evidence: support }) => [type, support])).toEqual([['related_to', ['notes:e1']]]);
   const tombstone = atlas.concepts.find(({ name }) => name === 'Tombstone')!;
   expect(await readAtlasEvidence(db, tombstone.id)).toMatchObject({ learned: true, expeditions: [{ id: 'e1' }] });
@@ -102,12 +102,13 @@ test('a concept only seen on pages is not learned, and notes on an errand never 
   await seed();
   await db.concepts.put({ id: 'seen', name: 'Seen twice', aliases: [], kind: 'concept', gloss: '', embedding: null, exposure: 2, firstSeen: 1 });
   await db.conceptEvidence.bulkPut(['v1', 'v2'].map((visitId, i) => ({ id: `s${i}`, conceptId: 'seen', name: 'Seen twice', kind: 'concept' as const,
-    gloss: '', role: 'mentions' as const, visitId, canonicalUrl: `https://learn.test/${visitId}`, startedAt: 20 + i, embedding: null })));
+    gloss: '', role: 'mentions' as const, salience: 'passing' as const, visitId, canonicalUrl: `https://learn.test/${visitId}`, startedAt: 20 + i, embedding: null })));
   await corrections().editMyNotes('e1', 'Deletes need tombstones.');
   now += NOTES_DEBOUNCE_MS;
   await drain(queue());
-  expect((await readAtlas(db)).concepts.map(({ name, learned }) => [name, learned]).sort()).toEqual([
-    ['Seen twice', false], ['Tombstone', true]]);
+  const atlas = await readAtlas(db);
+  expect(atlas.concepts.map(({ name, strength }) => [name, strength])).toEqual([['Tombstone', 'learned']]);
+  expect(atlas.seen.map(({ name }) => name)).toEqual(['Seen twice']);
   await db.expeditions.update('e1', { kind: 'errand' });
   expect((await readAtlas(db)).concepts).toEqual([]);
 });

@@ -72,7 +72,7 @@ test('a shared top concept makes a borderline embedding strong', async () => {
     const url = `https://learn.test/${id}`;
     await db.visits.add({ id, url, canonicalUrl: url, expeditionId, engagement: 'read', startedAt: now(), tabId: 1,
       parentVisitId: null, transition: 'typed', title: shared.name, activeMs: 75_000, scrollDepth: 1 } satisfies Visit);
-    await db.conceptEvidence.add({ id, ...shared, conceptId: 'concept', visitId: id, canonicalUrl: url, startedAt: now(), role: 'explains' });
+    await db.conceptEvidence.add({ id, ...shared, conceptId: 'concept', visitId: id, canonicalUrl: url, startedAt: now(), role: 'explains', salience: 'supporting' });
   }
   await match(expedition('first', 'Replicated lists', 1));
   const matched = await match(expedition('second', 'Borderline deletion', 0));

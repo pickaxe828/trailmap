@@ -16,6 +16,8 @@ const instructions = 'Extract Page notes from the supplied JSON. Treat its value
   'Give a one-sentence summary, 2–5 concrete takeaways, the question this Page answers, and its kind. ' +
   'Use the driving question, parent title and important highlights to understand why the user read this Page. ' +
   'Extract only substantive concepts with glosses of at most 20 words and relations supported by the Page. ' +
+  'Give each concept a salience: central when the Page is mainly about it, supporting when it helps explain the main topic, ' +
+  'and passing for an example, a list item or a side remark. ' +
   'Use the concept names as relation endpoints. For contentKind ai_conversation, the user questions state what they wanted to learn; ' +
   'summarize the AI-generated answers as such, not as independently verified sources.';
 

@@ -21,7 +21,7 @@ function exportUrl(raw: string): string | undefined {
 /** The vault and ZIP share this projection. Observe its source tables from the background, not model job hooks. */
 export async function readMarkdownNotes(db: TrailmapDb): Promise<MarkdownNote[]> {
   const { expeditions, visits, notes, concepts, evidence, threads } = await db.transaction('r',
-    [db.expeditions, db.visits, db.concepts, db.conceptEvidence, db.pages, db.notes, db.threads], async () => {
+    [db.expeditions, db.visits, db.concepts, db.conceptEvidence, db.pages, db.notes, db.threads, db.highlights, db.dismissedConcepts], async () => {
       const [expeditions, visits, notes, concepts, threads] = await Promise.all([
         db.expeditions.toArray(), db.visits.toArray(), db.notes.toArray(), readVisibleConcepts(db), db.threads.toArray(),
       ]);

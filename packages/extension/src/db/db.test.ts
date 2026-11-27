@@ -58,7 +58,7 @@ describe('database', () => {
     await previous.table('pages').add({
       canonicalUrl: visit.canonicalUrl, text: 'Page text', textHash: 'hash', summary: 'Summary', takeaways: [],
       embedding: null, pageKind: 'article', enrichedAt: 2000, enrichmentVisitId: visit.id,
-      conceptMentions: [{ name: 'CRDT', gloss: 'A replicated data type', role: 'explains', kind: 'concept' }],
+      conceptMentions: [{ name: 'CRDT', gloss: 'A replicated data type', role: 'explains', kind: 'concept', salience: 'supporting' }],
     } satisfies Page);
     previous.close();
     expect(await db.jobs.toArray()).toMatchObject([
@@ -96,9 +96,27 @@ describe('database', () => {
     expect(await db.jobs.toArray()).toMatchObject([{ kind: 'field_notes', status: 'pending', payload: { expeditionId: 'edited', endedAt: 9, revision: 1 } }]);
   });
 
+  test('upgrade gives existing concept mentions and evidence a salience without losing data', async () => {
+    const previous = new Dexie(dbName);
+    previous.version(10).stores({ pages: 'canonicalUrl, textHash, enrichedAt', conceptEvidence: 'id, conceptId, visitId, sourceVisitId, canonicalUrl, expeditionId' });
+    const mention = (role: string, name: string) => ({ name, gloss: 'g', kind: 'concept', role });
+    await previous.table('pages').add({ canonicalUrl: 'https://learn.test/a', text: '', textHash: 'h', summary: null, takeaways: [],
+      embedding: null, pageKind: 'article', enrichedAt: 1, conceptMentions: [mention('explains', 'CRDT'), mention('mentions', 'Taa'), mention('uses', 'Git')] });
+    await previous.table('conceptEvidence').bulkAdd([
+      { ...mention('explains', 'CRDT'), id: 'e1', conceptId: 'c1', visitId: 'v', canonicalUrl: 'u', startedAt: 1, embedding: null },
+      { ...mention('mentions', 'Taa'), id: 'e2', conceptId: 'c2', visitId: 'v', canonicalUrl: 'u', startedAt: 1, embedding: null },
+      { ...mention('learned', 'Tombstone'), id: 'e3', conceptId: 'c3', visitId: 'x', expeditionId: 'x', canonicalUrl: '', startedAt: 1, embedding: null },
+    ]);
+    previous.close();
+    expect((await db.pages.get('https://learn.test/a'))?.conceptMentions?.map((m) => [m.name, m.salience]))
+      .toEqual([['CRDT', 'supporting'], ['Taa', 'passing'], ['Git', 'passing']]);
+    expect((await db.conceptEvidence.toArray()).map((row) => [row.id, row.name, row.salience]))
+      .toEqual([['e1', 'CRDT', 'supporting'], ['e2', 'Taa', 'passing'], ['e3', 'Tombstone', 'central']]);
+  });
+
   test('has tables for domain entities, durable jobs, model dispatches and the correction log', () => {
     expect(db.tables.map((t) => t.name).sort()).toEqual([
-      'conceptEvidence', 'concepts', 'corrections', 'edges', 'expeditions', 'highlights', 'jobs', 'modelHealth', 'notes', 'pages', 'queries', 'queueHolds', 'sentToModel', 'threads', 'visits',
+      'conceptEvidence', 'concepts', 'corrections', 'dismissedConcepts', 'edges', 'expeditions', 'highlights', 'jobs', 'modelHealth', 'notes', 'pages', 'queries', 'queueHolds', 'sentToModel', 'threads', 'visits',
     ]);
   });
 });

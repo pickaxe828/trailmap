@@ -55,6 +55,9 @@ test('a Visit updates engagement from time, scroll and selection, then stops acc
   expect(await byUrl(first)).toMatchObject({ engagement: 'skimmed' });
 
   await browser.reportPageContent(TAB, first, { kind: 'scroll', depth: 0.51 });
+  expect(await byUrl(first)).toMatchObject({ engagement: 'skimmed' }); // scrolled, but not enough time
+  clock.advance(35_000);
+  await browser.tick();
   expect(await byUrl(first)).toMatchObject({ engagement: 'read' });
   const second = `${LEARN}/another`;
   await browser.commit(TAB, second);
@@ -62,7 +65,7 @@ test('a Visit updates engagement from time, scroll and selection, then stops acc
   expect(await byUrl(second)).toMatchObject({ engagement: 'read' });
   clock.advance(60_001);
   await browser.tick();
-  expect(await byUrl(first)).toMatchObject({ activeMs: 10_000, engagement: 'read' });
+  expect(await byUrl(first)).toMatchObject({ activeMs: 45_000, engagement: 'read' });
   expect(await byUrl(second)).toMatchObject({ activeMs: 60_001, engagement: 'read' });
 });
 

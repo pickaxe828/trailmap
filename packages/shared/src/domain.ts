@@ -49,8 +49,12 @@ export type PageKind = z.infer<typeof PageKind>;
 export const ConceptKind = z.enum(['concept', 'person', 'tool', 'work', 'event', 'place']);
 export type ConceptKind = z.infer<typeof ConceptKind>;
 
+/** How central a concept is to the Page it was found on. An example, a list item or a side remark is `passing`. */
+export const ConceptSalience = z.enum(['central', 'supporting', 'passing']);
+export type ConceptSalience = z.infer<typeof ConceptSalience>;
 export const ConceptMention = z.object({
   name: z.string(), kind: ConceptKind, gloss: z.string(), role: z.enum(['explains', 'mentions', 'uses']),
+  salience: ConceptSalience,
 });
 export const ConceptRelationType = z.enum([
   'is_a', 'part_of', 'uses', 'alternative_to', 'contrasts_with', 'prerequisite_of', 'related_to',

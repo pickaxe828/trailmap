@@ -65,6 +65,10 @@ Before you finish a ticket run all of: `bun run typecheck && bun run test && bun
 
 `Expedition.myNotes` is the user's own Markdown, kept beside the generated `fieldNotes` (which never carry user edits). `packages/extension/src/notes/` builds the `notes_enrichment` input (`input.ts`, user text only, setting-aware), debounces and queues it (`enqueue.ts`) and runs it (`handler.ts`). Its concepts are `ConceptEvidence` rows with role `learned` (`concepts/learned.ts`), anchored at the Expedition or at the stop a note is attached to. Anything that sends or ranks notes must honour `usesMyNotes(settings)`. Details: `trailmap-notes/notes-25.md`.
 
+## Atlas: what I learned
+
+`ConceptEvidence.salience` (from enrichment; `central` for notes) × the Visit's current engagement × highlights and stars give an evidence strength: `learned | studied | seen` (`concepts/strength.ts`, pure; `strength-read.ts` loads the context). `readAtlas` returns `concepts` (learned or studied), `seen` (shown only on the "Include concepts I only saw" switch) and `dismissed`; `readVisibleConcepts` (search, vault) follows the same rule. "I didn't learn this" is a `dismissedConcepts` row (`concepts/dismiss.ts`) keyed by `evidenceKey`; it joins the Forget cascade. A table read inside a `db.transaction` must be listed in it (`highlights` and `dismissedConcepts` now are, for every caller of `readVisibleConcepts`). Read thresholds are `READ_ACTIVE_MS` and `READ_SCROLL_DEPTH` in `capture/engagement.ts`. Details: `trailmap-notes/notes-46.md`.
+
 ## Extension identity
 
 The manifest `key` pins the extension ID, so it is the same on every machine and every build:

@@ -161,7 +161,7 @@ test('every changed page shows the faded and solid looks, the note marker and th
   const visits = [visit('a1', 'Tombstones explained', 'a', start), { ...visit('a2', 'Replica sync notes', 'a', start + 5_000), parentVisitId: 'a1' },
     visit('b1', 'Gossip protocols primer', 'b', start + day), visit('c1', 'Bloom filters', 'c', start + 2 * day), visit('d1', 'Merkle trees', 'd', start + 3 * day)];
   const evidence = (id: string, conceptId: string, name: string, visitId: string, role: 'explains' | 'learned', extra = {}) => ({
-    id, conceptId, name, gloss: `About ${name}.`, kind: 'concept' as const, role, visitId, canonicalUrl: visitId === 'a' ? '' : `https://learn.test/${visitId}`,
+    id, conceptId, name, gloss: `About ${name}.`, kind: 'concept' as const, role, salience: role === 'learned' ? 'central' as const : 'supporting' as const, visitId, canonicalUrl: visitId === 'a' ? '' : `https://learn.test/${visitId}`,
     startedAt: start, embedding: null, ...extra });
   await seedCapture(setup, {
     expeditions: [member('a', 'Replicated deletes', start, { myNotes: 'A tombstone keeps a deleted item until every replica has seen the delete.' }),

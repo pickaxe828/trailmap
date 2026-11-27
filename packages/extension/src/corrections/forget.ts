@@ -44,7 +44,7 @@ export const hostMatches = (url: string | undefined, host: string) => {
 export async function forgetCascade(db: TrailmapDb, input: ForgetInput): Promise<ForgetResult> {
   const { kind, now, newId } = input;
   const tables = [db.visits, db.queries, db.pages, db.highlights, db.notes, db.edges, db.jobs, db.sentToModel,
-    db.expeditions, db.corrections, db.concepts, db.conceptEvidence, db.threads];
+    db.expeditions, db.corrections, db.concepts, db.conceptEvidence, db.dismissedConcepts, db.threads];
   return db.transaction('rw', tables, async () => {
     const fromForgottenHost = (url: string | undefined) => !!url && (!!input.host && hostMatches(url, input.host) ||
       !!input.denied && isDefaultDenied(url));
@@ -156,6 +156,7 @@ export async function forgetCascade(db: TrailmapDb, input: ForgetInput): Promise
     const { removedConceptIds, changedConceptIds, removedJobs, evidenceVisits, learnedExpeditions } =
       await forgetConceptEvidence(db, gone, [...urls, ...invalidated], now(), sourceRemoved, forgottenExpeditions);
     const nodeIds = new Set([...visitIds, ...queryIds, ...forgottenExpeditions, ...urls, ...removedConceptIds]);
+    await db.dismissedConcepts.bulkDelete(removedConceptIds);
     const notes = await db.notes.where('nodeId').anyOf([...nodeIds]).primaryKeys();
     await db.notes.bulkDelete(notes);
 
