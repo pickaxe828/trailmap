@@ -15,7 +15,7 @@ async function routeGoogle(context: BrowserContext) {
   await context.route(`${GOOGLE}/**`, (route) => {
     const url = new URL(route.request().url());
     const name = url.pathname === '/aimode' ? 'ai-mode-landing'
-      : url.searchParams.get('udm') === '50' ? 'ai-mode' : 'ai-overview';
+      : (url.searchParams.get('udm') === '50' || url.searchParams.has('mstk')) ? 'ai-mode' : 'ai-overview';
     return route.fulfill({ path: join(snapshots, `${name}.html`), contentType: 'text/html' });
   });
 }
@@ -39,7 +39,7 @@ modelTest('AI Mode shows the same page note editor after a conversation is captu
   await google.goto(`${GOOGLE}/aimode`);
   await aiModeScreened();
   const thisPage = panel.getByRole('region', { name: 'This page' });
-  await expect(thisPage.getByText('This page isn’t recorded.')).toBeVisible();
+  await expect(thisPage.getByText('Ask a question in AI Mode to start recording this conversation.')).toBeVisible();
   await ask(google, FIRST);
   const conversation = async () => (await readCapture('pages')).find(({ aiTurns }) => aiTurns);
   await expect.poll(conversation, { timeout: 0 }).toMatchObject({ aiTurns: [{ question: FIRST, answer: expect.stringContaining('Air scatters') }] });
@@ -60,7 +60,7 @@ modelTest('AI Mode shows the same page note editor after a conversation is captu
 });
 
 test('Google results and passive AI Mode never store reply text; a broken typed reply leaves only its question', async ({
-  context, readCapture, openExtensionPage,
+  context, readCapture, openExtensionPage, aiModeScreened,
 }) => {
   await routeGoogle(context);
   const google = await context.newPage();
@@ -69,7 +69,9 @@ test('Google results and passive AI Mode never store reply text; a broken typed 
   await expect.poll(() => readCapture('queries')).toMatchObject([{ q: 'why is the sky blue' }]);
   await google.getByText('Overview-only answer about the atmosphere.').selectText();
   await google.keyboard.press('ControlOrMeta+c');
-  await google.getByRole('link', { name: 'AI Mode' }).click();
+  // This untrusted navigation preserves the Search parent but doesn't start a conversation.
+  await google.getByRole('link', { name: 'AI Mode', exact: true }).evaluate((link: HTMLElement) => link.click());
+  await aiModeScreened();
   await expect(google.getByText('Air scatters shorter wavelengths more strongly.')).toBeVisible();
   const composer = google.getByRole('textbox', { name: 'Ask anything' });
   await composer.pressSequentially('Unsent draft');
@@ -108,6 +110,50 @@ test('Google results and passive AI Mode never store reply text; a broken typed 
   await ask(google, NEXT);
   await expect(google.getByText('Rayleigh scattering explains', { exact: false })).toBeVisible();
   expect(await readCapture('visits')).toEqual([]);
+});
+
+test('entering AI Mode from a recorded Google Query starts a child stop and enables page notes', async ({
+  context, readCapture, openExtensionPage, aiModeScreened,
+}) => {
+  await routeGoogle(context);
+  const panel = await openExtensionPage('sidepanel.html');
+  await panel.setViewportSize({ width: 400, height: 850 });
+  const google = await context.newPage();
+  const q = 'q=Why+is+the+sky+blue%3F';
+  const search = `${GOOGLE}/search?${q}`;
+  const mode = `${search}&mstk=fixture-mode-marker`;
+  const thisPage = panel.getByRole('region', { name: 'This page' });
+  const pending = thisPage.getByText('Ask a question in AI Mode to start recording this conversation.');
+  const getTranscript = async () => (await readCapture('pages')).find(({ aiTurns }) => aiTurns)?.aiTurns;
+  await google.goto(search);
+  await expect.poll(() => readCapture('queries')).toHaveLength(1);
+  await google.getByRole('link', { name: 'AI Mode', exact: true }).click();
+  await expect(google).toHaveURL(mode);
+  await expect.poll(getTranscript, { timeout: 0 }).toMatchObject([{ question: FIRST, answer: expect.stringContaining('Air scatters') }]);
+  const visits = await readCapture('visits');
+  const [ai] = visits.filter(({ aiConversation }) => aiConversation);
+  const parent = visits.find(({ id }) => id === ai?.parentVisitId);
+  expect(parent?.url).toBe(search);
+  expect(JSON.stringify(visits)).not.toContain('fixture-mode-marker');
+  await expect(thisPage.getByRole('textbox', { name: 'Page note' })).toBeVisible();
+  await expect(thisPage.getByRole('heading', { name: 'Google AI Mode · AI-generated' })).toBeVisible();
+  if (process.env.AI_MODE_PROOF_DIR) for (const colorScheme of ['light', 'dark'] as const) {
+    await panel.emulateMedia({ colorScheme });
+    await panel.screenshot({ path: join(process.env.AI_MODE_PROOF_DIR, `search-to-ai-mode-400-${colorScheme}.png`), animations: 'disabled' });
+  }
+
+  // A script-triggered click reaches the same URL, but it is not permission to capture.
+  await google.goto(search);
+  await expect.poll(() => readCapture('queries')).toHaveLength(2);
+  await google.getByRole('link', { name: 'AI Mode', exact: true }).evaluate((link: HTMLElement) => link.click());
+  await expect(google).toHaveURL(mode);
+  await aiModeScreened();
+  await expect(pending).toBeVisible();
+  expect((await readCapture('visits')).filter(({ aiConversation }) => aiConversation)).toHaveLength(1);
+  await google.reload();
+  await aiModeScreened();
+  await expect(pending).toBeVisible();
+  expect((await readCapture('visits')).filter(({ aiConversation }) => aiConversation)).toHaveLength(1);
 });
 
 test('a saved-page AI Mode conversation shows all three answers and the latest follow-up in the live trail', async ({

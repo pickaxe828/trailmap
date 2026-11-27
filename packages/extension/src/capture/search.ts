@@ -22,7 +22,8 @@ export function googleSearchSurface(value: string): 'search' | 'ai-mode' | undef
   const url = URL.parse(value);
   if (!url || !/^https?:$/.test(url.protocol) || !isGoogle(url.hostname.replace(/^www\./, ''))) return;
   const path = url.pathname.replace(/\/$/, '') || '/';
-  if (path === '/aimode' || (path === '/search' && url.searchParams.get('udm') === '50')) return 'ai-mode';
+  if (path === '/aimode' || (path === '/search' && (url.searchParams.get('udm') === '50' ||
+      (url.searchParams.get('q')?.trim() && url.searchParams.get('mstk'))))) return 'ai-mode';
   if (path === '/' || path === '/search' || path === '/webhp') return 'search';
 }
 

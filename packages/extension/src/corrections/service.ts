@@ -2,7 +2,7 @@ import type { Visit } from '@trailmap/shared';
 import type { TrailmapDb } from '../db/db';
 import { eligibleMetadata, recordingState, siteKey, type RecordingSettings } from '../privacy/policy';
 import type { Corrections } from './corrections';
-import type { CorrectionRequest } from './messages';
+import { AI_MODE_WAITING, type CorrectionRequest } from './messages';
 
 type Deps = {
   db: TrailmapDb;
@@ -11,6 +11,7 @@ type Deps = {
   recorder: {
     ready: Promise<void>;
     getCurrentVisit(tabId: number): { id: string } | undefined;
+    isWaitingForAiModeQuestion(tabId: number): boolean;
     forgetVisits(remove: () => Promise<readonly string[]>): Promise<readonly string[]>;
   };
   privacy: {
@@ -36,7 +37,8 @@ export function createCorrectionService({ db, corrections, isIncognitoTab, recor
         await recorder.ready;
         const current = recorder.getCurrentVisit(request.tabId);
         const visit = current && await db.visits.get(current.id);
-        return visit && allowVisit(visit) ? visit.id : null;
+        if (visit && allowVisit(visit)) return visit.id;
+        return recorder.isWaitingForAiModeQuestion(request.tabId) ? AI_MODE_WAITING : null;
       }
       case 'star': await corrections.star(request.visitId, request.starred); return true;
       case 'note': return corrections.note(request.nodeId, request.text,

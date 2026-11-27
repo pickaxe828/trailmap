@@ -1,3 +1,5 @@
+export const AI_MODE_WAITING = 'ai-mode-waiting';
+
 export const CORRECTION_MESSAGE = 'trailmap.correction';
 export const MY_NOTES_LIMIT = 100_000;
 export const PAGE_NOTE_LIMIT = 20_000;

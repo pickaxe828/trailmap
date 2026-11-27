@@ -6,7 +6,7 @@ import { aiEngagement, conversationPage, mergeAiTurn, pendingAiTurns } from './a
 import { addAiModeOutcomes } from './ai-mode-stats';
 import { canonicalizeUrl } from './canonical';
 import { CHAT_SITES, chatConversationUrl, chatSiteOf, isNewChatUrl } from './chat-sites';
-import { normalizeQuestion } from './google-ai-mode';
+import { AI_QUESTION_LIMIT, normalizeQuestion } from './google-ai-mode';
 import { scoreEngagement, scorePdfEngagement, scoreVideoEngagement } from './engagement';
 import { youtubeWatchId } from './youtube';
 import { WINDOW_ID_NONE, type BrowserEventHandlers, type BrowserEventSource, type NavigationEvent, type PageContentEvent } from './events';
@@ -124,6 +124,12 @@ export class VisitRecorder {
     return visit && { ...visit };
   }
 
+  isWaitingForAiModeQuestion(tabId: number): boolean {
+    const entry = this.state.aiEntries?.[tabId];
+    return !!entry?.screened && !entry.chat && !this.current.has(tabId) &&
+      !this.isPasswordProtected(tabId) && this.isRecordable(entry.origin);
+  }
+
   isPasswordProtected(tabId: number): boolean {
     return this.state.passwordTabs?.includes(tabId) ?? false;
   }
@@ -143,6 +149,7 @@ export class VisitRecorder {
       }
       this.state.pendingNewTabParent = {};
       this.state.pendingAiCitationParent = {};
+      this.state.aiEntryClicks = {};
     });
   }
 
@@ -330,6 +337,7 @@ export class VisitRecorder {
     delete this.state.currentVisitByTab[tabId];
     delete this.state.documentIdsByTab?.[tabId];
     delete this.state.aiEntries?.[tabId];
+    delete this.state.aiEntryClicks?.[tabId];
   }
 
   private setPasswordStatus(tabId: number, blocked: boolean, documentId?: string) {
@@ -342,7 +350,20 @@ export class VisitRecorder {
     this.options.onPasswordStatusChanged?.(tabId);
   }
 
+  private async matchingAiParentQuestion(parentId: string, modeUrl: string): Promise<string | undefined> {
+    const { db } = this.options;
+    const parent = await db.visits.get(parentId);
+    if (!parent || parent.privacyBlocked || !this.isRecordable(parent.url) || !this.isRecordable(parent.canonicalUrl) ||
+        googleSearchSurface(parent.url) !== 'search' || URL.parse(parent.url)?.origin !== URL.parse(modeUrl)?.origin) return;
+    const query = await db.queries.where('visitId').equals(parentId).first();
+    const requested = normalizeQuestion(URL.parse(modeUrl)?.searchParams.get('q') ?? '');
+    if (query?.engine === 'google' && requested && requested === normalizeQuestion(query.q) && query.q.length <= AI_QUESTION_LIMIT) return query.q;
+  }
+
   private async beginVisit(event: NavigationEvent, transition: Transition, parentVisitId: string | null) {
+    const intent = this.state.aiEntryClicks?.[event.tabId];
+    const askParentQuery = intent && transition === 'link' && intent.visitId === parentVisitId &&
+      intent.documentId === this.state.documentIdsByTab?.[event.tabId] && this.options.now() - intent.at <= INITIAL_AI_NAVIGATION_MS;
     await this.finishAiVisit(event.tabId);
     this.endTrail(event.tabId);
     if (event.documentId && this.state.passwordDocumentIdsByTab?.[event.tabId] === event.documentId) return;
@@ -363,6 +384,7 @@ export class VisitRecorder {
       (this.state.aiEntries ??= {})[event.tabId] = {
         origin: new URL(event.url).origin, documentId: event.documentId, parentVisitId,
         screened: !this.options.screenDocuments,
+        ...(askParentQuery ? { askParentQuery: true as const } : {}),
       };
       return;
     }
@@ -552,6 +574,16 @@ export class VisitRecorder {
       if (!this.pageAllowed(url)) return;
       if (aiDocument) {
         aiDocument.screened = true;
+        const ask = aiDocument.askParentQuery;
+        delete aiDocument.askParentQuery;
+        if (ask && !current && aiDocument.parentVisitId) {
+          const question = await this.matchingAiParentQuestion(aiDocument.parentVisitId, url);
+          if (question) {
+            const id = this.options.newId();
+            const reply = await this.captureAiTurn(tabId, aiDocument, { kind: 'ai-submit', turnId: id, question });
+            if (reply) return { ...reply, aiPending: [{ id, question }] };
+          }
+        }
         const carry = aiDocument.carryReply;
         delete aiDocument.carryReply;
         if (current && documentId) (this.state.documentIdsByTab ??= {})[tabId] = documentId;
@@ -564,6 +596,13 @@ export class VisitRecorder {
         return { visitId: admitted.id, extract: false };
       }
       return visit && { visitId: visit.id, extract: false };
+    }
+    if (content.kind === 'ai-enter') {
+      if (visit && !visit.privacyBlocked && !this.isPasswordProtected(tabId) && googleSearchSurface(url) === 'search' &&
+          this.isRecordable(url) && this.isRecordable(visit.canonicalUrl)) {
+        (this.state.aiEntryClicks ??= {})[tabId] = { visitId: visit.id, documentId, at: this.options.now() };
+      }
+      return;
     }
     if (content.kind === 'ai-submit' || content.kind === 'ai-result') {
       if (!aiDocument?.screened || !this.pageAllowed(url) || (current && !this.isRecordable(current.canonicalUrl))) return;

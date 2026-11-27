@@ -1,24 +1,29 @@
 import { useEffect, useState } from 'react';
+import { RECORDER_STATE_KEY, type RecorderState } from '../../capture/state-store';
 import { correct } from '../../corrections/client';
+import { AI_MODE_WAITING } from '../../corrections/messages';
 import { PASSWORD_STATUS_CHANGED } from '../../privacy/messages';
 import { recordingState, type RecordingSettings } from '../../privacy/policy';
 import { readRecordingSettings, RECORDING_SETTINGS_KEY } from '../../privacy/settings';
 
-/** The Visit shown in the browser's active tab, kept fresh as tabs and the trail change. */
-export function useCurrentVisitId(trailVersion: unknown): string | null {
-  const [visitId, setVisitId] = useState<string | null>(null);
+/** The Visit or screened Mode entry shown in the browser's active tab. */
+export function useCurrentVisit(trailVersion: unknown) {
+  const [current, setCurrent] = useState<string | null>(null);
   useEffect(() => {
     let requestId = 0;
+    let activeTabId: number | undefined;
     const refresh = () => {
       const id = ++requestId;
       void (async () => {
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (id !== requestId) return;
+        activeTabId = tab?.id;
         const reply = tab?.id === undefined || tab.incognito ? null : await correct('current-visit', { tabId: tab.id });
-        if (id === requestId) setVisitId(typeof reply === 'string' ? reply : null);
-      })().catch(() => { if (id === requestId) setVisitId(null); });
+        if (id === requestId) setCurrent(typeof reply === 'string' ? reply : null);
+      })().catch(() => { if (id === requestId) setCurrent(null); });
     };
     const tabActivated = () => {
-      setVisitId(null); // Never let input intended for the new tab reach the old editor.
+      setCurrent(null); // Never let input intended for the new tab reach the old editor.
       refresh();
     };
     const tabUpdated: Parameters<typeof chrome.tabs.onUpdated.addListener>[0] = (_, change, tab) => {
@@ -26,6 +31,16 @@ export function useCurrentVisitId(trailVersion: unknown): string | null {
     };
     const settingsChanged: Parameters<typeof chrome.storage.onChanged.addListener>[0] = (changes, area) => {
       if (area === 'local' && changes[RECORDING_SETTINGS_KEY]) refresh();
+      const change = area === 'session' && changes[RECORDER_STATE_KEY];
+      const tabId = activeTabId;
+      if (change && tabId !== undefined) {
+        const waiting = (value: unknown) => {
+          const state = value as RecorderState | undefined;
+          const entry = state?.aiEntries?.[tabId];
+          return !!entry?.screened && !entry.chat && !state?.currentVisitByTab[tabId];
+        };
+        if (waiting(change.oldValue) !== waiting(change.newValue)) refresh();
+      }
     };
     const passwordChanged = (message: { type?: string }) => {
       if (message?.type === PASSWORD_STATUS_CHANGED) refresh();
@@ -45,7 +60,7 @@ export function useCurrentVisitId(trailVersion: unknown): string | null {
       chrome.runtime.onMessage.removeListener(passwordChanged);
     };
   }, [trailVersion]);
-  return visitId;
+  return { visitId: current === AI_MODE_WAITING ? null : current, aiModeWaiting: current === AI_MODE_WAITING };
 }
 
 /** Whether recording already skips a URL's site (ticket 08's skip list, read-only here). */

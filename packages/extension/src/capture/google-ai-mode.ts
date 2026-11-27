@@ -34,6 +34,20 @@ export const AI_CITATION_LIMIT = 30;
 export const AI_RESULT_TIMEOUT_MS = 120_000;
 export const normalizeQuestion = (text: string) => text.replace(/\s+/g, ' ').trim();
 
+/** The snapshot shows both a Search tab link and a button styled as a link. */
+export function isAiModeEntryControl(document: Document, target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  const control = target.closest('a.XVMlrc.C6AK7c[href], button.Sw4CSc.plR5qb[role="link"]:not(:disabled)');
+  if (!control || control.closest('[hidden], [inert], [aria-hidden="true"], [aria-disabled="true"]')) return false;
+  const label = normalizeQuestion(control.textContent ?? '');
+  if (control.tagName === 'BUTTON') return label === 'AI Mode' || label === 'Dive deeper in AI Mode';
+  if (label !== 'AI Mode' && label !== 'Dive deeper in AI Mode') return false;
+  const href = URL.parse(control.getAttribute('href') ?? '', document.baseURI);
+  const targetName = control.getAttribute('target');
+  return !!href && (!targetName || targetName === '_self') && !control.hasAttribute('download') &&
+    href.origin === URL.parse(document.URL)?.origin && googleSearchSurface(href.href) === 'ai-mode';
+}
+
 export function aiComposer(target: EventTarget | null): HTMLTextAreaElement | undefined {
   return target instanceof Element && target.matches(composer) ? target as HTMLTextAreaElement : undefined;
 }

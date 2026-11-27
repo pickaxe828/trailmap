@@ -2,7 +2,7 @@ import { extractPageText, hasPasswordField, hashText, screenableRoots } from '..
 import { chatSurfaceFor } from '../capture/chat-extract';
 import { chatSiteOf, sameChatConversation } from '../capture/chat-sites';
 import { extractForumThread, forumSiteOf } from '../capture/forum';
-import { googleAiModeSurface } from '../capture/google-ai-mode';
+import { googleAiModeSurface, isAiModeEntryControl } from '../capture/google-ai-mode';
 import { PAGE_CONTENT_MESSAGE, RESCREEN_CHAT_MESSAGE, type PageContent, type PageContentMessage, type PageContentReply } from '../capture/page-messages';
 import { isPdfDocument } from '../capture/pdf';
 import { googleSearchSurface } from '../capture/search';
@@ -144,6 +144,12 @@ export default defineContentScript({
     // only for a site the user has opted in. The background tells us when that changes (below).
     const aiMode = watchAiConversation(document, chatSurfaceFor(location.href)?.surface ?? googleAiModeSurface, isPublic, send);
     ctx.onInvalidated(() => aiMode.dispose());
+    ctx.addEventListener(document, 'click', (event) => {
+      if (event.isTrusted && event.button === 0 && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey &&
+          googleSearchSurface(location.href) === 'search' && isPublic() && isAiModeEntryControl(document, event.target)) {
+        void send({ kind: 'ai-enter' });
+      }
+    }, { capture: true });
 
     const capture = async (started: number) => {
       if (!document.body) return;

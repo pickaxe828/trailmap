@@ -16,13 +16,13 @@ import { FieldNotes } from './FieldNotes';
 import { SummarizePage } from './SummarizePage';
 import { ThisPage } from './ThisPage';
 import { PickingUpCard } from './PickingUpCard';
-import { useCurrentVisitId } from './corrections-client';
+import { useCurrentVisit } from './corrections-client';
 
 /** Live open expeditions and the remaining Visits from today. */
 export function App() {
   const trail = useLiveTrail();
   const companion = useCompanionStatus();
-  const currentVisitId = useCurrentVisitId(trail);
+  const { visitId: currentVisitId, aiModeWaiting } = useCurrentVisit(trail);
   const expeditionId = trail?.open.find(({ visits }) => visits.some((visit) =>
     visit.id === currentVisitId && !visit.privacyBlocked,
   ))?.expedition.id;
@@ -36,7 +36,7 @@ export function App() {
         <ModelJobAttention />
         <AiNotesStatus />
         <CompanionAttention status={companion} />
-        <ThisPage visitId={currentVisitId} />
+        <ThisPage visitId={currentVisitId} aiModeWaiting={aiModeWaiting} />
         {trail && trail.open.length === 0 && trail.today.length === 0 && (
           <Text type="supporting">Your trail will appear here as you browse.</Text>
         )}

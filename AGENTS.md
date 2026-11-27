@@ -52,7 +52,7 @@ Before you finish a ticket run all of: `bun run typecheck && bun run test && bun
 
 ## Google AI Mode
 
-`capture/google-ai-mode.ts` owns the reply boundaries and suggested follow-up selectors verified against a saved signed-in page (`e2e/site/google/ai-mode-saved.html`, scrubbed). The shared `watchAiConversation` accepts typed submissions or trusted clicks on the recognised suggestion control only after admission. Passive AI Mode and ordinary Search never supply replies. Unknown layouts leave questions only. `Page.aiTurns` drives both the Expedition transcript and the side panel’s live follow-up summary; all content still joins the Page queue and Forget cascade. Settings keeps two lifetime, content-free Google AI Mode counters (`aiModeStats`), not a per-turn log. Details and live re-check: `trailmap-notes/notes-36.md`.
+`capture/google-ai-mode.ts` owns the reply boundaries and suggested follow-up selectors verified against a saved signed-in page (`e2e/site/google/ai-mode-saved.html`, scrubbed). A turn starts from an admitted composer submission, a trusted suggestion click, or a trusted Google Search → AI Mode click followed by a same-tab navigation for the recorded Query. The latter waits for the destination screen before creating the child Visit. Passive AI Mode and ordinary Search never supply replies. Unknown layouts leave questions only. `Page.aiTurns` drives both the Expedition transcript and the side panel’s live follow-up summary; all content still joins the Page queue and Forget cascade. Settings keeps two lifetime, content-free Google AI Mode counters (`aiModeStats`), not a per-turn log. Details and live re-check: `trailmap-notes/notes-36.md`.
 
 ## Corrections and Forget
 
