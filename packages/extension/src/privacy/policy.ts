@@ -1,4 +1,5 @@
 import type { Page, Visit } from '@trailmap/shared';
+import { chatConversationSite, chatSiteOf, type ChatCaptureSettings, type ChatSite } from '../capture/chat-sites';
 import { googleSearchSurface } from '../capture/search';
 import { DENIED_HOSTS, DENIED_PATH_SEGMENTS, DENIED_SERVICE_LABELS, LOCAL_SUFFIXES } from './default-deny-list';
 
@@ -9,6 +10,8 @@ export type RecordingSettings = {
   topicSwitchMinutes?: number;
   /** "Use my notes to build concepts and threads". On unless it is explicitly false. */
   useMyNotes?: boolean;
+  /** "Capture conversations from Gemini / ChatGPT / Claude". Off unless a site is explicitly true. */
+  chatCapture?: ChatCaptureSettings;
 };
 export const usesMyNotes = ({ useMyNotes }: Pick<RecordingSettings, 'useMyNotes'>) => useMyNotes !== false;
 export type RecordingState = 'recording' | 'paused' | 'skipped';
@@ -52,8 +55,31 @@ export function isDefaultDenied(url: string | undefined): boolean {
   return path.split(/[/\\]/).some((segment) => DENIED_PATH_SEGMENTS.includes(segment.split(/[.;]/)[0] ?? ''));
 }
 
+export const chatCaptureEnabled = (settings: Pick<RecordingSettings, 'chatCapture'>, site: ChatSite) => settings.chatCapture?.[site] === true;
+
+const skippedByUser = (host: string, settings: RecordingSettings) => settings.skippedHosts.some((rule) => matchesHost(host, rule));
+
+/**
+ * May the conversation typed on this real chat page be captured? Only for an opted-in site that is not
+ * paused or skipped. This is the one gate; it never makes the page's own content recordable.
+ */
+export function chatCaptureAllowed(url: string | undefined, settings: RecordingSettings): boolean {
+  const site = chatSiteOf(url);
+  const parsed = site && URL.parse(url!);
+  return !!parsed && !settings.paused && chatCaptureEnabled(settings, site) && !parsed.username && !parsed.password &&
+    !skippedByUser(parsed.hostname.toLowerCase(), settings);
+}
+
+/** Captured conversations survive a deny-list purge only while their site stays opted in and unskipped. */
+export function chatConversationRetained(url: string | undefined, settings: RecordingSettings | undefined): boolean {
+  const site = chatConversationSite(url);
+  return !!settings && !!site && chatCaptureEnabled(settings, site) && !skippedByUser(siteKey(url)!, settings);
+}
+
 export function recordingState(url: string | undefined, settings: RecordingSettings): RecordingState {
   if (settings.paused) return 'paused';
+  // The synthetic key of a captured conversation is the only chat URL that can be recordable.
+  if (chatConversationSite(url)) return chatConversationRetained(url, settings) ? 'recording' : 'skipped';
   const host = siteKey(url);
   return !host || isDefaultDenied(url) || settings.skippedHosts.some((rule) => matchesHost(host, rule))
     ? 'skipped'
