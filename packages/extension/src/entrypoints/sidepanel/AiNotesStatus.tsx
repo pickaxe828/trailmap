@@ -1,4 +1,5 @@
 import { Banner } from '@astryxdesign/core/Banner';
+import { Button } from '@astryxdesign/core/Button';
 import { Link } from '@astryxdesign/core/Link';
 import { liveQuery } from 'dexie';
 import { useEffect, useState } from 'react';
@@ -26,7 +27,8 @@ export function AiNotesStatus() {
   if (hold.reason === 'not_eligible') {
     return <Banner status="warning" title="ChatGPT account not eligible"
       description="This account or workspace can’t use ChatGPT plan usage. Try an Anthropic API key or a local Ollama model instead. Browsing is still recorded."
-      endContent={<Link hasUnderline href="/settings.html#model-providers" target="_blank">Choose another provider</Link>} />;
+      endContent={<Button label="Choose another provider" variant="secondary" size="sm" href="/settings.html#model-providers"
+        target="_blank" rel="noopener noreferrer" />} />;
   }
   return <Banner status="info"
     title={hold.reason === 'plan_usage_not_granted'
