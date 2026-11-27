@@ -79,8 +79,8 @@ const mock = startMockOAuth(async (request) => {
     takeaways: ['Shorter wavelengths scatter more strongly.', 'Air contains particles that scatter light.'],
     answers_question: 'Why is the sky blue?', page_kind: 'other',
     concepts: [
-      { name: 'Rayleigh scattering', kind: 'concept', gloss: 'Scattering by small particles.', role: 'explains' },
-      { name: 'Wavelength', kind: 'concept', gloss: 'Distance between wave crests.', role: 'mentions' },
+      { name: 'Rayleigh scattering', kind: 'concept', gloss: 'Scattering by small particles.', role: 'explains', salience: 'central' },
+      { name: 'Wavelength', kind: 'concept', gloss: 'Distance between wave crests.', role: 'mentions', salience: 'passing' },
     ],
     relations: [{ from: 'Rayleigh scattering', to: 'Wavelength', type: 'related_to' }],
   }));
@@ -109,7 +109,7 @@ const mock = startMockOAuth(async (request) => {
       summary: 'Tombstones retain deletion history across replicas.',
       takeaways: ['A tombstone records that an item was deleted.', 'Replicas can process updates out of order.'],
       answers_question: 'How do replicated lists represent deletes?', page_kind: 'article',
-      concepts: [{ name: 'Tombstone', kind: 'concept', gloss: 'A deletion marker.', role: 'explains' }],
+      concepts: [{ name: 'Tombstone', kind: 'concept', gloss: 'A deletion marker.', role: 'explains', salience: 'central' }],
       relations: [{ from: 'Tombstone', to: 'CRDT', type: 'part_of' }],
     }));
   }

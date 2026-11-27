@@ -217,6 +217,16 @@ export function openTrailmapDb(name: string = DB_NAME): TrailmapDb {
         payload: { expeditionId: id, endedAt, revision: 1 } }, endedAt);
     }
   });
+  db.version(11).stores({}).upgrade(async () => {
+    // Before salience, an explained concept was the page's subject and anything else was a passing mention.
+    const salience = (role: string) => role === 'explains' ? 'supporting' : 'passing';
+    await db.pages.filter((page) => !!page.conceptMentions?.length).modify((page) => {
+      page.conceptMentions = page.conceptMentions!.map((mention) => ({ ...mention, salience: mention.salience ?? salience(mention.role) }));
+    });
+    await db.conceptEvidence.toCollection().modify((row) => {
+      row.salience ??= row.role === 'learned' ? 'central' : salience(row.role);
+    });
+  });
   // History replay and any other Visit writer use the same persistence boundary.
   db.visits.hook('creating', (_id, visit) => { visit.url = canonicalizeUrl(visit.url); });
   db.visits.hook('updating', (changes) => {

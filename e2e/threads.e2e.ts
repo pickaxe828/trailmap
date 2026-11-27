@@ -30,7 +30,7 @@ test('two related sittings become one Journal thread with both trails and an inc
     embedding: null, firstSeen: expeditions[0]!.startedAt, exposure: 1 };
   const conceptEvidence: ConceptEvidence[] = visits.map(({ id, startedAt }) => ({
     id: `evidence-${id}`, conceptId: concept.id, visitId: id, canonicalUrl, startedAt, name: concept.name, kind: concept.kind,
-    gloss: concept.gloss, role: 'explains', embedding: null,
+    gloss: concept.gloss, role: 'explains', salience: 'central', embedding: null,
   }));
   // Seed one sitting at a time: automatic closure would otherwise wrap up
   // both historical fixtures before the test can observe the first one alone.

@@ -57,7 +57,7 @@ test('queued Page notes survive a worker restart, filter at dispatch, and log ev
   const pages = await readCapture('pages');
   expect(pages.find(({ canonicalUrl }) => new URL(canonicalUrl).hostname === 'learn.test')).toMatchObject({
     pageKind: 'article', answersQuestion: 'How do replicated lists represent deletes?',
-    conceptMentions: [{ name: 'Tombstone', kind: 'concept', gloss: 'A deletion marker.', role: 'explains' }],
+    conceptMentions: [{ name: 'Tombstone', kind: 'concept', gloss: 'A deletion marker.', role: 'explains', salience: 'central' }],
     relationMentions: [{ from: 'Tombstone', to: 'CRDT', type: 'part_of' }],
   });
 

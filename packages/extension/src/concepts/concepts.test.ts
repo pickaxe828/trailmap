@@ -16,7 +16,7 @@ beforeEach(() => { db = openTrailmapDb(crypto.randomUUID()); now = 1_000; vector
 afterEach(() => db.delete());
 
 const mention = (name: string, role: 'explains' | 'mentions' | 'uses' = 'mentions', gloss = name) =>
-  ({ name, role, gloss, kind: 'concept' as const });
+  ({ name, role, gloss, kind: 'concept' as const, salience: (role === 'explains' ? 'supporting' : 'passing') as 'supporting' | 'passing' });
 let vectors: Record<string, number[]>;
 const defaultVectors = {
   'Deferred deletion\nDeferred deletion': [0.96, 0.28],

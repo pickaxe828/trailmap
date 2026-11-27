@@ -40,7 +40,7 @@ async function seedAtlas(setup: BrowserPage, count: number, withThread = false) 
   const evidence = (concept: Concept, visit: Visit, name = concept.name): ConceptEvidence => ({
     id: `${concept.id}:${visit.id}`, conceptId: concept.id, visitId: visit.id, canonicalUrl: visit.canonicalUrl,
     startedAt: visit.startedAt, name, gloss: concept.gloss, kind: concept.kind, embedding: null,
-    role: concept.id === 'provisional' ? 'mentions' : 'explains',
+    role: concept.id === 'provisional' ? 'mentions' : 'explains', salience: concept.id === 'provisional' ? 'passing' : 'supporting',
   });
   const conceptEvidence = [evidence(concepts[0], visits[0]), evidence(concepts[0], visits[1]),
     evidence(concepts[1], visits[1]), evidence(concepts[1], visits[2], 'Deletion marker'), evidence(concepts[2], visits[0]),

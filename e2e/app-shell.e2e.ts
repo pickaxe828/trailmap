@@ -36,7 +36,7 @@ async function seedResearch(page: Page) {
     concepts: concepts.map((concept) => ({ ...concept, aliases: [], kind: 'concept', embedding: null, firstSeen: visits[0]!.startedAt, exposure: 2 })),
     conceptEvidence: concepts.flatMap((concept) => visits.map((visit) => ({ ...concept, id: `${concept.id}:${visit.id}`,
       conceptId: concept.id, visitId: visit.id, canonicalUrl: visit.canonicalUrl, startedAt: visit.startedAt,
-      kind: 'concept', role: 'explains', embedding: null }))),
+      kind: 'concept', role: 'explains', salience: 'central', embedding: null }))),
     pages: visits.map(({ canonicalUrl }) => ({ canonicalUrl, text: '', textHash: 'fixture', summary: null, takeaways: [],
       embedding: null, pageKind: 'article', enrichedAt: null })),
     edges: [{ id: 'part', from: 'tombstone', to: 'crdt', type: 'part_of', weight: 2, evidence: visits.map(({ id }) => id) }],

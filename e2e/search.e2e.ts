@@ -19,7 +19,7 @@ test('Journal search finds a word from a captured Page and groups it with Concep
     visits: [{ ...visit, engagement: 'read', expeditionId: session.id }],
     concepts: [concept],
     conceptEvidence: [{ id: 'evidence', conceptId: concept.id, visitId: visit.id, canonicalUrl: url,
-      startedAt: visit.startedAt, role: 'explains', name: concept.name, kind: concept.kind, gloss: concept.gloss, embedding: null }],
+      startedAt: visit.startedAt, role: 'explains', salience: 'central', name: concept.name, kind: concept.kind, gloss: concept.gloss, embedding: null }],
     expeditions: [session, { ...session, id: 'previous', title: 'First session', fieldNotes: null }],
     threads: [{ id: 'replication', title: 'Replication research', question: null, livingNote: 'Markers for deleted items preserve causality.',
       status: 'active', lastActiveAt: 2, centroid: null, conceptIds: [concept.id] }],
