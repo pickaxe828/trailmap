@@ -1,22 +1,10 @@
 import { Banner } from '@astryxdesign/core/Banner';
 import { Button } from '@astryxdesign/core/Button';
-import { Text } from '@astryxdesign/core/Text';
-import { VStack } from '@astryxdesign/core/VStack';
+import type { CompanionStatus } from '../../companion/client';
 import { SETUP_INSTRUCTIONS_PATH } from '../../companion/status';
-import { useCompanionStatus } from '../../companion/useCompanionStatus';
-import { SummarizePage } from './SummarizePage';
 
-export function CompanionStatus() {
-  const status = useCompanionStatus();
-  if (status.state === 'connecting') return <Text role="status" type="supporting">Checking companion…</Text>;
-  if (status.state === 'connected') {
-    return (
-      <VStack gap={2}>
-        <Text role="status" type="supporting">Companion connected</Text>
-        <SummarizePage />
-      </VStack>
-    );
-  }
+export function CompanionAttention({ status }: { status: CompanionStatus }) {
+  if (status.state === 'connecting' || status.state === 'connected') return null;
   return (
     <Banner status="warning" title="Companion not connected"
       description="Trails still work. AI notes and Obsidian sync need the companion."

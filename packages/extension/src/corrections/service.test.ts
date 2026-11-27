@@ -12,18 +12,19 @@ beforeEach(() => { db = openTrailmapDb(crypto.randomUUID()); skipped = []; forge
 afterEach(() => db.delete());
 
 let n = 0;
-const service = () => {
+const service = ({ paused = false, incognito = false } = {}) => {
   const options = { db, now: () => 10 + ++n, newId: () => `id-${++n}` };
   return createCorrectionService({
     corrections: createCorrections(options),
     ...options,
+    isIncognitoTab: async () => incognito,
     recorder: {
       ready: Promise.resolve(),
       getCurrentVisit: (tabId) => (tabId === 7 ? { id: 'a' } : undefined),
       forgetVisits: async (remove) => { forgetCalls++; return remove(); },
     },
     privacy: {
-      getSettings: () => ({ paused: false, skippedHosts: [...skipped, ...(['already.example'])] }),
+      getSettings: () => ({ paused, skippedHosts: [...skipped, 'already.example'] }),
       setSiteSkipped: async (host, skip) => { if (skip) skipped.push(host); },
     },
   });
@@ -59,6 +60,34 @@ test('forgetting goes through the recorder, and "current-visit" answers from it'
   await s.handle(req('forget-site', { host: 'blog.example' }));
   expect(forgetCalls).toBe(1);
   expect((await db.visits.toArray()).map((v) => v.id)).toEqual(['b']);
+});
+
+test('the side panel cannot open a note editor for an incognito or blocked Visit', async () => {
+  const allowed = visit('a', 'blog.example');
+  await db.visits.put(allowed);
+  const current = req('current-visit', { tabId: 7 });
+  expect(await service().handle(current)).toBe('a');
+  expect(await service({ incognito: true }).handle(current)).toBeNull();
+  expect(await service({ paused: true }).handle(current)).toBeNull();
+  for (const blocked of [
+    { ...allowed, privacyBlocked: true },
+    { ...allowed, canonicalUrl: 'https://mail.test/' },
+    { ...allowed, url: 'https://already.example/' },
+  ] satisfies Visit[]) {
+    await db.visits.put(blocked);
+    expect(await service().handle(current)).toBeNull();
+  }
+});
+
+test('a pending autosave cannot attach to a Visit after Forget or a change in privacy', async () => {
+  await db.visits.put(visit('a', 'blog.example'));
+  const request = req('note', { nodeId: 'a', sessionId: 'edit-1', text: 'Draft' });
+  expect(await service({ paused: true }).handle(request)).toBe(false);
+  const s = service();
+  expect(await s.handle(request)).toBe(true);
+  await s.handle(req('forget-site', { host: 'blog.example' }));
+  expect(await s.handle(request)).toBe(false);
+  expect(await db.notes.toArray()).toEqual([]);
 });
 
 test('request validation rejects malformed messages', () => {

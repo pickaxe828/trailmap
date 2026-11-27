@@ -14,7 +14,8 @@ export function startCorrections(
   privacy: { getSettings(): RecordingSettings; setSiteSkipped(host: string, skip: boolean): Promise<void> },
 ) {
   const options = { db, now: Date.now, newId: () => crypto.randomUUID() };
-  const service = createCorrectionService({ db, corrections: createCorrections(options), recorder, privacy });
+  const service = createCorrectionService({ db, corrections: createCorrections(options), recorder, privacy,
+    isIncognitoTab: async (tabId) => (await chrome.tabs.get(tabId)).incognito });
   const organise = createJournalCorrections(options);
   chrome.runtime.onMessage.addListener((input: unknown, sender, reply) => {
     if (!sender.url) return;

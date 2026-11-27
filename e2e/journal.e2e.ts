@@ -191,7 +191,7 @@ test('a merge can be undone from Recent changes after a reload, and a conflictin
   await journal.reload();
   await journal.getByRole('button', { name: /^Recent changes/ }).click();
   await journal.getByRole('button', { name: /^Undo: Marked “Gossip protocols” as not learning/ }).click();
-  await expect(journal.getByRole('alert')).toContainText('a later change touched the same expeditions');
+  await expect(journal.getByRole('alert')).toContainText('a later change touched the same data');
   await shot('undo-refused.png');
 });
 

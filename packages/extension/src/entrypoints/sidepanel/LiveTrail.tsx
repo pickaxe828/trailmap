@@ -51,6 +51,8 @@ export function LiveTrail({ trail, currentVisitId, priorReads }: {
   const moved = todayMenu ? trail.open.flatMap(({ visits }) => visits)
     .filter(({ id }) => todayMenu.anchorPath.has(id)) : [];
   const today = [...trail.today, ...moved];
+  const currentGroup = trail.open.find(({ visits }) => visits.some(({ id }) => id === currentVisitId));
+  const open = currentGroup ? [currentGroup, ...trail.open.filter((group) => group !== currentGroup)] : trail.open;
   const heldIds = todayMenu && today.some(({ id }) => id === todayMenu.visitId)
     ? new Set(moved.map(({ id }) => id)) : undefined;
 
@@ -137,7 +139,7 @@ export function LiveTrail({ trail, currentVisitId, priorReads }: {
       {trail.open.length > 0 && (
         <VStack gap={2}>
           <Heading level={2}>Open expeditions</Heading>
-          {trail.open.map((group) => {
+          {open.map((group) => {
             const { expedition, visits } = group;
             const others = trail.open.filter((other) => other.expedition.id !== expedition.id);
             return (

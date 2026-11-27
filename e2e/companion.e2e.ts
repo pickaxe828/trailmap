@@ -41,7 +41,7 @@ test.describe('without the companion', () => {
     const page = await openExtensionPage('sidepanel.html');
     await page.setViewportSize({ width: 400, height: 660 });
     await expect(page.getByText('Companion not connected')).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByText('Recording is on')).toBeVisible();
+    await expect(page.getByRole('switch', { name: 'Record browsing' })).toBeChecked();
 
     await page.screenshot({ path: process.env.PROOF_DIR
       ? join(process.env.PROOF_DIR, 'companion-missing.png') : info.outputPath('companion-missing.png') });

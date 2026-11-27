@@ -57,9 +57,13 @@ Before you finish a ticket run all of: `bun run typecheck && bun run test && bun
 - `createCorrections` (`corrections.ts`, `forget.ts`) works on Dexie only. Each correction is one transaction that also writes a `corrections` log row with before/after state. `service.ts` routes side panel messages in the service worker; ignore-site goes through the privacy controller's `setSiteSkipped`, and forgets go through `recorder.forgetVisits` so an open tab can't write the forgotten Visit back.
 - **New derived data must join the Forget cascade** (`forgetCascade` in `forget.ts`) and carry `targetIds` in any correction-log entry that mentions it. The cascade test scans every table for the forgotten text, so a missed table fails there.
 
+## Side panel notes
+
+`entrypoints/sidepanel/ThisPage.tsx` follows the admitted current Visit and reads its Note, Expedition and generated Page notes live. Key each `NoteEditor` to its source so blur or a Visit switch flushes `notes/autosave.ts` to the original target. Autosaves update one `note` or counts-only `my-notes` correction per session; use the existing notes enrichment and Forget paths. Details: `trailmap-notes/notes-49.md`.
+
 ## Journal undo
 
-`packages/extension/src/journal/recent.ts` reads Recent changes (latest 20 undoable `journal-*` corrections) and explains refused undos (`forgotten | undone | conflict`). Undo is the log row's `before` payload, so new derived data must keep joining the Forget cascade, which deletes the row. Details: `trailmap-notes/notes-33.md`.
+`packages/extension/src/journal/recent.ts` reads Recent changes (latest 20 undoable `note` and `journal-*` corrections) and explains refused undos (`forgotten | undone | conflict`). Undo is the log row's `before` payload, so new derived data must keep joining the Forget cascade, which deletes the row. Details: `trailmap-notes/notes-33.md`.
 
 ## Wrap-up and field notes
 
