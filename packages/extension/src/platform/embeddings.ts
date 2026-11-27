@@ -3,7 +3,8 @@ import { isFirefox } from './browser';
 
 let opening: Promise<void> | undefined;
 
-function ensureOffscreen() {
+/** The one offscreen document hosts both the local embedder and the PDF text reader. */
+export function ensureOffscreen() {
   opening ??= (async () => {
     const documentUrls = [chrome.runtime.getURL(OFFSCREEN_PATH)];
     const contexts = await chrome.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'], documentUrls });
@@ -11,7 +12,7 @@ function ensureOffscreen() {
       await chrome.offscreen.createDocument({
         url: OFFSCREEN_PATH,
         reasons: [chrome.offscreen.Reason.WORKERS],
-        justification: 'Run the local ONNX embedding model.',
+        justification: 'Run the local ONNX embedding model and read PDF text with pdf.js.',
       });
     }
   })().finally(() => { opening = undefined; });
