@@ -31,6 +31,7 @@ const fixture = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch(req) {
   if (path === '/trail/private-frame.html') {
     return new Response('<input type="password" aria-label="Password">', { headers: { 'Content-Type': 'text/html' } });
   }
+  if (path === '/pdf/paper.pdf') return new Response(Bun.file(new URL('./site/pdf/paper.pdf', import.meta.url)));
   if (!['/trail/start.html', '/trail/article.html'].includes(path)) return new Response(null, { status: 404 });
   return new Response(Bun.file(new URL(path.slice('/trail/'.length), fixtureDir)));
 } });
@@ -144,13 +145,13 @@ try {
       rows.onsuccess = () => {
         db.close();
         // Return only JSON scalars; WebDriver cannot clone IndexedDB typed arrays.
-        done(rows.result.map(({ url, id, parentVisitId, favicon, expeditionEmbedding, canonicalUrl, text }) =>
-          ({ url, id, parentVisitId, favicon, hasEmbedding: !!expeditionEmbedding, canonicalUrl, text })));
+        done(rows.result.map(({ url, id, parentVisitId, favicon, expeditionEmbedding, canonicalUrl, text, pdf, title }) =>
+          ({ url, id, parentVisitId, favicon, hasEmbedding: !!expeditionEmbedding, canonicalUrl, text, pdf, title })));
       };
       rows.onerror = () => { db.close(); done([]); };
     };
   `);
-  type Visit = { url: string; id: string; parentVisitId?: string; favicon?: string; hasEmbedding?: boolean };
+  type Visit = { url: string; id: string; parentVisitId?: string; favicon?: string; hasEmbedding?: boolean; pdf?: true };
   const visits = () => read<Visit>('visits');
   const initial = await until('first Visit and favicon', visits, (rows) => rows.some((row) => row.url === first && !!row.favicon));
   await call('/window', { handle: fixtureTab });
@@ -217,6 +218,17 @@ try {
     (body) => body.includes('ˤ: the pharyngealization mark in IPA'));
   await screenshot('firefox-journal-ipa.png');
   console.log('The Journal shows an IPA symbol title in Gecko.');
+
+  // A PDF in Gecko's own viewer: the text comes from the background page's re-fetch, parsed by the bundled pdf.js.
+  const paper = `${fixtureOrigin}/pdf/paper.pdf`;
+  await call('/window', { handle: fixtureTab });
+  await goto(paper);
+  await call('/window', { handle: captureTab });
+  const pdfPage = await until('PDF text from the bundled pdf.js', () => read<{ canonicalUrl: string; text: string }>('pages'),
+    (rows) => rows.some(({ canonicalUrl, text }) => canonicalUrl === paper && text.includes('Compaction merges sorted runs')), 30_000);
+  assert(pdfPage.find(({ canonicalUrl }) => canonicalUrl === paper)?.text.includes('memtable'));
+  assert((await visits()).some((row) => row.url === paper && row.pdf), 'the PDF is a PDF Visit');
+  console.log('A PDF in the Gecko viewer is read with the bundled pdf.js.');
 } catch (error) {
   const log = Bun.file(join(root, 'geckodriver.log'));
   if (await log.exists()) console.error((await log.text()).slice(-6000));
