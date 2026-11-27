@@ -116,7 +116,7 @@ describe('database', () => {
 
   test('has tables for domain entities, durable jobs, model dispatches and the correction log', () => {
     expect(db.tables.map((t) => t.name).sort()).toEqual([
-      'conceptEvidence', 'concepts', 'corrections', 'dismissedConcepts', 'edges', 'expeditions', 'highlights', 'jobs', 'modelHealth', 'notes', 'pages', 'queries', 'queueHolds', 'sentToModel', 'threadMatchRuns', 'threads', 'visits',
+      'conceptEvidence', 'concepts', 'corrections', 'digests', 'dismissedConcepts', 'edges', 'expeditions', 'highlights', 'jobs', 'modelHealth', 'notes', 'pages', 'queries', 'queueHolds', 'sentToModel', 'threadMatchRuns', 'threads', 'visits',
     ]);
   });
 });

@@ -9,6 +9,7 @@ export const MODEL_JOB_LABELS: Record<ModelJobKind, string> = {
   merge_verdict: 'Concept matching',
   living_note: 'Living notes',
   notes_enrichment: 'My notes',
+  weekly_digest: 'Weekly digest',
 };
 
 export function modelTaskLabel(task: string) {

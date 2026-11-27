@@ -49,7 +49,7 @@ export const hostMatches = (url: string | undefined, host: string) => {
 export async function forgetCascade(db: TrailmapDb, input: ForgetInput): Promise<ForgetResult> {
   const { kind, now, newId } = input;
   const tables = [db.visits, db.queries, db.pages, db.highlights, db.notes, db.edges, db.jobs, db.sentToModel,
-    db.expeditions, db.corrections, db.concepts, db.conceptEvidence, db.dismissedConcepts, db.threads, db.threadMatchRuns];
+    db.expeditions, db.corrections, db.concepts, db.conceptEvidence, db.dismissedConcepts, db.threads, db.threadMatchRuns, db.digests];
   return db.transaction('rw', tables, async () => {
     const fromForgottenHost = (url: string | undefined) => !!url && (!!input.host && hostMatches(url, input.host) ||
       !!input.denied && isDefaultDenied(url, { redditThreads: input.redditThreads }) && !chatConversationRetained(url, input.chatCapture && { paused: false, skippedHosts: [], chatCapture: input.chatCapture }));
@@ -142,6 +142,10 @@ export async function forgetCascade(db: TrailmapDb, input: ForgetInput): Promise
     const affectedSessions = await db.expeditions.filter(({ id, notesSource, wrapUpSource }) =>
       affected.has(id) || sourceRemoved(notesSource) || sourceRemoved(wrapUpSource)).toArray();
     for (const { id } of affectedSessions) affected.add(id);
+    // A digest's summary was written from its Expeditions' notes. If any source is gone or being re-derived, the words can no
+    // longer be trusted: the digest is deleted, not regenerated (the user can generate the week again).
+    const digests = await db.digests.filter(({ expeditionIds, sources }) => expeditionIds.some((id) => affected.has(id)) || sourceRemoved(sources)).primaryKeys();
+    await db.digests.bulkDelete(digests);
     const threadIds = new Set(affectedSessions.flatMap(({ threadId }) => threadId ? [threadId] : []));
     const jobs = await db.jobs.filter(({ kind, payload, status }) => 'canonicalUrl' in payload
       ? orphans.has(payload.canonicalUrl) || invalidated.has(payload.canonicalUrl) || gone.has(payload.visitId)
@@ -242,7 +246,7 @@ export async function forgetCascade(db: TrailmapDb, input: ForgetInput): Promise
       before: {
         visits: visitIds.length, pages: pagesDeleted, queries: queryIds.size, highlights: highlights.size,
         notes: notes.length, jobs: jobs.length + replacedJobs + removedJobs, auditRows: audit.length, edges: edgesTouched, concepts: removedConceptIds.length,
-        expeditions: forgottenExpeditions.length,
+        expeditions: forgottenExpeditions.length, digests: digests.length,
       },
     });
     return { visitIds };
