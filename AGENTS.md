@@ -97,6 +97,10 @@ Before you finish a ticket run all of: `bun run typecheck && bun run test && bun
 - **Reddit stays on the deny-list.** `RecordingSettings.redditThreads` (off unless `true`, Privacy settings, `ForumCaptureSettings.tsx`) lets `isDefaultDenied(url, settings)` skip only the `reddit.com` rule, and only for `/r/<sub>/comments/<id>/…` (not `u_` profile spaces). Feeds, profiles, inbox and settings stay denied. Pass `settings` wherever a Reddit URL's recordability matters; `isDefaultDenied(url)` alone is the fail-closed answer.
 - **Opt-out purges** captured Reddit threads like chat capture does (`forgetCascade({ denied, redditThreads })`); open Reddit tabs are rescreened with `RESCREEN_CHAT_MESSAGE`; a thread loaded before the opt-in is read only after it is loaded again. Hacker News needs no opt-in. Details: `trailmap-notes/notes-40.md`.
 
+## Ask
+
+`packages/extension/src/ask/`: the Journal's Ask box (`entrypoints/journal/AskBox.tsx`) and `tm ?<question>` answer a question from the user's own pages with citations. `ask.ts` makes **one** model call per question (task `ask`, schema `AskAnswer`, model route = the `notes` group, `requestModel`, so it is logged in Sent-to-model). The search index (`search/`) is only a **ranking**: `passages.ts` (`readAskInput`) reads every passage from the current database and sends it only if it passes `maySendToModel` / `eligibleMetadata` / `allowsSources` (Pages, field notes, My notes behind `usesMyNotes`, concepts whose every evidence row is sendable), then `guard.allow()` re-reads and compares the input before dispatch. Nothing passes, or the model says it can't answer, or none of its `sources` refs belong to the sent passages: "Nothing in your trails answers this." Citations are the sent passages' pages/expeditions only; unknown refs are dropped. Anything new that Ask can retrieve must be read in `readPassage` through the same gates and listed in `askTables`; `SentToModel.expeditionIds` joins the Forget cascade. Details: `trailmap-notes/notes-42.md`.
+
 ## Extension identity
 
 The manifest `key` pins the extension ID, so it is the same on every machine and every build:

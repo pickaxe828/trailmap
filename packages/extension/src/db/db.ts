@@ -59,7 +59,7 @@ export type CorrectionLogEntry = {
 };
 
 export type SentToModel = ModelDispatch & {
-  id: string; at: number; task: string; canonicalUrl?: string; expeditionId?: string; canonicalUrls?: string[]; visitIds?: string[];
+  id: string; at: number; task: string; canonicalUrl?: string; expeditionId?: string; expeditionIds?: string[]; canonicalUrls?: string[]; visitIds?: string[];
   jobId?: string;
   outcome?: 'pending' | 'succeeded' | 'failed' | 'cancelled';
   errorCode?: RequestErrorCode;

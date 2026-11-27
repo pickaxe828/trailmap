@@ -38,3 +38,14 @@ test('unmatched omnibox text stays in local Journal search', async () => {
   await omni.entered('missing query', 'newForegroundTab');
   expect(omni.opened).toEqual([['/journal.html?q=missing+query', 'newForegroundTab']]);
 });
+
+test('tm ?question opens Ask in the Journal, searches nothing, and suggests nothing', async () => {
+  let searches = 0;
+  const omni = harness(async () => { searches++; return [result]; });
+  await omni.changed('?how do tombstones work');
+  expect(omni.suggestions).toEqual([]);
+  await omni.entered('?  how do tombstones work ', 'currentTab');
+  await omni.entered('?', 'newForegroundTab');
+  expect(omni.opened).toEqual([['/journal.html?ask=how+do+tombstones+work', 'currentTab'], ['/journal.html', 'newForegroundTab']]);
+  expect(searches).toBe(0);
+});

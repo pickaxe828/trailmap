@@ -28,7 +28,7 @@ function finishAttempt(db: TrailmapDb, id: string, result: Completion, finishedA
 export async function requestModel(
   db: TrailmapDb,
   payload: Omit<LlmCompletion, 'auditId' | 'provider' | 'model'>,
-  guard: { canonicalUrl?: string; expeditionId?: string; canonicalUrls?: string[]; visitIds?: string[]; jobId?: string; tables: Table[]; allow: () => Promise<boolean> },
+  guard: { canonicalUrl?: string; expeditionId?: string; expeditionIds?: string[]; canonicalUrls?: string[]; visitIds?: string[]; jobId?: string; tables: Table[]; allow: () => Promise<boolean> },
   selectedRoute?: ModelRoute,
 ) {
   await recoverModelAttempts(db);
@@ -56,7 +56,7 @@ export async function requestModel(
         if (!active || !await guard.allow() || !active) return false;
         await db.sentToModel.add({
           id: dispatchId, at: Date.now(), task: payload.task, canonicalUrl: guard.canonicalUrl,
-          expeditionId: guard.expeditionId, canonicalUrls: guard.canonicalUrls, visitIds: guard.visitIds,
+          expeditionId: guard.expeditionId, expeditionIds: guard.expeditionIds, canonicalUrls: guard.canonicalUrls, visitIds: guard.visitIds,
           provider, model, instructions, input, jobId: guard.jobId, outcome: 'pending',
         });
         return true;

@@ -14,6 +14,7 @@ import { watchUnseenNotes } from '../wrapup/badge';
 import { startVaultSync } from '../vault/background';
 import { startHistoryImport } from '../history/background';
 import { startSearch } from '../search/background';
+import { startAsk } from '../ask/background';
 import { configurePanelAction, isFirefox } from '../platform/browser';
 import { readPdfOnPlatform } from '../platform/pdf';
 
@@ -70,7 +71,8 @@ function start() {
   startPageSummary(db, recorder, privacy.getSettings);
   startJobs(db, privacy.ready, privacy.getSettings);
   startVaultSync(db);
-  startSearch(db);
+  const search = startSearch(db);
+  startAsk(db, privacy.ready, privacy.getSettings, search.rank);
   // The toolbar badge counts field notes nobody has viewed yet. No pop-ups.
   watchUnseenNotes(db, (count) => {
     unseenNotes = count;

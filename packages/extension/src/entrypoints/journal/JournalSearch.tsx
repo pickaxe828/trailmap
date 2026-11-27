@@ -11,7 +11,7 @@ import { JOURNAL_SEARCH_PARAM } from '../../ui/TrailmapShell';
 const groups: [SearchKind, string][] = [['page', 'Pages'], ['concept', 'Concepts'], ['note', 'Notes']];
 type SearchState = { query: string; results: SearchResult[]; pending: boolean; error?: true };
 
-export function JournalSearch({ children, regionRef }: { children: ReactNode; regionRef: Ref<HTMLElement> }) {
+export function JournalSearch({ children, regionRef, ask }: { children: ReactNode; regionRef: Ref<HTMLElement>; ask?: ReactNode }) {
   const [input, setInput] = useState(() => (new URLSearchParams(window.location.search).get('q') ?? '').slice(0, MAX_SEARCH_QUERY));
   const [state, setState] = useState<SearchState>();
   const query = input.trim();
@@ -46,6 +46,7 @@ export function JournalSearch({ children, regionRef }: { children: ReactNode; re
           autoComplete="off" enterKeyHint="search" isLoading={pending} />
         <Text type="supporting">You can also type “tm” followed by a space in the address bar.</Text>
       </VStack>
+      {ask}
       {!query ? children : (
         <VStack gap={4}>
           {current?.error ? <Text role="alert">Could not search the Journal. Try again.</Text> : (

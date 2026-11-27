@@ -45,6 +45,14 @@ const mock = startMockOAuth(async (request) => {
       relations: [],
     }));
   }
+  if (task === 'ask_answer') {
+    // Only the question and the passages arrive here; answer from the first one that mentions the question's subject.
+    const { question, passages } = JSON.parse(text) as { question: string; passages: { ref: string; text: string }[] };
+    const hit = /tombstone/i.test(question) ? passages.find((passage) => /tombstone/i.test(passage.text)) : undefined;
+    return stream(JSON.stringify(hit
+      ? { answerable: true, answer: 'Tombstones mark deleted items so every replica can see the deletion.', sources: [hit.ref, 'p99'] }
+      : { answerable: false, answer: '', sources: [] }));
+  }
   if (task === 'expedition_wrap_up' && failWrapUp) {
     return Response.json({ error: { code: 'subscription_sharing_usage_unavailable', message: 'private provider detail' } }, { status: 503 });
   }
