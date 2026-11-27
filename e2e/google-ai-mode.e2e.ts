@@ -74,6 +74,7 @@ test('Google results and passive AI Mode never store reply text; a broken typed 
   const composer = google.getByRole('textbox', { name: 'Ask anything' });
   await composer.pressSequentially('Unsent draft');
   const settings = await openExtensionPage('settings.html#diagnostics');
+  await expect(settings.getByText('AI Mode reply extraction successes: 0')).toBeVisible();
   await expect(settings.getByText('AI Mode reply extraction failures: 0')).toBeVisible();
   expect(await readCapture('pages')).toEqual([]);
   expect(await readCapture('highlights')).toEqual([]);
@@ -91,6 +92,7 @@ test('Google results and passive AI Mode never store reply text; a broken typed 
     { question: FIRST, answer: 'Molecules scatter blue light more than red light.' },
     { question: BROKEN, answer: null, citations: [], extractionFailed: true },
   ]);
+  await expect(settings.getByText('AI Mode reply extraction successes: 1')).toBeVisible();
   await expect(settings.getByText('AI Mode reply extraction failures: 1')).toBeVisible();
   expect(await readCapture('sentToModel')).toEqual([]);
   expect(JSON.stringify(await readCapture('pages'))).not.toMatch(/Unsent draft|Sidebar junk|Overview-only answer/);
@@ -100,9 +102,86 @@ test('Google results and passive AI Mode never store reply text; a broken typed 
   await settings.locator('#privacy').getByRole('textbox', { name: 'Site to skip' }).fill('google.com');
   await settings.locator('#privacy').getByRole('button', { name: /add site/i }).click();
   await expect.poll(() => readCapture('pages')).toEqual([]);
+  await settings.getByRole('tab', { name: 'Diagnostics' }).click();
+  await expect(settings.getByText('AI Mode reply extraction successes: 1')).toBeVisible();
+  await expect(settings.getByText('AI Mode reply extraction failures: 1')).toBeVisible();
   await ask(google, NEXT);
   await expect(google.getByText('Rayleigh scattering explains', { exact: false })).toBeVisible();
   expect(await readCapture('visits')).toEqual([]);
+});
+
+test('a saved-page AI Mode conversation shows all three answers and the latest follow-up in the live trail', async ({
+  context, aiModeScreened, readCapture, openExtensionPage,
+}) => {
+  await context.route(`${GOOGLE}/**`, (route) => route.fulfill({
+    path: join(snapshots, new URL(route.request().url()).pathname === '/aimode' ? 'ai-mode-landing.html' : 'ai-mode-saved.html'),
+    contentType: 'text/html',
+  }));
+  const google = await context.newPage();
+  await google.addInitScript(() => {
+    // Replay the saved conversation one turn at a time. The fixture itself has no scripts.
+    document.addEventListener('DOMContentLoaded', () => {
+      const thread = document.querySelector('[jsname="RH7zg"] > div > div');
+      if (!thread) return;
+      const [typed, suggested] = Array.from(thread.children);
+      typed!.remove();
+      suggested!.remove();
+      function addTurn(question: string, reply: Element) {
+        const url = new URL(location.href);
+        url.searchParams.set('q', question);
+        history.pushState({}, '', url);
+        thread!.append(reply);
+      }
+      const composer = document.querySelector('textarea')!;
+      document.querySelector('button[aria-label="Send"]')!.addEventListener('click', () => {
+        const question = composer.value;
+        if (question === 'How about heme?') addTurn(question, typed!);
+        composer.value = '';
+      });
+      typed!.querySelector('[role="link"]')!.addEventListener('click', (event) => {
+        if (event.isTrusted) addTurn('vitamin B12', suggested!);
+      });
+    });
+  });
+  const panel = await openExtensionPage('sidepanel.html');
+  await panel.setViewportSize({ width: 400, height: 820 });
+  await google.goto(`${GOOGLE}/aimode`);
+  await aiModeScreened();
+  await ask(google, 'how did myoglobin evolve');
+  const transcript = async () => (await readCapture('pages')).find(({ aiTurns }) => aiTurns)?.aiTurns;
+  const first = { question: 'how did myoglobin evolve', answer: expect.stringContaining('Myoglobin evolved from ancestral globins') };
+  const second = { question: 'How about heme?', answer: expect.stringContaining('Heme is the iron-containing group') };
+  const third = { question: 'vitamin B12', answer: expect.stringContaining('Vitamin B12 contains cobalt') };
+  await expect.poll(transcript, { timeout: 0 }).toMatchObject([first]);
+  await ask(google, second.question);
+  await expect.poll(transcript, { timeout: 0 }).toMatchObject([first, second]);
+  const suggestion = google.getByRole('link', { name: 'vitamin B12', exact: true });
+  await suggestion.dispatchEvent('click'); // A page-script click is not consent.
+  await suggestion.click();
+  await expect.poll(transcript, { timeout: 0 }).toMatchObject([first, second, third]);
+
+  const summary = panel.getByText('3 questions · Latest: vitamin B12', { exact: true });
+  await expect(summary).toBeVisible();
+  const [visit] = (await readCapture('visits')).filter(({ aiConversation }) => aiConversation);
+  expect(visit?.expeditionId).toBeTruthy();
+  const detail = await openExtensionPage(`expedition.html?id=${visit!.expeditionId}&stop=${visit!.id}`);
+  await detail.setViewportSize({ width: 1280, height: 900 });
+  const stop = detail.getByRole('region', { name: 'Trail stop details' });
+  for (const { question } of [first, second, third]) await expect(stop.getByText(question, { exact: true })).toBeVisible();
+  for (const answer of ['Myoglobin evolved from ancestral globins', 'Heme is the iron-containing group', 'Vitamin B12 contains cobalt']) {
+    await expect(stop.getByText(answer, { exact: false })).toBeVisible();
+  }
+  if (process.env.AI_MODE_PROOF_DIR) {
+    await google.bringToFront();
+    await expect(panel.getByRole('region', { name: 'This page' }).getByRole('textbox', { name: 'Page note' })).toBeVisible();
+    await summary.scrollIntoViewIfNeeded();
+    for (const colorScheme of ['light', 'dark'] as const) {
+      await detail.emulateMedia({ colorScheme });
+      await panel.emulateMedia({ colorScheme });
+      await panel.screenshot({ path: join(process.env.AI_MODE_PROOF_DIR, `sidepanel-400-${colorScheme}.png`), animations: 'disabled' });
+      await detail.screenshot({ path: join(process.env.AI_MODE_PROOF_DIR, `expedition-1280-${colorScheme}.png`), animations: 'disabled' });
+    }
+  }
 });
 
 modelTest('the first typed AI Mode question and same-page follow-up share one enriched, forgettable conversation', async ({
@@ -168,6 +247,7 @@ modelTest('the first typed AI Mode question and same-page follow-up share one en
   expect(JSON.stringify(attempts)).not.toMatch(/Source side panel|Overview-only answer|Related image caption/);
   await expect.poll(async () => (await readCapture('sentToModel')).filter(({ visitIds }) => visitIds?.includes(visit!.id)).length).toBeGreaterThan(0);
 
+  await panel.bringToFront();
   await panel.getByRole('button', { name: 'Actions for Google AI Mode · AI-generated' }).click();
   // Playwright can scroll the panel during a pointer click and move this anchored menu out from under it.
   const forget = panel.getByRole('menuitem', { name: 'Forget AI conversation' });

@@ -12,7 +12,9 @@ import type {
   Thread,
   Visit,
 } from '@trailmap/shared';
+import { addAiModeOutcomes, type AiModeStats } from '../capture/ai-mode-stats';
 import { canonicalizeUrl } from '../capture/canonical';
+import { googleSearchSurface } from '../capture/search';
 import type { ConceptDismissal } from '../concepts/dismiss';
 import type { ConceptEvidence } from '../concepts/evidence';
 import type { Digest } from '../digest/types';
@@ -52,6 +54,7 @@ export type TrailmapDb = Dexie & {
   reviewCards: EntityTable<ReviewCard, 'conceptId'>;
   reviewLogs: EntityTable<ReviewLog, 'id'>;
   conceptStars: EntityTable<ConceptStar, 'conceptId'>;
+  aiModeStats: EntityTable<AiModeStats, 'id'>;
 };
 
 /** A user correction (docs/PLAN.md §4.3 rule 5). `targetIds` lets Forget remove entries that mention forgotten items. */
@@ -240,6 +243,19 @@ export function openTrailmapDb(name: string = DB_NAME): TrailmapDb {
   db.version(12).stores({ threadMatchRuns: 'expeditionId, at' });
   db.version(13).stores({ digests: 'id, to' });
   db.version(14).stores({ reviewCards: 'conceptId, due', reviewLogs: 'id, conceptId, at', conceptStars: 'conceptId, at' });
+  db.version(15).stores({ aiModeStats: 'id' }).upgrade(async () => {
+    // Older builds kept only the outcomes of conversations still saved at upgrade time.
+    let successes = 0;
+    let failures = 0;
+    await db.pages.each(({ canonicalUrl, aiTurns }) => {
+      if (!aiTurns || googleSearchSurface(canonicalUrl) !== 'ai-mode') return;
+      for (const turn of aiTurns) {
+        if (turn.answer !== null) successes++;
+        else if (turn.extractionFailed) failures++;
+      }
+    });
+    if (successes || failures) await addAiModeOutcomes(db, successes, failures);
+  });
   // History replay and any other Visit writer use the same persistence boundary.
   db.visits.hook('creating', (_id, visit) => { visit.url = canonicalizeUrl(visit.url); });
   db.visits.hook('updating', (changes) => {

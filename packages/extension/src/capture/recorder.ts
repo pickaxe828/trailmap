@@ -3,6 +3,7 @@ import type { TrailmapDb } from '../db/db';
 import { forgetCascade } from '../corrections/forget';
 import { enqueuePageEnrichment } from '../enrichment/enqueue';
 import { aiEngagement, conversationPage, mergeAiTurn, pendingAiTurns } from './ai-conversation';
+import { addAiModeOutcomes } from './ai-mode-stats';
 import { canonicalizeUrl } from './canonical';
 import { CHAT_SITES, chatConversationUrl, chatSiteOf, isNewChatUrl } from './chat-sites';
 import { normalizeQuestion } from './google-ai-mode';
@@ -426,12 +427,14 @@ export class VisitRecorder {
     const visit = this.current.get(tabId);
     if (!visit?.aiConversation || !this.isRecordable(visit.url)) return;
     const { db, now } = this.options;
-    await db.transaction('rw', db.visits, db.pages, db.jobs, async () => {
+    await db.transaction('rw', [db.visits, db.pages, db.jobs, db.aiModeStats], async () => {
       const page = await db.pages.get(visit.canonicalUrl);
-      if (!page?.aiTurns || !pendingAiTurns(page).length) return;
+      const pendingCount = pendingAiTurns(page).length;
+      if (!page?.aiTurns || !pendingCount) return;
       const next = page.aiTurns.map((turn) => turn.answer === null ? { ...turn, extractionFailed: true as const } : turn);
       const fallback = conversationPage(visit, page, next);
       await db.pages.put(fallback);
+      if (googleSearchSurface(visit.url) === 'ai-mode') await addAiModeOutcomes(db, 0, pendingCount);
       await enqueuePageEnrichment(db, visit, now(), fallback);
     });
   }
@@ -472,7 +475,7 @@ export class VisitRecorder {
     if (!active && chat) visit.url = visit.canonicalUrl = chatConversationUrl(chat, visit.id);
     else if (!active) visit.canonicalUrl = `${visit.url}#trailmap-ai-${visit.id}`;
     let opening: Visit | undefined;
-    const changed = await db.transaction('rw', db.visits, db.pages, db.queries, db.jobs, async () => {
+    const changed = await db.transaction('rw', [db.visits, db.pages, db.queries, db.jobs, db.aiModeStats], async () => {
       const previous = active && await db.pages.get(active.canonicalUrl);
       if (active && !previous) return false;
       const turns = previous?.aiTurns ?? [];
@@ -481,6 +484,7 @@ export class VisitRecorder {
       }
       const next = mergeAiTurn(turns, content);
       if (next === turns) return false;
+      if (!chat && content.kind === 'ai-result') await addAiModeOutcomes(db, content.result ? 1 : 0, content.result ? 0 : 1);
       if (!active && !chat && content.kind === 'ai-submit') {
         const parent = visit.parentVisitId ? await db.visits.get(visit.parentVisitId) : undefined;
         const search = parent && this.isRecordable(parent.url) && new URL(parent.url).origin === entry.origin &&

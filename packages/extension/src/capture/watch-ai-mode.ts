@@ -8,9 +8,8 @@ type WatchOptions = {
 };
 
 /**
- * Only a trusted edit followed by a submit in the surface's own composer starts capture, and only while
- * the document is admitted (`isPublic`). Until then the composer is never read, so nothing typed before a
- * site is opted in or screened can ever be captured, not even in memory.
+ * A turn needs a trusted edit and submit in the surface's own composer, or a trusted click on a native
+ * follow-up control. Neither is read until the document is admitted (`isPublic`).
  */
 export function watchAiConversation(document: Document, surface: AiSurface, isPublic: () => boolean,
   send: (message: AiCapture) => Promise<PageContentReply | undefined>, { trusted = (event) => event.isTrusted }: WatchOptions = {}) {
@@ -85,11 +84,15 @@ export function watchAiConversation(document: Document, surface: AiSurface, isPu
     const question = text.trim();
     if (!question || drafts.get(field) !== text) return;
     drafts.delete(field); // Enter, click and submit can all fire for one turn.
+    startTurn(question);
+  }
+
+  function startTurn(question: string) {
     const turnId = crypto.randomUUID();
     const previous = surface.boundaries(document);
-    const typed = question.slice(0, AI_QUESTION_LIMIT);
-    void send({ kind: 'ai-submit', turnId, question: typed }).then((reply) => {
-      if (reply && active()) track(turnId, typed, previous);
+    const bounded = question.slice(0, AI_QUESTION_LIMIT);
+    void send({ kind: 'ai-submit', turnId, question: bounded }).then((reply) => {
+      if (reply && active() && isPublic()) track(turnId, bounded, previous);
     });
   }
 
@@ -98,7 +101,10 @@ export function watchAiConversation(document: Document, surface: AiSurface, isPu
         !event.metaKey && !event.ctrlKey && event.key === 'Enter' && !surface.busy?.(document)) submitted(surface.composer(event.target));
   }
   function clicked(event: MouseEvent) {
-    if (trusted(event) && active()) submitted(surface.sendComposer(document, event.target));
+    if (!trusted(event) || !active() || !isPublic()) return;
+    const question = surface.suggestedQuestion?.(event.target);
+    if (question) startTurn(question);
+    else submitted(surface.sendComposer(document, event.target));
   }
   function formSubmitted(event: SubmitEvent) {
     if (trusted(event) && active()) submitted(surface.formComposer(event.target));

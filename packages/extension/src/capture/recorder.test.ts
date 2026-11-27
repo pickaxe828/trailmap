@@ -127,11 +127,13 @@ test('leaving Mode before a reply arrives retains the typed question as a diagno
   const url = 'https://www.google.com/search?udm=50';
   await browser.commit(TAB, url);
   await browser.reportPageContent(TAB, url, { kind: 'ai-submit', turnId: 'pending', question: 'What is light?' });
+  expect(await db.aiModeStats.get('google-ai-mode')).toBeUndefined();
   await browser.commit(TAB, `${LEARN}/other`);
   const aiVisit = (await visits()).find((visit) => visit.aiConversation);
   expect(await db.pages.get(aiVisit!.canonicalUrl)).toMatchObject({
     text: '', aiTurns: [{ id: 'pending', question: 'What is light?', answer: null, citations: [], extractionFailed: true }],
   });
+  expect(await db.aiModeStats.get('google-ai-mode')).toMatchObject({ successes: 0, failures: 1 });
   expect(await db.jobs.count()).toBe(0);
 });
 

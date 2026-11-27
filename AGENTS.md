@@ -50,6 +50,10 @@ Before you finish a ticket run all of: `bun run typecheck && bun run test && bun
 - Later tickets extend the recorder rather than adding their own navigation listeners: `recorder.subscribe(listener)` reports every Visit created or updated, `recorder.getCurrentVisit(tabId)` says what a tab is showing, and the `shouldRecord(url)` option is where privacy filters plug in.
 - Anything that must survive a service-worker restart goes in `RecorderState` (saved after every event).
 
+## Google AI Mode
+
+`capture/google-ai-mode.ts` owns the reply boundaries and suggested follow-up selectors verified against a saved signed-in page (`e2e/site/google/ai-mode-saved.html`, scrubbed). The shared `watchAiConversation` accepts typed submissions or trusted clicks on the recognised suggestion control only after admission. Passive AI Mode and ordinary Search never supply replies. Unknown layouts leave questions only. `Page.aiTurns` drives both the Expedition transcript and the side panel’s live follow-up summary; all content still joins the Page queue and Forget cascade. Settings keeps two lifetime, content-free Google AI Mode counters (`aiModeStats`), not a per-turn log. Details and live re-check: `trailmap-notes/notes-36.md`.
+
 ## Corrections and Forget
 
 `packages/extension/src/corrections/` holds the side panel's one-click fixes (star, note, split, move, merge, rename, ignore site, forget).
