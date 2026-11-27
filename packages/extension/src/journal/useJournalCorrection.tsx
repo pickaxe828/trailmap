@@ -1,39 +1,41 @@
 import { Button } from '@astryxdesign/core/Button';
-import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
+import { useToast } from '@astryxdesign/core/Toast';
 import { useRef, useState } from 'react';
+import { openTrailmapDb } from '../db/db';
 import { correctJournal, type JournalAction } from './messages';
+import { REFUSAL_MESSAGE, undoRefusal } from './recent';
 
+const FAILED = 'Could not apply this change. The expedition or thread may have changed.';
+const TOAST_MS = 10_000;
+
+async function refusalFor(correctionId: string) {
+  const db = openTrailmapDb();
+  try { return REFUSAL_MESSAGE[await undoRefusal(db, correctionId)]; } catch { return FAILED; } finally { db.close(); }
+}
+
+/** Runs Journal organise actions. Undo comes from the durable corrections log, via the toast or Recent changes. */
 export function useJournalCorrection() {
   const pending = useRef(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState(false);
-  const [history, setHistory] = useState<string[]>([]);
-  const undoId = history.at(-1);
-  const [undone, setUndone] = useState(false);
+  const [error, setError] = useState<string>();
+  const show = useToast();
 
-  async function run(action: JournalAction) {
+  async function run(action: JournalAction): Promise<boolean> {
     if (pending.current) return false;
     pending.current = true;
     setBusy(true);
-    setError(false);
-    setUndone(false);
+    setError(undefined);
     const id = await correctJournal(action);
-    if (id) {
-      setHistory((current) => action.action === 'undo' ? current.filter((entry) => entry !== action.correctionId) : [...current, id]);
-      setUndone(action.action === 'undo');
-    } else setError(true);
+    if (!id) setError(action.action === 'undo' ? await refusalFor(action.correctionId) : FAILED);
+    else if (action.action === 'undo') show({ body: 'Change undone.', uniqueID: 'journal-change', autoHideDuration: TOAST_MS });
+    else show({ body: 'Change saved.', uniqueID: 'journal-change', autoHideDuration: TOAST_MS, endContent:
+      <Button label="Undo" size="sm" onClick={() => void run({ action: 'undo', correctionId: id })} /> });
     pending.current = false;
     setBusy(false);
     return !!id;
   }
 
-  const feedback = (
-    <HStack gap={2} align="center" wrap="wrap">
-      {error && <Text role="alert">Could not apply this change. The expedition or thread may have changed.</Text>}
-      <Text role="status" type="supporting">{undone ? 'Change undone.' : undoId && 'Change saved.'}</Text>
-      {undoId && <Button label="Undo" size="sm" isDisabled={busy} onClick={() => void run({ action: 'undo', correctionId: undoId })} />}
-    </HStack>
-  );
+  const feedback = error ? <Text role="alert">{error}</Text> : null;
   return { run, busy, feedback };
 }

@@ -11,6 +11,7 @@ import { useMediaQuery } from '@astryxdesign/core/hooks';
 import type { Expedition } from '@trailmap/shared';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useJournalData } from '../../journal/data';
+import { readRecentChanges } from '../../journal/recent';
 import { planOrganisation, type OrganisationPlan } from '../../journal/organise';
 import { useJournalCorrection } from '../../journal/useJournalCorrection';
 import { readJournalResearch } from '../../threads/read';
@@ -18,6 +19,7 @@ import { TrailmapShell } from '../../ui/TrailmapShell';
 import { ExpeditionCard } from './ExpeditionCard';
 import { JournalSearch } from './JournalSearch';
 import { OrganiseCard, type DropChoice } from './OrganiseCard';
+import { RecentChanges } from './RecentChanges';
 import { SuggestionRows } from './SuggestionRows';
 import { ThreadCard } from './ThreadCards';
 
@@ -30,6 +32,7 @@ function Cards({ children }: { children: ReactNode }) {
 export function App() {
   const result = useJournalData(readJournalResearch);
   const { items = [], other = [], targets = [], merges, noted } = result?.data ?? {};
+  const recent = useJournalData(readRecentChanges)?.data ?? [];
   const { run, busy, feedback } = useJournalCorrection();
   const [selecting, setSelecting] = useState(false);
   const [selection, setSelection] = useState<string[]>([]);
@@ -102,6 +105,7 @@ export function App() {
         {!result && <Text>Loading your Journal…</Text>}
         {result?.error && <Text role="alert">Could not load the Journal. Try reloading the page.</Text>}
         {result?.data && !items.length && !other.length && <Text>Your expeditions will appear here as you browse.</Text>}
+        <RecentChanges changes={recent} busy={busy} undo={(id) => void run({ action: 'undo', correctionId: id })} />
         {(items.length > 0 || other.length > 0) && (
           <VStack as="section" gap={4} aria-labelledby="expeditions-heading">
             <HStack justify="between" align="center" gap={2} wrap="wrap">

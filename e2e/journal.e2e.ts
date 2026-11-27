@@ -123,10 +123,11 @@ test('select two cards to start a thread, then drop another expedition on it', a
   await bar.getByRole('button', { name: 'Add to thread…' }).click();
   await journal.getByRole('menuitem', { name: 'Distributed clocks' }).click();
   await expect(journal.getByText('3 sessions')).toBeVisible();
-  const undo = journal.getByRole('button', { name: 'Undo', exact: true });
-  await undo.click();
+  await journal.getByRole('button', { name: 'Undo', exact: true }).click();
   await expect(journal.getByText('2 sessions')).toBeVisible();
-  await undo.click();
+  // The toast only undoes the latest change; the earlier one is still in Recent changes.
+  await journal.getByRole('button', { name: /^Recent changes/ }).click();
+  await journal.getByRole('button', { name: /^Undo: Started a thread/ }).click();
   await expect(journal.getByText('2 sessions')).toHaveCount(0);
   await expect(journal.getByRole('link', { name: 'Clock drift' })).toBeVisible();
 });
@@ -147,6 +148,51 @@ test('a merge chip moves visits to the earliest expedition and Undo restores bot
   await journal.getByRole('button', { name: 'Undo', exact: true }).click();
   await expect(journal.getByRole('link', { name: 'Replica deletion' })).toBeVisible();
   expect((await readCapture('visits')).map(({ expeditionId }) => expeditionId)).toEqual(['early', 'late']);
+});
+
+test('a merge can be undone from Recent changes after a reload, and a conflicting undo is refused', async ({ openExtensionPage, readCapture }, info) => {
+  const setup = await openExtensionPage('sidepanel.html');
+  const expeditions = [expedition('late', 'Replica deletion', start + 500, { rootVisitId: 'late-visit',
+    mergeSuggestions: [{ expeditionId: 'early', reason: 'Same topic' }] }),
+  expedition('early', 'Replicated lists', start, { rootVisitId: 'early-visit' }),
+  expedition('lone', 'Gossip protocols', start + 9000)];
+  await seed(setup, { expeditions, visits: expeditions.slice(0, 2).map(({ id, title, rootVisitId, startedAt }) => ({
+    id: rootVisitId!, title, startedAt, url: `https://learn.test/${id}`, canonicalUrl: `https://learn.test/${id}`,
+    expeditionId: id, tabId: 1, parentVisitId: null, transition: 'typed', activeMs: 0, scrollDepth: 0, engagement: 'bounced',
+  })) });
+  const journal = await openExtensionPage('journal.html');
+  await journal.getByRole('button', { name: 'Merge: Same topic as Replicated lists?' }).click({ timeout: 5000 });
+  await expect(journal.getByRole('link', { name: 'Replica deletion' })).toHaveCount(0);
+  await journal.reload();
+  const recent = journal.getByRole('button', { name: /^Recent changes \(1\)/ });
+  await recent.click();
+  await expect(journal.getByText(/^Merged/)).toBeVisible();
+  await journal.setViewportSize({ width: 1280, height: 800 });
+  const shot = async (name: string) => {
+    for (const scheme of ['light', 'dark'] as const) {
+      await journal.emulateMedia({ colorScheme: scheme });
+      await journal.screenshot({ path: process.env.PROOF_DIR ? join(process.env.PROOF_DIR, `${scheme}-${name}`) : info.outputPath(`${scheme}-${name}`) });
+    }
+  };
+  await shot('recent-changes.png');
+  await journal.getByRole('button', { name: /^Undo: Merged/ }).click();
+  await expect(journal.getByRole('link', { name: 'Replica deletion' })).toBeVisible();
+  expect((await readCapture('visits')).map(({ expeditionId }) => expeditionId)).toEqual(['early', 'late']);
+  await expect(journal.getByRole('button', { name: /^Recent changes/ })).toHaveCount(0);
+
+  // A later change to the same expedition makes the earlier undo unsafe.
+  for (const label of ['Mark as not learning', 'Mark as learning']) {
+    if (label === 'Mark as learning') await journal.getByRole('button', { name: /Other browsing/ }).click();
+    await journal.getByRole('button', { name: 'Select', exact: true }).click();
+    await journal.getByRole('checkbox', { name: 'Select Gossip protocols' }).check();
+    await journal.getByRole('button', { name: label, exact: true }).click();
+    await expect(journal.getByRole('button', { name: 'Select', exact: true })).toBeEnabled();
+  }
+  await journal.reload();
+  await journal.getByRole('button', { name: /^Recent changes/ }).click();
+  await journal.getByRole('button', { name: /^Undo: Marked “Gossip protocols” as not learning/ }).click();
+  await expect(journal.getByRole('alert')).toContainText('a later change touched the same expeditions');
+  await shot('undo-refused.png');
 });
 
 test('opening field notes marks them seen and My notes survive reload beside them', async ({ openExtensionPage, readCapture }) => {
