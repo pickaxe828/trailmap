@@ -6,11 +6,13 @@ import { aiEngagement, conversationPage, mergeAiTurn, pendingAiTurns } from './a
 import { canonicalizeUrl } from './canonical';
 import { CHAT_SITES, chatConversationUrl, chatSiteOf, isNewChatUrl } from './chat-sites';
 import { normalizeQuestion } from './google-ai-mode';
-import { scoreEngagement, scoreVideoEngagement } from './engagement';
+import { scoreEngagement, scorePdfEngagement, scoreVideoEngagement } from './engagement';
 import { youtubeWatchId } from './youtube';
 import { WINDOW_ID_NONE, type BrowserEventHandlers, type BrowserEventSource, type NavigationEvent, type PageContentEvent } from './events';
 import type { AiCapture, PageContentReply } from './page-messages';
 import { newPage } from './pages';
+import { isPdfUrl, type PdfText } from './pdf';
+import { hashText } from './page-text';
 import { googleSearchSurface, parseSearchQuery } from './search';
 import { emptyRecorderState, type RecorderState, type RecorderStateStore } from './state-store';
 
@@ -57,6 +59,19 @@ export type VisitRecorderOptions = {
   /** Wait for the active top-level content script to screen the document. */
   screenDocuments?: boolean;
   onPasswordStatusChanged?: (tabId: number) => void;
+  /**
+   * Reads a PDF the browser's viewer is showing (its document can't be read from a content script), by re-fetching
+   * the same URL. Only ever called for a Visit this recorder admitted. Null means it could not be read.
+   */
+  readPdf?: (url: string) => Promise<PdfText | null>;
+  /** Is this tab a private window? Its PDF is never re-fetched: the request would carry the normal profile's cookies. */
+  isIncognitoTab?: (tabId: number) => Promise<boolean>;
+  /**
+   * Admit a `.pdf` URL as soon as it commits instead of waiting for a content script to screen the document. For a
+   * browser whose PDF viewer runs no content scripts (Gecko): there is no document of ours to screen, and no password
+   * field to find in a PDF viewer.
+   */
+  admitPdfUrls?: boolean;
 };
 
 type PendingVisit = {
@@ -88,6 +103,7 @@ export class VisitRecorder {
   // Unscreened URLs (which can be private) never go into session storage or IndexedDB.
   private pending = new Map<number, PendingVisit>();
   private queue: Promise<void> = Promise.resolve();
+  private pdfReads = new Map<string, Promise<void>>();
   private listeners = new Set<(change: VisitChange) => void>();
   private readonly canonicalize: typeof canonicalizeUrl;
 
@@ -251,6 +267,8 @@ export class VisitRecorder {
       ? aiEngagement(changes.activeMs ?? visit.activeMs, visit.engagement === 'read' ? 2 : 1)
       : youtubeWatchId(visit.url)
         ? scoreVideoEngagement(changes.watchMs ?? visit.watchMs ?? 0, interacted || visit.engagement === 'read')
+        : visit.pdf
+        ? scorePdfEngagement(changes.activeMs ?? visit.activeMs)
         : scoreEngagement(changes.activeMs ?? visit.activeMs, changes.scrollDepth ?? visit.scrollDepth,
           interacted || visit.engagement === 'read');
     const { db, now } = this.options;
@@ -348,6 +366,13 @@ export class VisitRecorder {
       return;
     }
     const pending = { event, transition, parentVisitId, startedAt: this.options.now(), activeMs: 0, title: '' };
+    if (this.options.admitPdfUrls && isPdfUrl(event.url)) {
+      const visit = await this.createVisit(pending);
+      await this.markPdf(visit);
+      const page = await this.options.db.pages.get(visit.canonicalUrl);
+      if (!page?.sourceUrl || !this.isRecordable(page.sourceUrl)) this.startPdfRead(event.tabId, visit, event.url, event.documentId, hashText(canonicalizeUrl(event.url)));
+      return;
+    }
     if (this.options.screenDocuments) this.pending.set(event.tabId, pending);
     else await this.createVisit(pending);
   }
@@ -565,18 +590,7 @@ export class VisitRecorder {
     }
     if (content.kind === 'text') {
       if (content.visitId !== visit.id) return;
-      await db.transaction('rw', db.pages, db.jobs, async () => {
-        const previous = await db.pages.get(visit.canonicalUrl);
-        const source = { sourceHash: content.sourceHash, sourceUrl: this.canonicalize(visit.url), sourceVisitId: visit.id };
-        const page = previous?.textHash === content.textHash
-          ? { ...previous, ...source }
-          : {
-              ...newPage(visit.canonicalUrl, content.text, content.textHash), ...source,
-              textRevision: (previous?.textRevision ?? 0) + 1,
-            };
-        await db.pages.put(page);
-        await enqueuePageEnrichment(db, visit, this.options.now(), page);
-      });
+      await this.storePageText(visit, content);
       return;
     }
 
@@ -615,8 +629,77 @@ export class VisitRecorder {
       this.emit({ type: 'updated', visit: { ...visit } });
     }
     if (content.kind === 'probe') {
-      return { visitId: visit.id, extract: !page?.sourceUrl || page.sourceHash !== content.sourceHash || !this.isRecordable(page.sourceUrl) };
+      if (!content.pdf) {
+        return { visitId: visit.id, extract: !page?.sourceUrl || page.sourceHash !== content.sourceHash || !this.isRecordable(page.sourceUrl) };
+      }
+      // A PDF has no DOM text to send: the recorder reads the file itself, and the content script has nothing to extract.
+      // Its wrapper document says nothing about the file, so one read per PDF is enough.
+      await this.markPdf(visit);
+      if (!page?.sourceUrl || !this.isRecordable(page.sourceUrl)) this.startPdfRead(tabId, visit, url, documentId, content.sourceHash);
+      return { visitId: visit.id, extract: false };
     }
+  }
+
+  private async storePageText(visit: Visit, content: { text: string; textHash: string; sourceHash: string }) {
+    const { db } = this.options;
+    await db.transaction('rw', db.pages, db.jobs, async () => {
+      const previous = await db.pages.get(visit.canonicalUrl);
+      const source = { sourceHash: content.sourceHash, sourceUrl: this.canonicalize(visit.url), sourceVisitId: visit.id };
+      const page = previous?.textHash === content.textHash
+        ? { ...previous, ...source }
+        : {
+            ...newPage(visit.canonicalUrl, content.text, content.textHash), ...source,
+            textRevision: (previous?.textRevision ?? 0) + 1,
+          };
+      await db.pages.put(page);
+      await enqueuePageEnrichment(db, visit, this.options.now(), page);
+    });
+  }
+
+  private async markPdf(visit: Visit) {
+    if (visit.pdf) return;
+    await this.options.db.visits.update(visit.id, { pdf: true });
+    visit.pdf = true;
+    await this.updateEngagement(visit, {});
+  }
+
+  /**
+   * The re-fetch runs outside the event queue (it can take seconds), and its result is committed back through the
+   * queue only if the same admitted Visit is still showing, still recordable and still on screen's document.
+   */
+  private startPdfRead(tabId: number, visit: Visit, url: string, documentId: string | undefined, sourceHash: string) {
+    const { readPdf } = this.options;
+    if (!readPdf || this.pdfReads.has(visit.id)) return;
+    const fetchUrl = url.split('#', 1)[0]!;
+    const { isIncognitoTab } = this.options;
+    const done = (async () => (await isIncognitoTab?.(tabId)) ? null : readPdf(fetchUrl))().catch(() => null)
+      .then((read) => this.enqueue(() => this.commitPdf(tabId, visit.id, documentId, fetchUrl, sourceHash, read), { settle: false }))
+      .catch(() => {})
+      .finally(() => this.pdfReads.delete(visit.id));
+    this.pdfReads.set(visit.id, done);
+  }
+
+  /** Resolves once every PDF read started so far has been stored or dropped. For tests and shutdown. */
+  async pdfReadsIdle(): Promise<void> {
+    while (this.pdfReads.size) await Promise.all([...this.pdfReads.values()]);
+    await this.queue;
+  }
+
+  private async commitPdf(tabId: number, visitId: string, documentId: string | undefined, url: string, sourceHash: string, read: PdfText | null) {
+    const visit = this.current.get(tabId);
+    const { db } = this.options;
+    if (!read || visit?.id !== visitId || this.state.documentIdsByTab?.[tabId] !== documentId || !sameUrl(visit.url, url) ||
+        !this.isRecordable(visit.url) || !this.isRecordable(visit.canonicalUrl) || this.isPasswordProtected(tabId) ||
+        !await db.visits.get(visitId)) return;
+    if (read.text) {
+      await this.storePageText(visit, { ...read, sourceHash });
+      return;
+    }
+    // No text layer: remember that the file was read (so it is not fetched on every visit) and keep only the title.
+    await db.transaction('rw', db.pages, async () => {
+      if (await db.pages.get(visit.canonicalUrl)) return;
+      await db.pages.put({ ...newPage(visit.canonicalUrl, '', '', sourceHash), sourceUrl: this.canonicalize(visit.url), sourceVisitId: visit.id });
+    });
   }
 
   private readonly handlers: BrowserEventHandlers = {

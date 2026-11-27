@@ -31,7 +31,7 @@ export type AiCapture =
 
 export type PageContent = AiCapture
   | { kind: 'screen'; hasPassword: boolean }
-  | { kind: 'probe'; canonicalLink?: string; sourceHash: string }
+  | { kind: 'probe'; canonicalLink?: string; sourceHash: string; pdf?: true }
   | ({ kind: 'text'; visitId: string } & PageText)
   | { kind: 'favicon'; visitId: string; icon: string }
   | { kind: 'scroll'; depth: number }
@@ -75,7 +75,7 @@ export function isPageContentMessage(value: unknown): value is PageContentMessag
       && typeof message.text === 'string' && message.text.trim().length > 0;
   }
   if (message.kind === 'probe') {
-    return validCanonical && isHash(message.sourceHash);
+    return validCanonical && isHash(message.sourceHash) && (message.pdf === undefined || message.pdf === true);
   }
   return message.kind === 'text'
     && typeof message.visitId === 'string'

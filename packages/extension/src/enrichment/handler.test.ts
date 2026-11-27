@@ -38,3 +38,35 @@ test('Page enrichment audits the parent and root, and cannot commit after their 
     await db.delete();
   }
 });
+
+test('a PDF Page reaches the model only through the guard, with its URL in the dispatch audit, and not while paused or skipped', async () => {
+  const db = openTrailmapDb(crypto.randomUUID());
+  try {
+    const url = 'https://papers.test/lsm.pdf';
+    const visit: Visit = { id: 'paper', parentVisitId: null, url, canonicalUrl: url, title: 'LSM trees', pdf: true, tabId: 1,
+      transition: 'link', startedAt: 1, activeMs: 70_000, scrollDepth: 0, engagement: 'read', expeditionId: null };
+    await db.visits.add(visit);
+    await db.pages.add({ canonicalUrl: url, sourceUrl: url, sourceVisitId: 'paper', text: 'A memtable buffers writes.', textHash: 'hash',
+      summary: null, takeaways: [], embedding: null, enrichedAt: null, pageKind: null });
+    const job = { id: 'j', kind: 'page_enrichment' as const, key: 'key', status: 'leased' as const, createdAt: 1, availableAt: 1,
+      priority: 0 as const, failures: 0, lease: { token: 'lease', until: Date.now() + 60_000 },
+      payload: { canonicalUrl: url, visitId: 'paper', textHash: 'hash' } };
+    await db.jobs.add(job);
+    const sent: { input: unknown; canonicalUrls: readonly string[] | undefined }[] = [];
+    const request: ModelRequester = async (_db, payload, guard) => {
+      if (!await guard.allow()) throw new Error('refused');
+      sent.push({ input: JSON.parse(payload.input), canonicalUrls: guard.canonicalUrls });
+      return { output: { summary: 'An LSM tree buffers writes.', takeaways: ['One', 'Two'], answers_question: 'Question?',
+        page_kind: 'paper', concepts: [], relations: [] } };
+    };
+
+    expect(await enrichPage(db, () => ({ paused: true, skippedHosts: [] }), request)(job)).toMatchObject({ retryAt: expect.any(Number) });
+    expect(await enrichPage(db, () => ({ paused: false, skippedHosts: ['papers.test'] }), request)(job)).toBe('discard');
+    expect(sent).toEqual([]);
+
+    await enrichPage(db, () => ({ paused: false, skippedHosts: [] }), request)(job);
+    expect(sent).toMatchObject([{ input: { contentKind: 'pdf', text: 'A memtable buffers writes.', url }, canonicalUrls: [url] }]);
+  } finally {
+    await db.delete();
+  }
+});
