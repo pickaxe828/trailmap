@@ -156,7 +156,7 @@ capture ──▶ filter ──▶ segment ──▶ enrich (LLM) ──▶ reso
 - **Backfill on day one:** `chrome.history.search` plus `getVisits` returns `transition` and `referringVisitId`, which is often filled in. That is enough to rebuild rough trails from past history, using URLs and titles only. Page text can be enriched later if you want it.
 
 ### 4.2 Filter (keeping the mess out)
-- **Engagement levels:** `bounced` is under 10 s active and no scroll. `skimmed` is 10–60 s. `read` is more than 60 s active, or more than 50% scrolled, or any selection or copy. Bounced visits stay as faint nodes in the trail and are never sent to the LLM.
+- **Engagement levels:** `bounced` is under 10 s active and no scroll. `skimmed` is 10–60 s. `read` needs at least 45 s active **and** at least 30% scrolled, or any selection or copy; time alone or a quick scroll alone is a skim. The thresholds are constants in `capture/engagement.ts`. Bounced visits stay as faint nodes in the trail and are never sent to the LLM.
 - **Default deny-list:** mail, banking, calendars, chat, social feeds, checkout pages, localhost and intranet hosts, and any page with a password field.
 - **Per-site toggle** in the side panel, plus a global pause hotkey. Skipping a site purges its Trailmap records and blocks future capture; pausing does not erase previous history.
 - **URL canonicalization:** use `rel=canonical`, drop `utm_*` parameters and session tokens.
@@ -182,22 +182,29 @@ A recorded AI Mode conversation uses the same enrichment and concept pipeline. I
   "takeaways": ["2–5 concrete claims, not vibes"],
   "answers_question": "the question this page answers",
   "page_kind": "article|docs|paper|video|forum|reference|tool|other",
-  "concepts": [{ "name": "Tombstone", "kind": "concept", "gloss": "≤20 words", "role": "explains|mentions|uses" }],
+  "concepts": [{ "name": "Tombstone", "kind": "concept", "gloss": "≤20 words", "role": "explains|mentions|uses", "salience": "central|supporting|passing" }],
   "relations": [{ "from": "Tombstone", "to": "CRDT", "type": "part_of" }]
 }
 ```
 
+`salience` says how central a concept is to the page: `central` when the page is mainly about it, `supporting` when it helps explain the main topic, `passing` for an example, a list item or a side remark. It is stored on each concept's evidence. Existing rows migrated to `supporting` for `explains` and `passing` for everything else.
+
 ### 4.5 Resolve concepts (avoiding "concept soup")
 - Embed `name + gloss` locally.
 - An exact name or alias match merges. Cosine above 0.9 auto-merges. Between 0.8 and 0.9, queue the pair for a batched LLM verdict: `same` / `broader` / `narrower` / `related` / `different`. Below 0.8, create a new concept.
-- **Under-extract, the same lesson Anamnesis learned.** A concept becomes visible only when it has at least 2 evidence pages, or one `read` page where it was the thing being `explained`. Keep a stoplist of over-general concepts ("Computer science", "Software").
+- **Under-extract, the same lesson Anamnesis learned.** Opening a page is not learning, so each evidence row gets a **strength** from salience × engagement × what the user did. Keep a stoplist of over-general concepts ("Computer science", "Software").
+  - **Learned:** written in My notes (§4.5a); named in a highlight or copied text on the page; or the user starred the page and the concept is `central` there.
+  - **Studied:** `central` or `supporting` on a page the user `read`.
+  - **Seen:** everything else, including `passing` mentions on any page and anything on skimmed or bounced pages.
+  - A concept is on the Atlas when it has any Learned evidence, or Studied evidence on at least one page. `exposure` (node size) counts Studied and Learned pages only (one unit per Expedition's notes). Strength follows the Visit's current engagement.
+  - **"I didn't learn this"** hides a concept from the Atlas, search and the vault. Evidence is kept. After it, studied pages and the Learned evidence that existed then stay Seen; Learned evidence from other pages or notes brings the concept back. It is undone from the concept card or from Settings → Privacy.
 - Every concept edge carries evidence visit IDs, so you can always click through to "where did I learn this?"
 
 ### 4.5a Concepts from my notes
 What the user learned is not all that a page covered, so their own notes feed the semantic graph.
 - **Input:** `notes_enrichment` sends only the user's text: **My notes** (`n0`) and the notes attached to stops (`n1…`), each with a ref. No Page text, title or URL goes with it. Stops on skipped or private sites are left out.
 - **Output:** concepts (name, kind, gloss, the note they came from) and relations between them. Each concept is stored as `ConceptEvidence` with the new role **`learned`**, anchored at the Expedition (My notes) or at the stop the note belongs to, so Forget and the provenance rules apply. The resolver in §4.5 joins them to existing concepts (exact name or alias, then cosine above 0.9). Uncertain pairs do not get a merge verdict.
-- **Visibility:** a concept with `learned` evidence is visible at once. It needs neither two pages nor a read page. Errand Expeditions never reach the Atlas.
+- **Visibility:** a concept with `learned` evidence is visible at once. It needs no page. Errand Expeditions never reach the Atlas.
 - **Reruns:** saving My notes or a stop note queues one pass, debounced to one minute. A newer save replaces the waiting one. A pass replaces everything the Expedition's notes taught before, and clearing the notes removes it straight away.
 - **Setting:** *Use my notes to build concepts and threads* (Settings → Privacy) is on by default. When it is off, My notes are not sent to a model for any task: the job is dropped without a request, and thread matching and the living note leave them out. Every call that does go out is in the Sent-to-model log (task "My notes").
 - **Forget:** forgetting a stop removes what its note taught, and the remaining notes are asked about again. Forgetting an Expedition removes all of it, with the audit rows.
@@ -243,10 +250,11 @@ An expedition is one sitting. When you come back to a topic days later, that sit
    - **My notes** (editable) and the generated, read-only **Field notes** sit in panes on the right. A stop with a note of its own carries a note marker (never a dashed outline: dashes mean skipped pages). The header exposes **Mark as learning** or **Mark as not learning**, with Undo.
 3. **Atlas** (full tab): the concept graph across all time.
    - Force layout. Colour shows the community (Louvain clusters); size shows exposure.
-   - Concepts you wrote about (`learned`) are drawn solid; concepts only seen on pages are faded.
+   - Concepts you learned or studied (§4.5) are drawn solid. **Concepts you only saw are hidden by default**; the switch "Include concepts I only saw" shows them faded.
+   - With few concepts on the map (8 or fewer) every node is labelled; with more, only labels that would collide are culled.
    - Clicking a concept opens a card with its gloss, the pages that taught it, the expeditions it appeared in, and its neighbours.
    - A time slider replays the graph growing, which is a satisfying "look how much I've learned" moment.
-   - **Never show the whole hairball by default.** Show the top N concepts and cull labels.
+   - **Never show the whole hairball by default.** Show the top N concepts and cull labels. The concept card has "I didn't learn this".
 4. **Journal:** thread and expedition cards, newest first. An expedition without notes of your own is shown at lower emphasis (secondary text, still AA) with a "No notes yet" hint; one with My notes or a stop note is at full contrast. The thread page's sessions follow the same rule. Plus a weekly digest. A thread card opens the **thread page**: sessions on a timeline, plus the living note (§4.7).
    - **Select** (or Shift/⌘-click a card) shows checkboxes. An action bar shows the count, Start thread, Add to thread, Merge into one expedition, Mark as learning/not learning, and Cancel (also Esc). Closed expeditions merge into the earliest selected expedition; selecting a thread for merge includes its sessions.
    - Dropping an expedition onto another card opens a small menu for the eligible thread and merge actions. Every drop action is also available through keyboard-operable selection. There are no repeated per-card attach links.

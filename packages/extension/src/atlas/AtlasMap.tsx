@@ -14,8 +14,8 @@ function centerMap(renderer: AtlasRenderer, filter: AtlasFilter) {
   const camera = renderer.getCamera();
   if (focused) {
     const center = renderer.viewportToFramedGraph(renderer.graphToViewport(focused));
-    camera.animate({ ...center, ratio: Math.min(camera.ratio, 0.8) });
-  } else camera.animatedReset();
+    void camera.animate({ ...center, ratio: Math.min(camera.ratio, 0.8) }).then(() => renderer.scheduleRefresh());
+  } else void camera.animatedReset().then(() => renderer.scheduleRefresh());
 }
 
 export function AtlasMap({ graph, filter, onFocus }: {
