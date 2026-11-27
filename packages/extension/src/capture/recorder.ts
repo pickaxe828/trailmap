@@ -6,7 +6,8 @@ import { aiEngagement, conversationPage, mergeAiTurn, pendingAiTurns } from './a
 import { canonicalizeUrl } from './canonical';
 import { CHAT_SITES, chatConversationUrl, chatSiteOf, isNewChatUrl } from './chat-sites';
 import { normalizeQuestion } from './google-ai-mode';
-import { scoreEngagement } from './engagement';
+import { scoreEngagement, scoreVideoEngagement } from './engagement';
+import { youtubeWatchId } from './youtube';
 import { WINDOW_ID_NONE, type BrowserEventHandlers, type BrowserEventSource, type NavigationEvent, type PageContentEvent } from './events';
 import type { AiCapture, PageContentReply } from './page-messages';
 import { newPage } from './pages';
@@ -245,11 +246,13 @@ export class VisitRecorder {
     }
   }
 
-  private async updateEngagement(visit: Visit, changes: Partial<Pick<Visit, 'activeMs' | 'lastActiveAt' | 'scrollDepth'>>, interacted = false) {
+  private async updateEngagement(visit: Visit, changes: Partial<Pick<Visit, 'activeMs' | 'lastActiveAt' | 'scrollDepth' | 'watchMs'>>, interacted = false) {
     const engagement = visit.aiConversation
       ? aiEngagement(changes.activeMs ?? visit.activeMs, visit.engagement === 'read' ? 2 : 1)
-      : scoreEngagement(changes.activeMs ?? visit.activeMs, changes.scrollDepth ?? visit.scrollDepth,
-        interacted || visit.engagement === 'read');
+      : youtubeWatchId(visit.url)
+        ? scoreVideoEngagement(changes.watchMs ?? visit.watchMs ?? 0, interacted || visit.engagement === 'read')
+        : scoreEngagement(changes.activeMs ?? visit.activeMs, changes.scrollDepth ?? visit.scrollDepth,
+          interacted || visit.engagement === 'read');
     const { db, now } = this.options;
     if (engagement !== visit.engagement) {
       await db.transaction('rw', db.visits, db.pages, db.jobs, async () => {
@@ -550,6 +553,10 @@ export class VisitRecorder {
     if (content.kind === 'scroll') {
       if (content.depth <= visit.scrollDepth) return;
       await this.updateEngagement(visit, { scrollDepth: content.depth });
+      return;
+    }
+    if (content.kind === 'watch') {
+      if (youtubeWatchId(visit.url) && content.watchMs > (visit.watchMs ?? 0)) await this.updateEngagement(visit, { watchMs: content.watchMs });
       return;
     }
     if (content.kind === 'selection') {

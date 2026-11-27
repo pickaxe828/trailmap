@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { READ_ACTIVE_MS, READ_SCROLL_DEPTH, SKIM_ACTIVE_MS, scoreEngagement } from './engagement';
+import { READ_ACTIVE_MS, READ_SCROLL_DEPTH, SKIM_ACTIVE_MS, scoreEngagement, scoreVideoEngagement } from './engagement';
 
 test('the read thresholds are 45 s active and 30% scrolled', () => {
   expect(READ_ACTIVE_MS).toBe(45_000);
@@ -21,4 +21,16 @@ test.each([
   [0, 0, true, 'read'],
 ] as const)('scores %i ms, %f scroll, interaction %s as %s', (activeMs, depth, interacted, expected) => {
   expect(scoreEngagement(activeMs, depth, interacted)).toBe(expected);
+});
+
+test.each([
+  [0, false, 'bounced'],
+  [9_999, false, 'bounced'],
+  [10_000, false, 'skimmed'],
+  [44_999, false, 'skimmed'],
+  [45_000, false, 'read'],
+  [600_000, false, 'read'],
+  [0, true, 'read'],
+] as const)('a video watched for %i ms, interaction %s, scores %s (scroll depth is irrelevant)', (watchMs, interacted, expected) => {
+  expect(scoreVideoEngagement(watchMs, interacted)).toBe(expected);
 });

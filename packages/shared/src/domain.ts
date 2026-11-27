@@ -31,6 +31,7 @@ export const Visit = z.object({
   activeMs: z.number(),
   lastActiveAt: z.number().optional(), // Wall-clock end of the last recorded reading interval.
   scrollDepth: z.number().min(0).max(1),
+  watchMs: z.number().optional(), // Video pages only: time the video played while the tab was visible.
   engagement: Engagement,
   privacyBlocked: z.literal(true).optional(),
   imported: z.literal(true).optional(),

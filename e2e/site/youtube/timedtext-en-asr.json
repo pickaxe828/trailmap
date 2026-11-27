@@ -1,0 +1,14 @@
+{
+ "wireMagic": "pb3",
+ "events": [
+  {
+   "tStartMs": 0,
+   "dDurationMs": 4000,
+   "segs": [
+    {
+     "utf8": "automatic caption that must lose to the manual track"
+    }
+   ]
+  }
+ ]
+}
