@@ -43,6 +43,31 @@ export function LiveTrail({ trail, currentVisitId, priorReads }: {
   const isSkipped = useSiteSkipped();
   const [dialogue, setDialogue] = useState<Dialogue>();
   const [failed, setFailed] = useState(false);
+  const [todayMenu, setTodayMenu] = useState<{ visitId: string; anchorPath: Set<string> }>();
+
+  // Segmentation can move a Visit (or one of its ancestors) out of Today while
+  // its menu is open. Keep that anchor in the same tree until dismissal, but
+  // use fresh rows so edits and Forget are still reflected immediately.
+  const moved = todayMenu ? trail.open.flatMap(({ visits }) => visits)
+    .filter(({ id }) => todayMenu.anchorPath.has(id)) : [];
+  const today = [...trail.today, ...moved];
+  const heldIds = todayMenu && today.some(({ id }) => id === todayMenu.visitId)
+    ? new Set(moved.map(({ id }) => id)) : undefined;
+
+  function trackTodayMenu(visit: Visit, open: boolean) {
+    if (!open) {
+      setTodayMenu((menu) => menu?.visitId === visit.id ? undefined : menu);
+      return;
+    }
+    const anchorPath = new Set([visit.id]);
+    for (let parentId = visit.parentVisitId; parentId && !anchorPath.has(parentId);) {
+      const parent = today.find(({ id }) => id === parentId);
+      if (!parent) break;
+      anchorPath.add(parentId);
+      parentId = parent.parentVisitId;
+    }
+    setTodayMenu({ visitId: visit.id, anchorPath });
+  }
 
   async function run(promise: Promise<boolean | string | null>) {
     const ok = await promise;
@@ -78,7 +103,8 @@ export function LiveTrail({ trail, currentVisitId, priorReads }: {
           <Button size="sm" label={visit.starred ? 'Unstar page' : 'Star page'}
             tooltip={visit.starred ? 'Remove key page' : 'Mark as a key page'}
             clickAction={() => run(correct('star', { visitId: visit.id, starred: !visit.starred }))} />
-          <MoreMenu size="sm" alignment="end" label={`Actions for ${visit.title || host}`} items={[
+          <MoreMenu size="sm" alignment="end" label={`Actions for ${visit.title || host}`}
+            onOpenChange={group ? undefined : (open) => trackTodayMenu(visit, open)} items={[
             ...(visit.aiConversation && visit.expeditionId ? [{ label: 'View AI conversation',
               onClick: () => { void chrome.tabs.create({ url: expeditionHref(visit.expeditionId!, visit.id) }); },
             }] : []),
@@ -135,13 +161,15 @@ export function LiveTrail({ trail, currentVisitId, priorReads }: {
                     </HStack>
                   </HStack>
                 }
-                items={buildTrail(visits).map((node) => toItem(node, group))} />
+                items={buildTrail(heldIds ? visits.filter(({ id }) => !heldIds.has(id)) : visits)
+                  .map((node) => toItem(node, group))} />
             );
           })}
         </VStack>
       )}
-      {trail.today.length > 0 && (
-        <TreeList header={<Heading level={2}>Today</Heading>} items={buildTrail(trail.today).map((node) => toItem(node))} />
+      {(heldIds ? today : trail.today).length > 0 && (
+        <TreeList header={<Heading level={2}>Today</Heading>}
+          items={buildTrail(heldIds ? today : trail.today).map((node) => toItem(node))} />
       )}
 
       {dialogue?.kind === 'note' && (
