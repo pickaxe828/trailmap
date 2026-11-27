@@ -7,7 +7,10 @@ export type RecordingSettings = {
   skippedHosts: string[];
   expeditionInactivityMinutes?: number;
   topicSwitchMinutes?: number;
+  /** "Use my notes to build concepts and threads". On unless it is explicitly false. */
+  useMyNotes?: boolean;
 };
+export const usesMyNotes = ({ useMyNotes }: Pick<RecordingSettings, 'useMyNotes'>) => useMyNotes !== false;
 export type RecordingState = 'recording' | 'paused' | 'skipped';
 
 const hostname = (url: URL) => url.hostname.toLowerCase().replace(/\.+$/, '');

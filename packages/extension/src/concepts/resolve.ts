@@ -1,8 +1,9 @@
 import type { TrailmapDb } from '../db/db';
-import { cosine, quantize, type Embedder } from '../embeddings/embedder';
+import { quantize, type Embedder } from '../embeddings/embedder';
 import type { JobHandlers } from '../jobs/queue';
 import type { JobPayloads } from '../jobs/types';
 import { putObservedEdge } from './edges';
+import { matchConcept } from './match';
 import { conceptNameKey, isConceptName, refreshConcept } from './evidence';
 import { enqueueMergeVerdicts } from './verdicts';
 
@@ -42,19 +43,8 @@ export function resolveConcepts(db: TrailmapDb, embedder: Embedder, now: () => n
       for (const [i, mention] of mentions.entries()) {
         const key = conceptNameKey(mention.name);
         const vector = embeddings[i]!;
-        let conceptId = byName.get(key);
-        let uncertain: string | undefined;
-        if (!conceptId) {
-          let best = -Infinity;
-          let closest: string | undefined;
-          for (const [id, embedding] of candidates) {
-            const score = embedding ? cosine(vector, embedding) : 0;
-            if (score > best) { best = score; closest = id; }
-          }
-          if (best > 0.9) conceptId = closest;
-          else if (best >= 0.8) uncertain = closest;
-        }
-        conceptId ??= crypto.randomUUID();
+        const { conceptId: matched, uncertain } = matchConcept(key, vector, byName, candidates);
+        const conceptId = matched ?? crypto.randomUUID();
         byName.set(key, conceptId);
         onPage.set(key, conceptId);
         taught.set(conceptId, !!taught.get(conceptId) || mention.role === 'explains');

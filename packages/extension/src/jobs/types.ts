@@ -11,13 +11,15 @@ export type JobPayloads = {
   field_notes: { expeditionId: string; endedAt: number; revision: number };
   concept_resolution: { canonicalUrl: string; visitId: string; enrichedAt: number; textHash: string; textRevision?: number };
   merge_verdict: { pairs: { candidateId: string; existingId: string }[] };
-  thread_match: { expeditionId: string; notesWrittenAt?: number };
+  thread_match: { expeditionId: string; notesWrittenAt?: number; myNotesAt?: number };
   living_note: { threadId: string; revision: number; checkpoint: number };
+  /** `stamp` is when the notes last changed; the handler rebuilds its input from the current notes. */
+  notes_enrichment: { expeditionId: string; stamp: number };
 };
 
 export type JobKind = keyof JobPayloads;
 export type ModelJobKind = Exclude<JobKind, 'concept_resolution' | 'thread_match'>;
-export const MODEL_JOB_KINDS = ['page_enrichment', 'expedition_wrap_up', 'field_notes', 'merge_verdict', 'living_note'] as const satisfies readonly ModelJobKind[];
+export const MODEL_JOB_KINDS = ['page_enrichment', 'expedition_wrap_up', 'field_notes', 'merge_verdict', 'living_note', 'notes_enrichment'] as const satisfies readonly ModelJobKind[];
 export function isModelJob(kind: unknown): kind is ModelJobKind {
   return MODEL_JOB_KINDS.some((modelKind) => modelKind === kind);
 }
@@ -34,6 +36,8 @@ export type JobSpec<K extends JobKind = JobKind> = {
   key: string;
   priority: JobPriority;
   payload: JobPayloads[K];
+  /** Wait this long before the job is first due (debounce). Not stored. */
+  delayMs?: number;
 };
 
 export type Job<K extends JobKind = JobKind> = JobSpec<K> & {

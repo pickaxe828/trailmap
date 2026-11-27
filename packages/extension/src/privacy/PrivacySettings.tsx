@@ -1,12 +1,14 @@
 import { Button } from '@astryxdesign/core/Button';
 import { Collapsible } from '@astryxdesign/core/Collapsible';
 import { Heading } from '@astryxdesign/core/Heading';
+import { Switch } from '@astryxdesign/core/Switch';
 import { HStack } from '@astryxdesign/core/HStack';
 import { NumberInput } from '@astryxdesign/core/NumberInput';
 import { Text } from '@astryxdesign/core/Text';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import { VStack } from '@astryxdesign/core/VStack';
 import { useEffect, useState, type SubmitEvent } from 'react';
+import { usesMyNotes } from './policy';
 import { MAX_EXPEDITION_MINUTES, MIN_EXPEDITION_MINUTES } from '../segmentation/config';
 import { DENIED_HOSTS } from './default-deny-list';
 import { RECORDING_MESSAGE, type RecordingRequest } from './messages';
@@ -18,6 +20,8 @@ export function PrivacySettings() {
   const [hosts, setHosts] = useState<string[]>();
   const [thresholds, setThresholds] = useState<ReturnType<typeof expeditionCloseSettings>>();
   const [thresholdError, setThresholdError] = useState(false);
+  const [useMyNotes, setUseMyNotes] = useState<boolean>();
+  const [notesError, setNotesError] = useState(false);
   const [readFailed, setReadFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
@@ -31,6 +35,7 @@ export function PrivacySettings() {
           if (revision !== current) return;
           setHosts(settings.skippedHosts);
           setThresholds(expeditionCloseSettings(settings));
+          setUseMyNotes(usesMyNotes(settings));
           setReadFailed(false);
         },
         () => { if (revision === current) setReadFailed(true); },
@@ -53,6 +58,15 @@ export function PrivacySettings() {
       if (!saved) throw new Error();
     } catch {
       setThresholdError(true);
+    }
+  }
+
+  async function saveUseMyNotes(enabled: boolean) {
+    setNotesError(false);
+    try {
+      if (!await chrome.runtime.sendMessage({ type: RECORDING_MESSAGE, action: 'set-use-my-notes', enabled } satisfies RecordingRequest)) throw new Error();
+    } catch {
+      setNotesError(true);
     }
   }
 
@@ -94,6 +108,13 @@ export function PrivacySettings() {
           isIntegerOnly isWheelEnabled={false} isDisabled={!thresholds} value={thresholds?.topicSwitchMinutes}
           onChange={(minutes) => void saveThreshold('topicSwitchMinutes', minutes)} />
         {thresholdError && <Text role="alert">Could not save the Expedition close setting.</Text>}
+      </VStack>
+      <VStack gap={2}>
+        <Heading level={3}>My notes</Heading>
+        <Switch size="sm" label="Use my notes to build concepts and threads" value={useMyNotes ?? true} isDisabled={useMyNotes === undefined}
+          description="Your own notes on an Expedition and its stops are sent to your model to find the concepts you learned, and help match threads and write living notes. When this is off, My notes never leave this computer."
+          changeAction={saveUseMyNotes} />
+        {notesError && <Text role="alert">Could not save the My notes setting.</Text>}
       </VStack>
       <Collapsible trigger="Default skip list" defaultIsOpen={false}>
         <VStack gap={2} paddingBlockEnd={2}>

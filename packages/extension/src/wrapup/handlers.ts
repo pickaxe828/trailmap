@@ -190,8 +190,7 @@ export function wrapUpHandlers(
         const s = await load(expeditionId, endedAt, false);
         const settings = getSettings();
         const { expedition } = s ?? {};
-        if (!s || !expedition || expedition.kind !== 'learning' || (expedition.wrappedUpAt === undefined && !expedition.kindOverride) ||
-          (expedition.fieldNotes !== null && expedition.userEdited)) return;
+        if (!s || !expedition || expedition.kind !== 'learning' || (expedition.wrappedUpAt === undefined && !expedition.kindOverride)) return;
         if (settings.paused || await waitingOnPages(s, settings)) return 'waiting' as const;
         const built = buildFieldNotesInput(s, settings);
         if (!built) return;
@@ -208,7 +207,6 @@ export function wrapUpHandlers(
       return { commit: async () => {
         const current = await db.expeditions.get(expeditionId);
         if (!current || current.endedAt !== endedAt || current.kind !== 'learning') return;
-        if (current.fieldNotes !== null && current.userEdited) return; // Regenerating never overwrites user edits.
         if (!await result.stillCurrent()) return 'discard';
         const at = now();
         const latest = await load(expeditionId, endedAt, false);

@@ -77,6 +77,25 @@ describe('database', () => {
     expect((await db.notes.get('note'))?.text).toBe('Keep this');
   });
 
+  test('upgrade moves user-edited field notes into My notes and queues regenerated field notes', async () => {
+    const previous = new Dexie(dbName);
+    previous.version(9).stores({ expeditions: 'id, startedAt, endedAt, threadId, kind, unseenNotes', corrections: 'id, at, *targetIds',
+      jobs: 'id, status, [status+priority+createdAt]' });
+    const base = { kind: 'learning', startedAt: 1, endedAt: 9, drivingQuestion: null, threadId: null, wrappedUpAt: 5 };
+    await previous.table('expeditions').bulkAdd([
+      { ...base, id: 'edited', title: 'Edited', fieldNotes: 'My own words', userEdited: true },
+      { ...base, id: 'renamed', title: 'Renamed', fieldNotes: 'Generated', userEdited: true },
+      { ...base, id: 'plain', title: 'Plain', fieldNotes: 'Generated too', userEdited: false },
+    ]);
+    await previous.table('corrections').add({ id: 'c1', at: 2, kind: 'field-notes', targetIds: ['edited'], before: null, after: null });
+    previous.close();
+    expect(await db.expeditions.get('edited')).toMatchObject({ myNotes: 'My own words', fieldNotes: null, userEdited: true });
+    expect(await db.expeditions.get('renamed')).toMatchObject({ fieldNotes: 'Generated', userEdited: true });
+    expect((await db.expeditions.get('renamed'))?.myNotes).toBeUndefined();
+    expect((await db.expeditions.get('plain'))?.myNotes).toBeUndefined();
+    expect(await db.jobs.toArray()).toMatchObject([{ kind: 'field_notes', status: 'pending', payload: { expeditionId: 'edited', endedAt: 9, revision: 1 } }]);
+  });
+
   test('has tables for domain entities, durable jobs, model dispatches and the correction log', () => {
     expect(db.tables.map((t) => t.name).sort()).toEqual([
       'conceptEvidence', 'concepts', 'corrections', 'edges', 'expeditions', 'highlights', 'jobs', 'modelHealth', 'notes', 'pages', 'queries', 'queueHolds', 'sentToModel', 'threads', 'visits',

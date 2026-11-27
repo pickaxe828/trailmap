@@ -12,6 +12,7 @@ export type RecordingRequest = { type: typeof RECORDING_MESSAGE } & (
   | { action: 'set-site'; tabId: number; host: string; skip: boolean }
   | { action: 'edit-skip-list'; site: string; skip: boolean }
   | { action: 'set-expedition-threshold'; threshold: ExpeditionThreshold; minutes: number }
+  | { action: 'set-use-my-notes'; enabled: boolean }
 );
 
 export type RecordingStatus = {
@@ -30,6 +31,7 @@ export function isRecordingRequest(value: unknown): value is RecordingRequest {
     case 'edit-skip-list': return typeof request.site === 'string' && typeof request.skip === 'boolean';
     case 'set-expedition-threshold': return (request.threshold === 'expeditionInactivityMinutes' || request.threshold === 'topicSwitchMinutes') &&
       validExpeditionMinutes(request.minutes);
+    case 'set-use-my-notes': return typeof request.enabled === 'boolean';
     default: return false;
   }
 }

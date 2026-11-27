@@ -4,15 +4,16 @@ import type { TrailmapDb } from '../db/db';
 import { cosine, quantize, type Embedder } from '../embeddings/embedder';
 import { enqueueJob, JOB_PRIORITY, type JobHandlers } from '../jobs/queue';
 import { dismissed } from '../journal/suggestions';
+import { usesMyNotes, type RecordingSettings } from '../privacy/policy';
 import { bySessionTime, isClosedLearning, newThread, refreshThread, sessionEnd, THREAD_WINDOW } from './model';
 
 type Signature = NonNullable<Expedition['threadSignature']>;
 type Target = NonNullable<Expedition['threadSuggestion']>;
 
-export function enqueueThreadMatch(db: TrailmapDb, { id: expeditionId, notesWrittenAt }: Pick<Expedition, 'id' | 'notesWrittenAt'>, at: number) {
+export function enqueueThreadMatch(db: TrailmapDb, { id: expeditionId, notesWrittenAt, myNotesAt }: Pick<Expedition, 'id' | 'notesWrittenAt' | 'myNotesAt'>, at: number) {
   return enqueueJob(db, {
-    kind: 'thread_match', key: JSON.stringify([expeditionId, notesWrittenAt]), priority: JOB_PRIORITY.fieldNotes,
-    payload: { expeditionId, notesWrittenAt },
+    kind: 'thread_match', key: JSON.stringify([expeditionId, notesWrittenAt, myNotesAt]), priority: JOB_PRIORITY.fieldNotes,
+    payload: { expeditionId, notesWrittenAt, myNotesAt },
   }, at);
 }
 
@@ -25,20 +26,28 @@ function score(source: Signature, candidate: Signature) {
   return { band, rank: similarity + Math.min(shared, 5) * 0.025 };
 }
 
-async function describe(db: TrailmapDb, expedition: Expedition) {
+const MY_NOTES_CHARS = 1_200;
+
+/**
+ * What an Expedition is about, for matching. The user's own notes come right after the question and before the concepts,
+ * so they carry more of the embedding than anything generated (the generated field notes are not part of it).
+ */
+export async function describeExpedition(db: TrailmapDb, expedition: Expedition, settings: Pick<RecordingSettings, 'useMyNotes'> = {}) {
   const concepts = await readExpeditionTopConcepts(db, expedition.id);
-  return { text: [expedition.title, expedition.drivingQuestion, ...concepts.map(({ name }) => name)].filter(Boolean).join('\n'),
+  const mine = usesMyNotes(settings) ? expedition.myNotes?.replace(/\s+/g, ' ').trim().slice(0, MY_NOTES_CHARS) : undefined;
+  return { text: [expedition.title, expedition.drivingQuestion, mine, ...concepts.map(({ name }) => name)].filter(Boolean).join('\n'),
     conceptIds: concepts.map(({ id }) => id) };
 }
 
-export function matchThread(db: TrailmapDb, embedder: Embedder, now: () => number): JobHandlers['thread_match'] {
+export function matchThread(db: TrailmapDb, embedder: Embedder, now: () => number,
+  getSettings: () => Pick<RecordingSettings, 'useMyNotes'> = () => ({})): JobHandlers['thread_match'] {
   const tables = [db.expeditions, db.threads, db.visits, db.conceptEvidence, db.concepts];
-  return async ({ payload: { expeditionId, notesWrittenAt } }) => {
+  return async ({ payload: { expeditionId, notesWrittenAt, myNotesAt } }) => {
     const at = now();
     const earliest = at - THREAD_WINDOW;
     const prepare = () => db.transaction('r', tables, async () => {
       const session = await db.expeditions.get(expeditionId);
-      if (!session || !isClosedLearning(session) || !session.fieldNotes?.trim() || session.notesWrittenAt !== notesWrittenAt) return;
+      if (!session || !isClosedLearning(session) || !session.fieldNotes?.trim() || session.notesWrittenAt !== notesWrittenAt || session.myNotesAt !== myNotesAt) return;
       const threads = session.threadId || session.threadAutoExcluded ? [] : await db.threads.where('lastActiveAt')
         .between(earliest, at, true, true).filter((thread) => thread.status !== 'done' && !!thread.centroid &&
           !dismissed(session, { kind: 'thread', id: thread.id })).toArray();
@@ -47,7 +56,7 @@ export function matchThread(db: TrailmapDb, embedder: Embedder, now: () => numbe
           !other.threadId && !other.threadAutoExcluded && !!other.fieldNotes?.trim() &&
           !dismissed(session, { kind: 'expedition', id: other.id }, other)).toArray();
       const toEmbed = [session, ...singles.filter((other) => !other.threadSignature)];
-      return { session, singles, threads, descriptions: await Promise.all(toEmbed.map((e) => describe(db, e))) };
+      return { session, singles, threads, descriptions: await Promise.all(toEmbed.map((e) => describeExpedition(db, e, getSettings()))) };
     });
     const snapshot = await prepare();
     if (!snapshot) return 'discard';

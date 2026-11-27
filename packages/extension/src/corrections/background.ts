@@ -36,7 +36,7 @@ export function startCorrections(
       source.search = '';
       source.hash = '';
       if (source.href !== chrome.runtime.getURL('/expedition.html') ||
-        !['rename', 'merge', 'move', 'field-notes'].includes(input.action)) return;
+        !['rename', 'merge', 'move', 'my-notes'].includes(input.action)) return;
     }
     service.handle(input).then(reply, () => reply(false));
     return true;

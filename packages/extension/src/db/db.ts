@@ -16,7 +16,7 @@ import { canonicalizeUrl } from '../capture/canonical';
 import type { ConceptEvidence } from '../concepts/evidence';
 import type { RequestErrorCode } from '../companion/client';
 import { conceptResolutionJob } from '../concepts/enqueue';
-import { enqueueJob } from '../jobs/queue';
+import { enqueueJob, JOB_PRIORITY } from '../jobs/queue';
 import type { Job, JobSpec, ModelHealth, QueueHold } from '../jobs/types';
 
 /**
@@ -196,6 +196,27 @@ export function openTrailmapDb(name: string = DB_NAME): TrailmapDb {
     });
   });
   db.version(9).stores({ modelHealth: 'id', sentToModel: 'id, at, canonicalUrl, outcome' });
+  db.version(10).stores({ conceptEvidence: 'id, conceptId, visitId, sourceVisitId, canonicalUrl, expeditionId' }).upgrade(async () => {
+    // "Edit field notes" used to overwrite the generated notes. Keep those words as My notes,
+    // and let the generated notes be written again. A rename also sets userEdited, so use the correction log.
+    const edited = new Set((await db.corrections.filter(({ kind }) => kind === 'field-notes').toArray()).flatMap(({ targetIds }) => targetIds));
+    const regenerate: Expedition[] = [];
+    await db.expeditions.filter(({ id, userEdited, fieldNotes }) => userEdited && !!fieldNotes?.trim() && edited.has(id))
+      .modify((expedition) => {
+        expedition.myNotes = expedition.fieldNotes ?? undefined;
+        expedition.myNotesAt = expedition.notesWrittenAt ?? expedition.endedAt ?? expedition.startedAt;
+        expedition.fieldNotes = null;
+        expedition.notesWrittenAt = undefined;
+        expedition.notesSource = undefined;
+        expedition.unseenNotes = undefined;
+        regenerate.push({ ...expedition });
+      });
+    for (const { id, endedAt, kind } of regenerate) {
+      if (endedAt === null || kind !== 'learning') continue;
+      await enqueueJob(db, { kind: 'field_notes', key: JSON.stringify([id, endedAt, 1]), priority: JOB_PRIORITY.fieldNotes,
+        payload: { expeditionId: id, endedAt, revision: 1 } }, endedAt);
+    }
+  });
   // History replay and any other Visit writer use the same persistence boundary.
   db.visits.hook('creating', (_id, visit) => { visit.url = canonicalizeUrl(visit.url); });
   db.visits.hook('updating', (changes) => {
