@@ -93,7 +93,7 @@ function AtlasView({ concepts, edges, threads }: AtlasData) {
           <VStack className="min-h-full" gap={1}>
             <HStack paddingInline={4} paddingBlockStart={3} gap={2} wrap="wrap" justify="between" align="center">
               <Text type="supporting">{numberFormat.format(shown)} of {numberFormat.format(graph.order)} concepts on the map</Text>
-              <Text type="supporting">Size: exposure · Colour: community</Text>
+              <Text type="supporting">Size: exposure · Colour: community · Solid: you wrote about it · Faded: only seen on pages</Text>
             </HStack>
             <AtlasMap graph={graph} filter={filter} onFocus={setSelection} />
           </VStack>

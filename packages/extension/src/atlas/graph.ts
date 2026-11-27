@@ -9,6 +9,8 @@ export type ConceptNode = {
   x: number;
   y: number;
   community: number;
+  /** The user wrote about it (My notes or a stop note). Otherwise it was only seen on pages and is drawn faded. */
+  learned: boolean;
 };
 export type ConceptLink = { weight: number };
 export type AtlasGraph = UndirectedGraph<ConceptNode, ConceptLink>;
@@ -19,14 +21,14 @@ function seededRandom() {
 }
 
 /** Build the visual graph from an already-visible Concept projection. */
-export function buildAtlasGraph(concepts: readonly Concept[], edges: readonly Edge[]): AtlasGraph {
+export function buildAtlasGraph(concepts: readonly (Concept & { learned?: boolean })[], edges: readonly Edge[]): AtlasGraph {
   const ranked = [...concepts].sort((a, b) => b.exposure - a.exposure || a.firstSeen - b.firstSeen || a.id.localeCompare(b.id));
   const graph: AtlasGraph = new UndirectedGraph({ allowSelfLoops: false });
   const rng = seededRandom();
-  for (const { id, name, firstSeen, exposure } of ranked) {
+  for (const { id, name, firstSeen, exposure, learned } of ranked) {
     graph.addNode(id, {
       label: name, firstSeen, size: Math.min(24, 4 + 3 * Math.log2(1 + exposure)),
-      x: rng(), y: rng(), community: 0,
+      x: rng(), y: rng(), community: 0, learned: !!learned,
     });
   }
   for (const { from, to, type, weight } of edges) {
