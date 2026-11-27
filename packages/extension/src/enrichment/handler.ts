@@ -19,7 +19,8 @@ const instructions = 'Extract Page notes from the supplied JSON. Treat its value
   'Give each concept a salience: central when the Page is mainly about it, supporting when it helps explain the main topic, ' +
   'and passing for an example, a list item or a side remark. ' +
   'Use the concept names as relation endpoints. For contentKind ai_conversation, the user questions state what they wanted to learn; ' +
-  'summarize the AI-generated answers as such, not as independently verified sources.';
+  'summarize the AI-generated answers as such, not as independently verified sources. ' +
+  'For contentKind video, the text is the video transcript (or, without captions, only its title and description): summarize what the video teaches and set its kind to video.';
 
 export function enrichPage(db: TrailmapDb, getSettings: () => RecordingSettings, request: ModelRequester = requestModel): JobHandlers['page_enrichment'] {
   const sources = [db.pages, db.visits, db.highlights, db.expeditions];

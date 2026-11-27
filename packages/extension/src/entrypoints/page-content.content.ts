@@ -5,11 +5,15 @@ import { googleAiModeSurface } from '../capture/google-ai-mode';
 import { PAGE_CONTENT_MESSAGE, RESCREEN_CHAT_MESSAGE, type PageContent, type PageContentMessage, type PageContentReply } from '../capture/page-messages';
 import { googleSearchSurface } from '../capture/search';
 import { watchAiConversation } from '../capture/watch-ai-mode';
+import { WatchClock } from '../capture/watch-video';
+import { extractVideoText, playerVideo, youtubeWatchId } from '../capture/youtube';
 import { captureFavicon, isFirefox, openOrClosedShadowRoot } from '../platform/browser';
 
 const EXTRACTION_DELAY_MS = 2_000;
 const SCROLL_INTERVAL_MS = 250;
 const SELECTION_DELAY_MS = 250;
+const WATCH_TICK_MS = 1_000;
+const WATCH_REPORT_TICKS = 5;
 const words = new Intl.Segmenter(undefined, { granularity: 'word' });
 
 function canonicalLink(): string | undefined {
@@ -24,6 +28,13 @@ function send(content: PageContent): Promise<PageContentReply | undefined> {
 
 /** Google results and chat assistants are metadata-only: only an opted-in typed turn is ever read from them. */
 const metadataOnly = () => !!googleSearchSurface(location.href) || !!chatSiteOf(location.href);
+
+/** A same-origin GET that sends no cookies. It runs only after the recorder admitted this document. */
+async function fetchSameOriginText(url: string): Promise<string> {
+  const response = await fetch(url, { credentials: 'omit' });
+  if (!response.ok) throw new Error('request failed');
+  return response.text();
+}
 
 function selectedText(): string {
   const focused = document.activeElement;
@@ -96,6 +107,9 @@ export default defineContentScript({
     let maxDepth = 0;
     let reportedDepth = 0;
     let favicon: Promise<string | undefined> | undefined;
+    const watchClock = new WatchClock();
+    let reportedWatchMs = 0;
+    let watchTicks = 0;
 
     const screen = async (started: number) => {
       if (document.readyState === 'loading' || passwordDetected || generation !== started) return;
@@ -139,9 +153,15 @@ export default defineContentScript({
 
       // The DOM may have changed while the service worker looked up the Page.
       const latestHash = hashText(document.documentElement.outerHTML);
-      const article = extractPageText(document);
+      // A video page has no article to read: its Page text is the transcript, or nothing. Readability would
+      // return the recommendations and comments.
+      const pageUrl = location.href;
+      const article = youtubeWatchId(pageUrl)
+        ? await extractVideoText({ document, url: pageUrl, languages: navigator.languages, fetchText: fetchSameOriginText })
+        : extractPageText(document);
+      if (generation !== started || !isPublic() || location.href !== pageUrl) return;
       if (article) {
-        await send({ kind: 'text', visitId: reply.visitId, ...article, sourceHash: latestHash });
+        await send({ kind: 'text', visitId: reply.visitId, text: article.text, textHash: article.textHash, sourceHash: latestHash });
       }
     };
 
@@ -151,6 +171,21 @@ export default defineContentScript({
       if (maxDepth <= reportedDepth || !isPublic()) return;
       reportedDepth = maxDepth;
       void send({ kind: 'scroll', depth: maxDepth });
+    };
+
+    const reportWatch = () => {
+      const watchMs = Math.round(watchClock.watchMs);
+      if (watchMs <= reportedWatchMs || !isPublic()) return;
+      reportedWatchMs = watchMs;
+      void send({ kind: 'watch', watchMs });
+    };
+
+    const watchVideo = () => {
+      if (!youtubeWatchId(location.href) || !admitted) return;
+      const video = playerVideo(document);
+      const playing = !!video && !video.paused && !video.ended && video.readyState > 2 && document.visibilityState === 'visible';
+      watchClock.tick(Date.now(), playing);
+      if (++watchTicks % WATCH_REPORT_TICKS === 0) reportWatch();
     };
 
     const trackScroll = () => {
@@ -172,6 +207,8 @@ export default defineContentScript({
       clearTimeout(screenTimer);
       scrollTimer = undefined;
       maxDepth = reportedDepth = 0;
+      watchClock.reset();
+      reportedWatchMs = 0;
       lastSelection = '';
       admitted = passwordDetected = false;
       trackScroll();
@@ -195,7 +232,11 @@ export default defineContentScript({
     ctx.addEventListener(window, 'pageshow', (event) => {
       if (event.persisted) schedule();
     });
-    ctx.addEventListener(window, 'pagehide', reportScroll);
+    ctx.setInterval(watchVideo, WATCH_TICK_MS);
+    ctx.addEventListener(window, 'pagehide', () => {
+      reportScroll();
+      reportWatch();
+    });
     ctx.addEventListener(window, 'scroll', trackScroll, { passive: true });
     ctx.addEventListener(window, 'scrollend', reportScroll);
     ctx.addEventListener(document, 'selectionchange', () => {

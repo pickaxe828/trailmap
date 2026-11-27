@@ -42,3 +42,14 @@ test('bounced Visits and skipped Page sources do not produce a model input', () 
   expect(buildEnrichmentInput({ visit: { ...visit, engagement: 'bounced' }, page, highlights: [] }, { paused: false, skippedHosts: [] })).toBeUndefined();
   expect(buildEnrichmentInput({ visit, page: { ...page, sourceUrl: 'https://skipped.test/delete' }, highlights: [] }, { paused: false, skippedHosts: ['skipped.test'] })).toBeUndefined();
 });
+
+test('a YouTube watch Page is sent as a video transcript, through the same privacy gate', () => {
+  const url = 'https://www.youtube.com/watch?v=aaaaaaaaaaa';
+  const video = { ...visit, url, canonicalUrl: url, title: 'LSM trees', watchMs: 50_000, parentVisitId: null };
+  const transcript = { ...newPage(url, 'A memtable buffers writes.', 'hash'), sourceUrl: url };
+  expect(buildEnrichmentInput({ visit: video, page: transcript, highlights: [] }, { paused: false, skippedHosts: [] }))
+    .toMatchObject({ contentKind: 'video', text: 'A memtable buffers writes.' });
+  for (const settings of [{ paused: true, skippedHosts: [] }, { paused: false, skippedHosts: ['youtube.com'] }]) {
+    expect(buildEnrichmentInput({ visit: video, page: transcript, highlights: [] }, settings)).toBeUndefined();
+  }
+});

@@ -1,5 +1,6 @@
 import type { Expedition, Highlight, Page, Visit } from '@trailmap/shared';
 import { PAGE_TEXT_BYTE_LIMIT } from '../capture/page-messages';
+import { youtubeWatchId } from '../capture/youtube';
 import { eligibleMetadata, maySendToModel, type RecordingSettings } from '../privacy/policy';
 
 type Sources = {
@@ -27,7 +28,7 @@ export function buildEnrichmentInput({ visit, page, highlights, sourceVisit, exp
   return {
     title: cap(visit.title || new URL(page.canonicalUrl).hostname, 768),
     url: visit.aiConversation ? visit.url : page.canonicalUrl,
-    ...(visit.aiConversation ? { contentKind: 'ai_conversation' as const } : {}),
+    ...(visit.aiConversation ? { contentKind: 'ai_conversation' as const } : youtubeWatchId(visit.url) ? { contentKind: 'video' as const } : {}),
     text: cap(page.text, PAGE_TEXT_BYTE_LIMIT),
     highlights: highlights.filter((item) => item.visitId === visit.id && (!item.canonicalUrl || item.canonicalUrl === page.canonicalUrl))
       .slice(0, 10).map(({ text }) => ({ text: cap(text, 800), important: true })),

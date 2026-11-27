@@ -10,3 +10,12 @@ export function scoreEngagement(activeMs: number, scrollDepth: number, interacte
   if (activeMs >= SKIM_ACTIVE_MS || scrollDepth > 0) return 'skimmed';
   return 'bounced';
 }
+
+/**
+ * A video is read by watching it (playing, tab visible), not by scrolling, and a paused tab left open is not reading.
+ * The thresholds match a page's active-time ones.
+ */
+export function scoreVideoEngagement(watchMs: number, interacted = false): Visit['engagement'] {
+  if (interacted || watchMs >= READ_ACTIVE_MS) return 'read';
+  return watchMs >= SKIM_ACTIVE_MS ? 'skimmed' : 'bounced';
+}

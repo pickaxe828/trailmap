@@ -1,0 +1,32 @@
+{
+ "wireMagic": "pb3",
+ "events": [
+  {
+   "tStartMs": 0,
+   "dDurationMs": 4000,
+   "segs": [
+    {
+     "utf8": "A log-structured merge tree buffers writes in a memtable."
+    }
+   ]
+  },
+  {
+   "tStartMs": 4000,
+   "dDurationMs": 4000,
+   "segs": [
+    {
+     "utf8": "When the memtable fills it is flushed to an immutable SSTable."
+    }
+   ]
+  },
+  {
+   "tStartMs": 8000,
+   "dDurationMs": 4000,
+   "segs": [
+    {
+     "utf8": "Compaction merges SSTables so reads touch fewer files."
+    }
+   ]
+  }
+ ]
+}

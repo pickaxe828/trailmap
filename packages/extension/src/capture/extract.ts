@@ -1,10 +1,7 @@
 import { Readability } from '@mozilla/readability';
-import { sha256 } from '@noble/hashes/sha2.js';
-import { bytesToHex } from '@noble/hashes/utils.js';
-import { PAGE_TEXT_BYTE_LIMIT } from './page-messages';
+import { capPageText, hashText } from './page-text';
 
-const encoder = new TextEncoder();
-const decoder = new TextDecoder();
+export { hashText };
 
 type ShadowOf = (element: Element) => ShadowRoot | null;
 const openShadow: ShadowOf = (element) => element.shadowRoot;
@@ -28,10 +25,6 @@ export function hasPasswordField(document: Document, shadowOf?: ShadowOf): boole
   return false;
 }
 
-export function hashText(text: string): string {
-  return bytesToHex(sha256(encoder.encode(text)));
-}
-
 export function extractPageText(document: Document): { text: string; textHash: string } | null {
   if (hasPasswordField(document)) return null;
 
@@ -39,9 +32,5 @@ export function extractPageText(document: Document): { text: string; textHash: s
   const text = article?.textContent?.replace(/\s+/gu, ' ').trim();
   if (!text) return null;
 
-  // Four UTF-8 bytes per token is a rough budget. encodeInto leaves whole code points intact.
-  const buffer = new Uint8Array(PAGE_TEXT_BYTE_LIMIT);
-  const { written } = encoder.encodeInto(text, buffer);
-  const capped = decoder.decode(buffer.subarray(0, written)).trimEnd();
-  return { text: capped, textHash: hashText(capped) };
+  return capPageText(text);
 }

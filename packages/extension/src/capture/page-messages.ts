@@ -21,6 +21,7 @@ export const OPEN_AI_CITATION = 'trailmap.openAiCitation';
 export const RESCREEN_CHAT_MESSAGE = 'trailmap.rescreenChat';
 export const PAGE_CONTENT_MESSAGE = 'trailmap.pageContent';
 export const PAGE_TEXT_BYTE_LIMIT = 12_000;
+export const MAX_WATCH_MS = 24 * 60 * 60_000;
 
 type PageText = { text: string; textHash: string; sourceHash: string };
 
@@ -34,6 +35,7 @@ export type PageContent = AiCapture
   | ({ kind: 'text'; visitId: string } & PageText)
   | { kind: 'favicon'; visitId: string; icon: string }
   | { kind: 'scroll'; depth: number }
+  | { kind: 'watch'; watchMs: number }
   | { kind: 'selection' }
   | { kind: 'highlight'; source: Highlight['source']; text: string; canonicalLink?: string };
 
@@ -60,6 +62,9 @@ export function isPageContentMessage(value: unknown): value is PageContentMessag
     return typeof answer === 'string' && !!answer.trim() && answer.length <= AI_ANSWER_LIMIT &&
       Array.isArray(citations) && citations.length <= AI_CITATION_LIMIT && citations.every((url) =>
         typeof url === 'string' && url.length <= 2_048 && /^https?:\/\//i.test(url));
+  }
+  if (message.kind === 'watch') {
+    return typeof message.watchMs === 'number' && Number.isFinite(message.watchMs) && message.watchMs > 0 && message.watchMs <= MAX_WATCH_MS;
   }
   if (message.kind === 'scroll') {
     return typeof message.depth === 'number' && Number.isFinite(message.depth) && message.depth > 0 && message.depth <= 1;
