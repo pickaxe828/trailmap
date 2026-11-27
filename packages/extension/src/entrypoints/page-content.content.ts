@@ -1,6 +1,7 @@
 import { extractPageText, hasPasswordField, hashText, screenableRoots } from '../capture/extract';
 import { chatSurfaceFor } from '../capture/chat-extract';
 import { chatSiteOf, sameChatConversation } from '../capture/chat-sites';
+import { extractForumThread, forumSiteOf } from '../capture/forum';
 import { googleAiModeSurface } from '../capture/google-ai-mode';
 import { PAGE_CONTENT_MESSAGE, RESCREEN_CHAT_MESSAGE, type PageContent, type PageContentMessage, type PageContentReply } from '../capture/page-messages';
 import { isPdfDocument } from '../capture/pdf';
@@ -159,9 +160,11 @@ export default defineContentScript({
       // A video page has no article to read: its Page text is the transcript, or nothing. Readability would
       // return the recommendations and comments.
       const pageUrl = location.href;
+      // A forum thread is read by its own extractor, which keeps the post and the first comments without user names.
+      // An unknown layout gives nothing, never a Readability guess.
       const article = youtubeWatchId(pageUrl)
         ? await extractVideoText({ document, url: pageUrl, languages: navigator.languages, fetchText: fetchSameOriginText })
-        : extractPageText(document);
+        : forumSiteOf(pageUrl) ? extractForumThread(document, pageUrl) : extractPageText(document);
       if (generation !== started || !isPublic() || location.href !== pageUrl) return;
       if (article) {
         await send({ kind: 'text', visitId: reply.visitId, text: article.text, textHash: article.textHash, sourceHash: latestHash });
@@ -272,7 +275,8 @@ export default defineContentScript({
       schedule();
     });
 
-    if (chatSiteOf(location.href)) {
+    if (chatSiteOf(location.href) || /(^|\.)reddit\.com$/.test(location.hostname)) {
+      // Chat sites and Reddit are opt-in: the background tells us when the rules change.
       const rescreen = (message: unknown, sender: chrome.runtime.MessageSender) => {
         if (sender.id !== chrome.runtime.id || (message as { type?: unknown } | null)?.type !== RESCREEN_CHAT_MESSAGE) return;
         // Settings changed: stop reading the composer at once, then ask the background whether to admit this document.

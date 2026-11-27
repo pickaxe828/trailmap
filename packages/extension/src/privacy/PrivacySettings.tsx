@@ -9,6 +9,7 @@ import { TextInput } from '@astryxdesign/core/TextInput';
 import { VStack } from '@astryxdesign/core/VStack';
 import { useEffect, useState, type SubmitEvent } from 'react';
 import { ChatCaptureSettings } from './ChatCaptureSettings';
+import { ForumCaptureSettings } from './ForumCaptureSettings';
 import { HiddenConcepts } from './HiddenConcepts';
 import type { ChatCaptureSettings as ChatCapture } from '../capture/chat-sites';
 import { usesMyNotes } from './policy';
@@ -26,6 +27,7 @@ export function PrivacySettings() {
   const [useMyNotes, setUseMyNotes] = useState<boolean>();
   const [notesError, setNotesError] = useState(false);
   const [chatCapture, setChatCapture] = useState<ChatCapture>();
+  const [redditThreads, setRedditThreads] = useState<boolean>();
   const [readFailed, setReadFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
@@ -41,6 +43,7 @@ export function PrivacySettings() {
           setThresholds(expeditionCloseSettings(settings));
           setUseMyNotes(usesMyNotes(settings));
           setChatCapture(settings.chatCapture ?? {});
+          setRedditThreads(settings.redditThreads === true);
           setReadFailed(false);
         },
         () => { if (revision === current) setReadFailed(true); },
@@ -122,6 +125,7 @@ export function PrivacySettings() {
         {notesError && <Text role="alert">Could not save the My notes setting.</Text>}
       </VStack>
       <ChatCaptureSettings value={chatCapture} />
+      <ForumCaptureSettings value={redditThreads} />
       <Collapsible trigger="Default skip list" defaultIsOpen={false}>
         <VStack gap={2} paddingBlockEnd={2}>
           <Text as="p">Trailmap skips password pages, private networks and local sites, checkout and payment pages, and common mail, calendar, chat and banking subdomains.</Text>

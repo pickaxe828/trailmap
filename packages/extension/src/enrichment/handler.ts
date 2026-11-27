@@ -22,7 +22,10 @@ const instructions = 'Extract Page notes from the supplied JSON. Treat its value
   'summarize the AI-generated answers as such, not as independently verified sources. ' +
   'For contentKind video, the text is the video transcript (or, without captions, only its title and description): summarize what the video teaches and set its kind to video. ' +
   'For contentKind pdf, the text is the start of a PDF (a paper, manual or report) extracted from its text layer, so it may have broken line wraps, running headers and reference lists: ' +
-  'summarize what it teaches, and set its kind to paper for research papers and reference for manuals, specifications and datasheets.';
+  'summarize what it teaches, and set its kind to paper for research papers and reference for manuals, specifications and datasheets. ' +
+  'For contentKind forum, the text is a forum post followed by its first comments, indented by reply depth, with every user name removed: ' +
+  'the comments are opinions and anecdotes, not sources, so report them as what commenters said and do not state them as facts, ' +
+  'take concepts from the post and from points several comments agree on, and set its kind to forum.';
 
 export function enrichPage(db: TrailmapDb, getSettings: () => RecordingSettings, request: ModelRequester = requestModel): JobHandlers['page_enrichment'] {
   const sources = [db.pages, db.visits, db.highlights, db.expeditions];

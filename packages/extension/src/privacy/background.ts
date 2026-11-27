@@ -1,4 +1,5 @@
 import { CHAT_SITES } from '../capture/chat-sites';
+import { REDDIT_TAB_PATTERNS } from '../capture/forum';
 import { RESCREEN_CHAT_MESSAGE } from '../capture/page-messages';
 import type { VisitRecorder } from '../capture/recorder';
 import { isRecordingRequest, PASSWORD_STATUS_CHANGED, TOGGLE_RECORDING_COMMAND, type RecordingStatus } from './messages';
@@ -45,11 +46,15 @@ export function createRecordingPrivacy(unseenNotes: () => number, purge: (host?:
       id === undefined ? undefined : refreshBadge(id).catch(() => {})));
   }
 
-  const chatRules = ({ paused, skippedHosts, chatCapture }: RecordingSettings) => JSON.stringify([paused, skippedHosts, chatCapture ?? {}]);
+  const chatRules = ({ paused, skippedHosts, chatCapture, redditThreads }: RecordingSettings) =>
+    JSON.stringify([paused, skippedHosts, chatCapture ?? {}, redditThreads === true]);
 
-  /** Chat tabs stop reading their composer, or start being admitted, as soon as the capture rules change. */
+  /**
+   * Chat tabs stop reading their composer, and Reddit tabs stop (or start) being captured, as soon as the capture rules change.
+   * The content script drops its admission and asks the recorder again.
+   */
   async function rescreenChatTabs() {
-    const tabs = await chrome.tabs.query({ url: Object.values(CHAT_SITES).map(({ host }) => `https://${host}/*`) });
+    const tabs = await chrome.tabs.query({ url: [...Object.values(CHAT_SITES).map(({ host }) => `https://${host}/*`), ...REDDIT_TAB_PATTERNS] });
     await Promise.all(tabs.map(({ id }) => id === undefined ? undefined : chrome.tabs.sendMessage(id, { type: RESCREEN_CHAT_MESSAGE }).catch(() => {})));
   }
 
@@ -64,7 +69,7 @@ export function createRecordingPrivacy(unseenNotes: () => number, purge: (host?:
       catch (error) { settings = previous; throw error; }
       chatChanged = chatRules(previous) !== chatRules(next);
       if (skipHost) await purge(skipHost);
-      // Turning a chat site off removes what was captured from it.
+      // Turning a chat site or Reddit threads off removes what was captured from it.
       if (chatChanged) await purge(undefined, next);
     });
     settingsWritten = written.catch(() => {});
@@ -127,7 +132,7 @@ export function createRecordingPrivacy(unseenNotes: () => number, purge: (host?:
         if (!page) return;
         const fromSettings = settingsPages.has(page);
         if (page !== panel && !fromSettings) return;
-        if ((input.action === 'edit-skip-list' || input.action === 'set-expedition-threshold' || input.action === 'set-use-my-notes' || input.action === 'set-chat-capture') && !fromSettings) return;
+        if ((input.action === 'edit-skip-list' || input.action === 'set-expedition-threshold' || input.action === 'set-use-my-notes' || input.action === 'set-chat-capture' || input.action === 'set-reddit-threads') && !fromSettings) return;
         if (fromSettings && (input.action === 'set-site' || (input.action === 'status' && input.tabId !== undefined))) return;
         void (async () => {
           switch (input.action) {
@@ -147,6 +152,9 @@ export function createRecordingPrivacy(unseenNotes: () => number, purge: (host?:
               return true;
             case 'set-chat-capture':
               await changeSettings((current) => ({ ...current, chatCapture: { ...current.chatCapture, [input.site]: input.enabled } }));
+              return true;
+            case 'set-reddit-threads':
+              await changeSettings((current) => ({ ...current, redditThreads: input.enabled }));
               return true;
             case 'edit-skip-list': {
               const value = input.site.trim();

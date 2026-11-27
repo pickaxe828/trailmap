@@ -41,7 +41,7 @@ function start() {
   void recoverModelAttempts(db).catch(() => {});
   let unseenNotes = 0;
   const privacy = createRecordingPrivacy(() => unseenNotes, (host, settings) => forgetCascade(db, {
-    kind: 'forget-site', host, denied: host === undefined, chatCapture: settings?.chatCapture, targetIds: host ? [`site:${host}`] : [],
+    kind: 'forget-site', host, denied: host === undefined, chatCapture: settings?.chatCapture, redditThreads: settings?.redditThreads, targetIds: host ? [`site:${host}`] : [],
     now: Date.now, newId: () => crypto.randomUUID(), quiet: true,
   }));
   const recorder = new VisitRecorder({

@@ -21,6 +21,8 @@ type ForgetInput = {
   denied?: boolean;
   /** With `denied`: captured conversations from sites opted in here are kept. Omitted, they all go (fail closed). */
   chatCapture?: ChatCaptureSettings;
+  /** With `denied`: captured Reddit threads are kept only when this is true. Omitted, they all go (fail closed). */
+  redditThreads?: boolean;
   /** Expeditions that must not survive, even with legacy Queries that have no Visit. */
   expeditionIds?: string[];
   /** Log entries mentioning these ids (besides deleted Visits) go too. */
@@ -50,7 +52,7 @@ export async function forgetCascade(db: TrailmapDb, input: ForgetInput): Promise
     db.expeditions, db.corrections, db.concepts, db.conceptEvidence, db.dismissedConcepts, db.threads, db.threadMatchRuns];
   return db.transaction('rw', tables, async () => {
     const fromForgottenHost = (url: string | undefined) => !!url && (!!input.host && hostMatches(url, input.host) ||
-      !!input.denied && isDefaultDenied(url) && !chatConversationRetained(url, input.chatCapture && { paused: false, skippedHosts: [], chatCapture: input.chatCapture }));
+      !!input.denied && isDefaultDenied(url, { redditThreads: input.redditThreads }) && !chatConversationRetained(url, input.chatCapture && { paused: false, skippedHosts: [], chatCapture: input.chatCapture }));
     let visits = input.host || input.denied
       ? await db.visits.filter(({ url, canonicalUrl, privacyBlocked }) => fromForgottenHost(url) || fromForgottenHost(canonicalUrl) ||
         !!input.denied && !!privacyBlocked).toArray()

@@ -15,6 +15,7 @@ export type RecordingRequest = { type: typeof RECORDING_MESSAGE } & (
   | { action: 'set-expedition-threshold'; threshold: ExpeditionThreshold; minutes: number }
   | { action: 'set-use-my-notes'; enabled: boolean }
   | { action: 'set-chat-capture'; site: ChatSite; enabled: boolean }
+  | { action: 'set-reddit-threads'; enabled: boolean }
 );
 
 export type RecordingStatus = {
@@ -35,6 +36,7 @@ export function isRecordingRequest(value: unknown): value is RecordingRequest {
       validExpeditionMinutes(request.minutes);
     case 'set-use-my-notes': return typeof request.enabled === 'boolean';
     case 'set-chat-capture': return CHAT_SITE_IDS.includes(request.site as ChatSite) && typeof request.enabled === 'boolean';
+    case 'set-reddit-threads': return typeof request.enabled === 'boolean';
     default: return false;
   }
 }
