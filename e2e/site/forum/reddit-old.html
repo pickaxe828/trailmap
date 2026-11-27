@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Why does compaction hurt write throughput? : databases</title>
+  <link rel="canonical" href="https://www.reddit.com/r/databases/comments/abc123/why_does_compaction_hurt_write_throughput/">
+</head>
+<body class="listing-page comments-page">
+  <div class="side">
+    <div class="titlebox"><h1 class="redditname"><a href="/r/databases/">databases</a></h1>
+      <p>Subreddit rules: be kind. Moderator list: mod_ghost, mod_phantom.</p></div>
+  </div>
+  <div class="content" role="main">
+    <div id="siteTable" class="sitetable linklisting">
+      <div class="thing link" id="thing_t3_abc123" data-fullname="t3_abc123" data-author="otter_dev" data-score="212">
+        <div class="entry unvoted">
+          <p class="title"><a class="title may-blank" href="/r/databases/comments/abc123/why_does_compaction_hurt_write_throughput/">Why does compaction hurt write throughput?</a></p>
+          <p class="tagline">submitted 3 hours ago by <a class="author may-blank" href="https://old.reddit.com/user/otter_dev">otter_dev</a></p>
+          <div class="expando"><form class="usertext"><div class="usertext-body may-blank-within md-container"><div class="md">
+            <p>Our LSM tree stalls writes whenever compaction runs.</p>
+            <p>Is leveled or size-tiered compaction the better default for a write-heavy workload?</p>
+          </div></div></form></div>
+        </div>
+      </div>
+    </div>
+    <div class="commentarea">
+      <div id="siteTable_t3_abc123" class="sitetable nestedlisting">
+        <div class="thing comment" id="thing_t1_c1" data-fullname="t1_c1" data-author="compaction_fan">
+          <div class="entry unvoted">
+            <p class="tagline"><a class="author may-blank" href="https://old.reddit.com/user/compaction_fan">compaction_fan</a> <span class="score unvoted" title="87">87 points</span></p>
+            <form class="usertext"><div class="usertext-body may-blank-within md-container"><div class="md">
+              <p>Size-tiered favours writes, leveled favours reads. Thanks to <a href="/u/leveled_lover">u/leveled_lover</a> for the benchmark, and to u/plain_mention too.</p>
+            </div></div></form>
+          </div>
+          <div class="child"><div id="siteTable_t1_c1" class="sitetable listing">
+            <div class="thing comment" id="thing_t1_c2" data-fullname="t1_c2" data-author="write_amp">
+              <div class="entry unvoted">
+                <p class="tagline"><a class="author may-blank" href="https://old.reddit.com/user/write_amp">write_amp</a> <span class="score unvoted" title="31">31 points</span></p>
+                <form class="usertext"><div class="usertext-body may-blank-within md-container"><div class="md">
+                  <p>Leveled compaction rewrites each byte about ten times, which is where the stall comes from.</p>
+                </div></div></form>
+              </div>
+              <div class="child"><div id="siteTable_t1_c2" class="sitetable listing"></div></div>
+            </div>
+          </div></div>
+        </div>
+        <div class="thing comment deleted" id="thing_t1_c3" data-fullname="t1_c3" data-author="[deleted]">
+          <div class="entry unvoted">
+            <p class="tagline"><em>[deleted]</em></p>
+            <form class="usertext"><div class="usertext-body may-blank-within md-container"><div class="md"><p>[deleted]</p></div></div></form>
+          </div>
+          <div class="child"><div id="siteTable_t1_c3" class="sitetable listing"></div></div>
+        </div>
+        <div class="thing comment" id="thing_t1_c4" data-fullname="t1_c4" data-author="bloom_filter">
+          <div class="entry unvoted">
+            <p class="tagline"><a class="author may-blank" href="https://old.reddit.com/user/bloom_filter">bloom_filter</a> <span class="score unvoted" title="12">12 points</span></p>
+            <form class="usertext"><div class="usertext-body may-blank-within md-container"><div class="md">
+              <p>Bloom filters per SSTable keep read amplification down when you pick size-tiered.</p>
+            </div></div></form>
+          </div>
+          <div class="child"><div id="siteTable_t1_c4" class="sitetable listing"></div></div>
+        </div>
+        <div class="thing morechildren" id="thing_t1_more"><span class="morecomments"><a href="#">load more comments (14 replies)</a></span></div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

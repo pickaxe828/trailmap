@@ -90,6 +90,13 @@ Before you finish a ticket run all of: `bun run typecheck && bun run test && bun
 - **Engagement** is active time only (`scorePdfEngagement`): no viewer exposes page progress.
 - Page text joins the usual gates (`maySendToModel`, Sent-to-model log) and the Forget cascade; tests: `recorder-pdf.test.ts`, `input.test.ts`, `handler.test.ts`, `e2e/pdf.e2e.ts`. Fixtures (`e2e/site/pdf/`) are rebuilt with `bun e2e/site/pdf/make-fixtures.ts`. Details: `trailmap-notes/notes-39.md`.
 
+## Forum threads
+
+`packages/extension/src/capture/forum.ts` holds every selector and URL rule for old Reddit, new Reddit (shreddit) and Hacker News items (none verified against the live sites; fixtures in `e2e/site/forum/`). On a thread URL the content script uses `extractForumThread` instead of Readability: the post, then the first `FORUM_MAX_COMMENTS` comments in page order, indented by reply depth. Every user name is dropped (authors, user links inside comments, plain `u/name`); an unknown layout, a stale single-page DOM or an ambiguous page gives no capture. The kind is `contentKind: 'forum'` (from the URL, in `enrichment/input.ts`; handler instructions say comments are opinions, not sources).
+
+- **Reddit stays on the deny-list.** `RecordingSettings.redditThreads` (off unless `true`, Privacy settings, `ForumCaptureSettings.tsx`) lets `isDefaultDenied(url, settings)` skip only the `reddit.com` rule, and only for `/r/<sub>/comments/<id>/…` (not `u_` profile spaces). Feeds, profiles, inbox and settings stay denied. Pass `settings` wherever a Reddit URL's recordability matters; `isDefaultDenied(url)` alone is the fail-closed answer.
+- **Opt-out purges** captured Reddit threads like chat capture does (`forgetCascade({ denied, redditThreads })`); open Reddit tabs are rescreened with `RESCREEN_CHAT_MESSAGE`; a thread loaded before the opt-in is read only after it is loaded again. Hacker News needs no opt-in. Details: `trailmap-notes/notes-40.md`.
+
 ## Extension identity
 
 The manifest `key` pins the extension ID, so it is the same on every machine and every build:

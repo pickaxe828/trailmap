@@ -67,3 +67,17 @@ test('a PDF Page is sent as a pdf document, through the same privacy gate as any
   expect(buildEnrichmentInput({ visit: { ...paper, privacyBlocked: true }, page: text, highlights: [] }, { paused: false, skippedHosts: [] })).toBeUndefined();
   expect(buildEnrichmentInput({ visit: { ...paper, engagement: 'bounced' }, page: text, highlights: [] }, { paused: false, skippedHosts: [] })).toBeUndefined();
 });
+
+test('a forum thread is sent as contentKind forum, through the same privacy gate and only while Reddit is opted in', () => {
+  for (const url of ['https://news.ycombinator.com/item?id=4242001', 'https://www.reddit.com/r/databases/comments/abc123/why/']) {
+    const thread = { ...visit, url, canonicalUrl: url, title: 'LSM trees', parentVisitId: null };
+    const text = { ...newPage(url, 'Why compaction?\n- Size-tiered favours writes.', 'hash'), sourceUrl: url };
+    const settings = { paused: false, skippedHosts: [], redditThreads: true };
+    expect(buildEnrichmentInput({ visit: thread, page: text, highlights: [] }, settings))
+      .toMatchObject({ contentKind: 'forum', text: 'Why compaction?\n- Size-tiered favours writes.' });
+    for (const blocked of [{ ...settings, paused: true }, { ...settings, skippedHosts: [new URL(url).hostname] }, { ...settings, redditThreads: false }]) {
+      if (blocked.redditThreads === false && url.includes('ycombinator')) continue; // HN needs no opt-in
+      expect(buildEnrichmentInput({ visit: thread, page: text, highlights: [] }, blocked)).toBeUndefined();
+    }
+  }
+});

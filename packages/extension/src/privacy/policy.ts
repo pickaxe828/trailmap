@@ -1,5 +1,6 @@
 import type { Page, Visit } from '@trailmap/shared';
 import { chatConversationSite, chatSiteOf, type ChatCaptureSettings, type ChatSite } from '../capture/chat-sites';
+import { redditThreadUrl } from '../capture/forum';
 import { googleSearchSurface } from '../capture/search';
 import { DENIED_HOSTS, DENIED_PATH_SEGMENTS, DENIED_SERVICE_LABELS, LOCAL_SUFFIXES } from './default-deny-list';
 
@@ -12,6 +13,8 @@ export type RecordingSettings = {
   useMyNotes?: boolean;
   /** "Capture conversations from Gemini / ChatGPT / Claude". Off unless a site is explicitly true. */
   chatCapture?: ChatCaptureSettings;
+  /** "Capture Reddit thread pages". Off unless true. Feeds, profiles, the inbox and settings stay denied either way. */
+  redditThreads?: boolean;
 };
 export const usesMyNotes = ({ useMyNotes }: Pick<RecordingSettings, 'useMyNotes'>) => useMyNotes !== false;
 export type RecordingState = 'recording' | 'paused' | 'skipped';
@@ -43,11 +46,16 @@ function isPrivateHost(host: string): boolean {
   return !host.includes('.') || LOCAL_SUFFIXES.some((suffix) => matchesHost(host, suffix));
 }
 
-export function isDefaultDenied(url: string | undefined): boolean {
+/**
+ * The default deny-list. With `redditThreads` (the user's opt-in), a Reddit thread page `/r/<sub>/comments/<id>/…` is the one
+ * address on reddit.com that is not denied; everything else there, and every other rule, still applies.
+ */
+export function isDefaultDenied(url: string | undefined, { redditThreads }: Pick<RecordingSettings, 'redditThreads'> = {}): boolean {
   const parsed = webUrl(url);
   const host = siteKey(url);
   if (!parsed || !host || parsed.username || parsed.password || isPrivateHost(host)) return true;
-  if (DENIED_HOSTS.some((rule) => matchesHost(host, rule)) ||
+  const optedInThread = redditThreads === true && redditThreadUrl(url);
+  if (DENIED_HOSTS.some((rule) => matchesHost(host, rule) && !(optedInThread && rule === 'reddit.com')) ||
     DENIED_SERVICE_LABELS.includes(host.split('.')[0] ?? '')) return true;
 
   // Match whole path segments, including common extensions and matrix parameters.
@@ -81,7 +89,7 @@ export function recordingState(url: string | undefined, settings: RecordingSetti
   // The synthetic key of a captured conversation is the only chat URL that can be recordable.
   if (chatConversationSite(url)) return chatConversationRetained(url, settings) ? 'recording' : 'skipped';
   const host = siteKey(url);
-  return !host || isDefaultDenied(url) || settings.skippedHosts.some((rule) => matchesHost(host, rule))
+  return !host || isDefaultDenied(url, settings) || settings.skippedHosts.some((rule) => matchesHost(host, rule))
     ? 'skipped'
     : 'recording';
 }

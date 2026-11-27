@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Why does compaction hurt write throughput? : r/databases</title>
+  <link rel="canonical" href="https://www.reddit.com/r/databases/comments/abc123/why_does_compaction_hurt_write_throughput/">
+</head>
+<body>
+  <shreddit-app>
+    <left-nav-sidebar><a href="/r/popular/">Popular</a> <a href="/user/some_account/">some_account</a> Recent: r/golang r/rust</left-nav-sidebar>
+    <main>
+      <shreddit-post id="t3_abc123" post-id="t3_abc123" post-title="Why does compaction hurt write throughput?" author="otter_dev" score="212" permalink="/r/databases/comments/abc123/why_does_compaction_hurt_write_throughput/">
+        <h1 slot="title" id="post-title-t3_abc123">Why does compaction hurt write throughput?</h1>
+        <a slot="credit-bar" href="/user/otter_dev/">otter_dev</a>
+        <div slot="text-body"><div class="md">
+          <p>Our LSM tree stalls writes whenever compaction runs.</p>
+          <p>Is leveled or size-tiered compaction the better default for a write-heavy workload?</p>
+        </div></div>
+      </shreddit-post>
+      <shreddit-comment-tree>
+        <shreddit-comment thingid="t1_c1" depth="0" author="compaction_fan" score="87" permalink="/r/databases/comments/abc123/x/c1/">
+          <a slot="commentMeta" href="/user/compaction_fan/">compaction_fan</a>
+          <div slot="comment"><p>Size-tiered favours writes, leveled favours reads. Thanks to <a href="/user/leveled_lover/">u/leveled_lover</a> for the benchmark, and to u/plain_mention too.</p></div>
+          <shreddit-comment slot="children" thingid="t1_c2" depth="1" author="write_amp" score="31">
+            <a slot="commentMeta" href="/user/write_amp/">write_amp</a>
+            <div slot="comment"><p>Leveled compaction rewrites each byte about ten times, which is where the stall comes from.</p></div>
+          </shreddit-comment>
+        </shreddit-comment>
+        <shreddit-comment thingid="t1_c3" depth="0" author="[deleted]" score="1">
+          <div slot="comment"><p>[removed]</p></div>
+        </shreddit-comment>
+        <shreddit-comment thingid="t1_c4" depth="0" author="bloom_filter" score="12">
+          <a slot="commentMeta" href="/user/bloom_filter/">bloom_filter</a>
+          <div slot="comment"><p>Bloom filters per SSTable keep read amplification down when you pick size-tiered.</p></div>
+        </shreddit-comment>
+        <faceplate-partial loading="lazy" src="/svc/shreddit/more-comments/abc123">View more comments</faceplate-partial>
+      </shreddit-comment-tree>
+    </main>
+  </shreddit-app>
+</body>
+</html>
