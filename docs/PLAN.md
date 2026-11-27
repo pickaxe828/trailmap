@@ -242,6 +242,12 @@ An expedition is one sitting. When you come back to a topic days later, that sit
 
 **Export:** continuous sync to an **Obsidian vault**. The companion (§6.1) writes the files, and only inside the folder you choose. Each expedition and each concept gets its own note, with `[[wikilinks]]` and frontmatter. Obsidian's graph view then becomes a second view for free. Markdown zip and JSON dump exports are also available.
 
+### App shell
+
+Journal, Trail, Atlas, expedition, thread, Settings and onboarding share one `TrailmapShell`. Its top bar stays visible while the page scrolls: Trailmap returns to the Journal, Journal · Trail · Atlas marks the active section (including Journal for expedition and thread), Search opens and focuses Journal search (`/` or `⌘K`), and the gear opens Settings. The model-health attention banner appears once, below the bar.
+
+Every full-tab page uses the same base background and raised card surface. The page header pairs a title and one-line description with an actions slot; expedition and thread add a “Journal / title” breadcrumb. Reading and settings views have a constrained width, while Trail and Atlas use the full width for their maps. The compact side panel keeps its own content layout, with the same background and a Trailmap header with icon links to Journal, Trail, Atlas and Settings.
+
 ## 6. Tech stack
 
 | Concern | Choice | Why |

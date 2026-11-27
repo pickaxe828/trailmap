@@ -1,5 +1,4 @@
 import { Heading } from '@astryxdesign/core/Heading';
-import { Layout, LayoutContent, LayoutHeader } from '@astryxdesign/core/Layout';
 import { Tab, TabList } from '@astryxdesign/core/TabList';
 import { Text } from '@astryxdesign/core/Text';
 import { VStack } from '@astryxdesign/core/VStack';
@@ -13,6 +12,7 @@ import { PrivacySettings } from '../../privacy/PrivacySettings';
 import type { TrailmapDb } from '../../db/db';
 import { useJournalData } from '../../journal/data';
 import { HistoryImportSettings } from '../../ui/HistoryImportSettings';
+import { TrailmapShell } from '../../ui/TrailmapShell';
 import { ExportSettings } from '../../vault/ExportSettings';
 import { VaultSettings } from '../../vault/VaultSettings';
 import { ModelJobs } from './ModelJobs';
@@ -105,28 +105,17 @@ export function App() {
   } satisfies Record<Section, ReactNode>;
 
   return (
-    <Layout contentWidth="44rem"
-      header={(
-        <LayoutHeader hasDivider padding={4}>
-          <VStack gap={2}>
-            <Heading level={1}>Settings</Heading>
-            <Text as="p" type="supporting">Manage what Trailmap records and how it writes, syncs, and exports your notes.</Text>
-            <TabList role="tablist" aria-label="Settings sections" size="sm" hasDivider value={section} onChange={selectSection}>
-              {sections.map(([id, label]) => <Tab key={id} value={id} label={label} panelId={`panel-${id}`} />)}
-            </TabList>
-          </VStack>
-        </LayoutHeader>
-      )}
-      content={(
-        <LayoutContent padding={4} role="main">
-          {sections.map(([id, label]) => (
-            <VStack as="section" key={id} id={`panel-${id}`} role="tabpanel" aria-label={label}
-              tabIndex={id === section ? 0 : undefined} className={id === section ? undefined : 'hidden'}>
-              {id === section && panels[id]}
-            </VStack>
-          ))}
-        </LayoutContent>
-      )}
-    />
+    <TrailmapShell title="Settings" section="settings"
+      description="Manage recording, AI notes, sync, and exports.">
+      <TabList role="tablist" aria-label="Settings sections" size="sm" hasDivider value={section} onChange={selectSection}>
+        {sections.map(([id, label]) => <Tab key={id} value={id} label={label} panelId={`panel-${id}`} />)}
+      </TabList>
+      {sections.map(([id, label]) => (
+        <VStack as="section" key={id} id={`panel-${id}`} role="tabpanel" aria-label={label}
+          tabIndex={id === section ? 0 : undefined} className={id === section ? undefined : 'hidden'}>
+          {id === section && panels[id]}
+        </VStack>
+      ))}
+    </TrailmapShell>
   );
 }

@@ -126,7 +126,7 @@ export function TrailGraphView({ graph, review }: { graph: TrailGraph; review?: 
   return (
     <ReactFlow
       nodes={nodes} edges={edges} nodeTypes={nodeTypes}
-      className="bg-body [--xy-edge-stroke:var(--color-icon-secondary)]"
+      className="[--xy-edge-stroke:var(--color-icon-secondary)]"
       defaultMarkerColor="var(--color-icon-secondary)"
       fitView fitViewOptions={fitOptions} minZoom={0.01} maxZoom={2}
       nodesDraggable={false} nodesConnectable={false} nodesFocusable={false}

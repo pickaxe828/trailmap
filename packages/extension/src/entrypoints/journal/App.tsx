@@ -4,18 +4,17 @@ import { DropdownMenu } from '@astryxdesign/core/DropdownMenu';
 import { Grid } from '@astryxdesign/core/Grid';
 import { Heading } from '@astryxdesign/core/Heading';
 import { HStack } from '@astryxdesign/core/HStack';
-import { Layout, LayoutContent, LayoutHeader } from '@astryxdesign/core/Layout';
 import { Text } from '@astryxdesign/core/Text';
 import { Toolbar } from '@astryxdesign/core/Toolbar';
 import { VStack } from '@astryxdesign/core/VStack';
 import { useMediaQuery } from '@astryxdesign/core/hooks';
 import type { Expedition } from '@trailmap/shared';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useJournalData } from '../../journal/data';
 import { planOrganisation, type OrganisationPlan } from '../../journal/organise';
 import { useJournalCorrection } from '../../journal/useJournalCorrection';
-import { ModelJobAttention } from '../../ui/ModelJobAttention';
 import { readJournalResearch } from '../../threads/read';
+import { TrailmapShell } from '../../ui/TrailmapShell';
 import { ExpeditionCard } from './ExpeditionCard';
 import { JournalSearch } from './JournalSearch';
 import { OrganiseCard, type DropChoice } from './OrganiseCard';
@@ -35,6 +34,8 @@ export function App() {
   const [selecting, setSelecting] = useState(false);
   const [selection, setSelection] = useState<string[]>([]);
   const selectButton = useRef<HTMLButtonElement>(null);
+  const searchRegion = useRef<HTMLElement>(null);
+  const focusSearch = useCallback(() => searchRegion.current?.querySelector('input')?.focus(), []);
   const standalone = [...items.flatMap((item) => item.kind === 'expedition' ? [item.expedition] : []), ...other];
   const threadCards = items.filter((item) => item.kind === 'thread');
   const selectedThreads = threadCards.filter(({ thread }) => selection.includes(thread.id));
@@ -95,64 +96,50 @@ export function App() {
   }
 
   return (
-    <Layout contentWidth="72rem"
-      header={(
-        <LayoutHeader hasDivider padding={6}>
-          <VStack gap={1}>
-            <Heading level={1}>Journal</Heading>
-            <Text type="supporting">Revisit the questions, trails, and notes from your browsing.</Text>
-          </VStack>
-        </LayoutHeader>
-      )}
-      content={(
-        <LayoutContent padding={6} role="main">
-          <VStack gap={6}>
-            <ModelJobAttention />
-            <JournalSearch>
-              {!result && <Text>Loading your Journal…</Text>}
-              {result?.error && <Text role="alert">Could not load the Journal. Try reloading the page.</Text>}
-              {result?.data && !items.length && !other.length && <Text>Your expeditions will appear here as you browse.</Text>}
-              {(items.length > 0 || other.length > 0) && (
-                <VStack as="section" gap={4} aria-labelledby="expeditions-heading">
-                  <HStack justify="between" align="center" gap={2} wrap="wrap">
-                    <Heading level={2} id="expeditions-heading">Expeditions</Heading>
-                    <Button ref={selectButton} label={selecting ? 'Cancel selection' : 'Select'} size="sm" aria-pressed={selecting}
-                      onClick={() => selecting ? cancel() : setSelecting(true)} isDisabled={busy} />
+    <TrailmapShell title="Journal" section="journal" focusJournalSearch={focusSearch}
+      description="Revisit the questions, trails, and notes from your browsing.">
+      <JournalSearch regionRef={searchRegion}>
+        {!result && <Text>Loading your Journal…</Text>}
+        {result?.error && <Text role="alert">Could not load the Journal. Try reloading the page.</Text>}
+        {result?.data && !items.length && !other.length && <Text>Your expeditions will appear here as you browse.</Text>}
+        {(items.length > 0 || other.length > 0) && (
+          <VStack as="section" gap={4} aria-labelledby="expeditions-heading">
+            <HStack justify="between" align="center" gap={2} wrap="wrap">
+              <Heading level={2} id="expeditions-heading">Expeditions</Heading>
+              <Button ref={selectButton} label={selecting ? 'Cancel selection' : 'Select'} size="sm" aria-pressed={selecting}
+                onClick={() => selecting ? cancel() : setSelecting(true)} isDisabled={busy} />
+            </HStack>
+            {feedback}
+            {count > 0 && (
+              <VStack as="section" aria-label="Expedition selection" gap={2}>
+                <Text role="status" type="label">{count} selected</Text>
+                <Toolbar label="Organise selected cards" size="sm" startContent={
+                  <HStack gap={1} wrap="wrap">
+                    {button('Start thread', planOrganisation(selected, { action: 'start' }))}
+                    <DropdownMenu button={{ label: 'Add to thread…', variant: 'secondary', isDisabled: busy || !addChoices.length }} items={addChoices} />
+                    {button('Merge into one expedition', planOrganisation(selected, { action: 'merge' }))}
+                    {button('Mark as learning', planOrganisation(selected, { action: 'classify', kind: 'learning' }))}
+                    {button('Mark as not learning', planOrganisation(selected, { action: 'classify', kind: 'errand' }))}
+                    <Button label="Cancel" variant="secondary" isDisabled={busy} onClick={cancel} />
                   </HStack>
-                  {feedback}
-                  {count > 0 && (
-                    <VStack as="section" aria-label="Expedition selection" gap={2}>
-                      <Text role="status" type="label">{count} selected</Text>
-                      <Toolbar label="Organise selected cards" size="sm" startContent={
-                        <HStack gap={1} wrap="wrap">
-                          {button('Start thread', planOrganisation(selected, { action: 'start' }))}
-                          <DropdownMenu button={{ label: 'Add to thread…', variant: 'secondary', isDisabled: busy || !addChoices.length }} items={addChoices} />
-                          {button('Merge into one expedition', planOrganisation(selected, { action: 'merge' }))}
-                          {button('Mark as learning', planOrganisation(selected, { action: 'classify', kind: 'learning' }))}
-                          {button('Mark as not learning', planOrganisation(selected, { action: 'classify', kind: 'errand' }))}
-                          <Button label="Cancel" variant="secondary" isDisabled={busy} onClick={cancel} />
-                        </HStack>
-                      } />
-                    </VStack>
-                  )}
-                  <Cards>{items.map((item) => item.kind === 'expedition' ? expeditionCard(item.expedition, item.suggestion) : (
-                    <OrganiseCard key={item.thread.id} id={item.thread.id} title={item.thread.title} {...cardInteraction}
-                      checked={selection.includes(item.thread.id)} canDrag={false}
-                      dropChoices={(source) => dropChoices(source, item.members, item.thread.id)}>
-                      <ThreadCard thread={item.thread} count={item.members.length} />
-                    </OrganiseCard>
-                  ))}</Cards>
-                  {other.length > 0 && (
-                    <Collapsible defaultIsOpen={false} trigger={<Heading level={2}>Other browsing ({other.length})</Heading>}>
-                      <Cards>{other.map((expedition) => expeditionCard(expedition))}</Cards>
-                    </Collapsible>
-                  )}
-                </VStack>
-              )}
-            </JournalSearch>
+                } />
+              </VStack>
+            )}
+            <Cards>{items.map((item) => item.kind === 'expedition' ? expeditionCard(item.expedition, item.suggestion) : (
+              <OrganiseCard key={item.thread.id} id={item.thread.id} title={item.thread.title} {...cardInteraction}
+                checked={selection.includes(item.thread.id)} canDrag={false}
+                dropChoices={(source) => dropChoices(source, item.members, item.thread.id)}>
+                <ThreadCard thread={item.thread} count={item.members.length} />
+              </OrganiseCard>
+            ))}</Cards>
+            {other.length > 0 && (
+              <Collapsible defaultIsOpen={false} trigger={<Heading level={2}>Other browsing ({other.length})</Heading>}>
+                <Cards>{other.map((expedition) => expeditionCard(expedition))}</Cards>
+              </Collapsible>
+            )}
           </VStack>
-        </LayoutContent>
-      )}
-    />
+        )}
+      </JournalSearch>
+    </TrailmapShell>
   );
 }

@@ -17,13 +17,14 @@ import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import type { ConceptEvidence } from '../packages/extension/src/concepts/evidence';
 import type { SentToModel } from '../packages/extension/src/db/db';
-import type { Job } from '../packages/extension/src/jobs/types';
+import type { Job, ModelHealth } from '../packages/extension/src/jobs/types';
 import type { Concept, Edge, Expedition, Highlight, Note, Page as CapturedPage, Query, Thread, Visit } from '../packages/shared/src/domain';
 import { COMPANION_BIN, EXTENSION_DIR, FIXTURE_PORT } from './constants';
 
 type CaptureTables = {
   visits: Visit; pages: CapturedPage; queries: Query; highlights: Highlight; expeditions: Expedition; notes: Note;
   concepts: Concept; edges: Edge; threads: Thread; conceptEvidence: ConceptEvidence; sentToModel: SentToModel; jobs: Job;
+  modelHealth: ModelHealth;
   corrections: { id: string; at: number; kind: string; targetIds: string[]; before: unknown; after: unknown };
 };
 
