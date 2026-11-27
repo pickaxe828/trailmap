@@ -8,7 +8,9 @@ import { Text } from '@astryxdesign/core/Text';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import { VStack } from '@astryxdesign/core/VStack';
 import { useEffect, useState, type SubmitEvent } from 'react';
+import { ChatCaptureSettings } from './ChatCaptureSettings';
 import { HiddenConcepts } from './HiddenConcepts';
+import type { ChatCaptureSettings as ChatCapture } from '../capture/chat-sites';
 import { usesMyNotes } from './policy';
 import { MAX_EXPEDITION_MINUTES, MIN_EXPEDITION_MINUTES } from '../segmentation/config';
 import { DENIED_HOSTS } from './default-deny-list';
@@ -23,6 +25,7 @@ export function PrivacySettings() {
   const [thresholdError, setThresholdError] = useState(false);
   const [useMyNotes, setUseMyNotes] = useState<boolean>();
   const [notesError, setNotesError] = useState(false);
+  const [chatCapture, setChatCapture] = useState<ChatCapture>();
   const [readFailed, setReadFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
@@ -37,6 +40,7 @@ export function PrivacySettings() {
           setHosts(settings.skippedHosts);
           setThresholds(expeditionCloseSettings(settings));
           setUseMyNotes(usesMyNotes(settings));
+          setChatCapture(settings.chatCapture ?? {});
           setReadFailed(false);
         },
         () => { if (revision === current) setReadFailed(true); },
@@ -117,6 +121,7 @@ export function PrivacySettings() {
           changeAction={saveUseMyNotes} />
         {notesError && <Text role="alert">Could not save the My notes setting.</Text>}
       </VStack>
+      <ChatCaptureSettings value={chatCapture} />
       <Collapsible trigger="Default skip list" defaultIsOpen={false}>
         <VStack gap={2} paddingBlockEnd={2}>
           <Text as="p">Trailmap skips password pages, private networks and local sites, checkout and payment pages, and common mail, calendar, chat and banking subdomains.</Text>

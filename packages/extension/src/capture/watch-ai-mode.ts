@@ -1,19 +1,26 @@
-import {
-  aiComposer, aiFormComposer, aiReplyBoundaries, aiSendComposer, findAiModeAnswer,
-  AI_QUESTION_LIMIT, AI_RESULT_TIMEOUT_MS,
-} from './google-ai-mode';
+import type { AiSurface } from './ai-surface';
+import { AI_QUESTION_LIMIT, AI_RESULT_TIMEOUT_MS } from './google-ai-mode';
 import type { AiCapture, PageContentReply } from './page-messages';
-import { googleSearchSurface } from './search';
 
-/** Only a trusted edit followed by a submit in the actual Mode composer starts capture. */
-export function watchAiMode(document: Document, isPublic: () => boolean, send: (message: AiCapture) => Promise<PageContentReply | undefined>) {
-  const drafts = new WeakMap<HTMLTextAreaElement, string>();
+type WatchOptions = {
+  /** Only real user input counts. Tests substitute their own. */
+  trusted?: (event: Event) => boolean;
+};
+
+/**
+ * Only a trusted edit followed by a submit in the surface's own composer starts capture, and only while
+ * the document is admitted (`isPublic`). Until then the composer is never read, so nothing typed before a
+ * site is opted in or screened can ever be captured, not even in memory.
+ */
+export function watchAiConversation(document: Document, surface: AiSurface, isPublic: () => boolean,
+  send: (message: AiCapture) => Promise<PageContentReply | undefined>, { trusted = (event) => event.isTrusted }: WatchOptions = {}) {
+  const drafts = new WeakMap<HTMLElement, string>();
   const claimed = new WeakSet<Element>();
   const pending = new Map<string, { question: string; previous: Set<Element>; deadline: number }>();
   let scanTimer: ReturnType<typeof setTimeout> | undefined;
   let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
   let watching = false;
-  const inMode = () => googleSearchSurface(document.URL) === 'ai-mode';
+  const active = () => surface.active(document);
   const observer = new MutationObserver(scheduleScan);
 
   function stopWatching() {
@@ -31,7 +38,7 @@ export function watchAiMode(document: Document, isPublic: () => boolean, send: (
   function scan() {
     scanTimer = undefined;
     clearTimeout(deadlineTimer);
-    if (!inMode() || !isPublic()) {
+    if (!active() || !isPublic()) {
       pending.clear();
       stopWatching();
       return;
@@ -39,7 +46,7 @@ export function watchAiMode(document: Document, isPublic: () => boolean, send: (
     const now = Date.now();
     let deadline = Infinity;
     for (const [turnId, turn] of pending) {
-      const found = findAiModeAnswer(document, turn.question, turn.previous);
+      const found = surface.find(document, turn.question, turn.previous);
       const reply = found && !claimed.has(found.boundary) ? found : undefined;
       if (!reply) {
         if (now < turn.deadline) {
@@ -60,40 +67,41 @@ export function watchAiMode(document: Document, isPublic: () => boolean, send: (
     pending.set(id, { question, previous, deadline: Date.now() + AI_RESULT_TIMEOUT_MS });
     if (!watching) {
       observer.observe(document, { subtree: true, childList: true, characterData: true, attributes: true,
-        attributeFilter: ['data-complete', 'aria-busy', 'href', 'hidden', 'aria-hidden'] });
+        attributeFilter: ['data-complete', 'data-is-streaming', 'aria-busy', 'href', 'hidden', 'aria-hidden', 'disabled'] });
       watching = true;
     }
     scheduleScan();
   }
 
   function edited(event: Event) {
-    if (!event.isTrusted || !inMode() || !isPublic()) return;
-    const field = aiComposer(event.target);
-    if (field) drafts.set(field, field.value);
+    if (!trusted(event) || !active() || !isPublic()) return;
+    const field = surface.composer(event.target);
+    if (field) drafts.set(field, surface.read(field));
   }
 
-  function submitted(field: HTMLTextAreaElement | undefined) {
-    if (!field || !inMode() || !isPublic()) return;
-    const question = field.value.trim();
-    if (!question || drafts.get(field) !== field.value) return;
+  function submitted(field: HTMLElement | undefined) {
+    if (!field || !active() || !isPublic()) return;
+    const text = surface.read(field);
+    const question = text.trim();
+    if (!question || drafts.get(field) !== text) return;
     drafts.delete(field); // Enter, click and submit can all fire for one turn.
     const turnId = crypto.randomUUID();
-    const previous = aiReplyBoundaries(document);
+    const previous = surface.boundaries(document);
     const typed = question.slice(0, AI_QUESTION_LIMIT);
     void send({ kind: 'ai-submit', turnId, question: typed }).then((reply) => {
-      if (reply && inMode()) track(turnId, typed, previous);
+      if (reply && active()) track(turnId, typed, previous);
     });
   }
 
   function keyed(event: KeyboardEvent) {
-    if (event.isTrusted && !event.isComposing && !event.repeat && !event.shiftKey && !event.altKey &&
-        !event.metaKey && !event.ctrlKey && event.key === 'Enter') submitted(aiComposer(event.target));
+    if (trusted(event) && !event.isComposing && !event.repeat && !event.shiftKey && !event.altKey &&
+        !event.metaKey && !event.ctrlKey && event.key === 'Enter' && !surface.busy?.(document)) submitted(surface.composer(event.target));
   }
   function clicked(event: MouseEvent) {
-    if (event.isTrusted && inMode()) submitted(aiSendComposer(document, event.target));
+    if (trusted(event) && active()) submitted(surface.sendComposer(document, event.target));
   }
   function formSubmitted(event: SubmitEvent) {
-    if (event.isTrusted && inMode()) submitted(aiFormComposer(event.target));
+    if (trusted(event) && active()) submitted(surface.formComposer(event.target));
   }
   document.addEventListener('input', edited, true);
   document.addEventListener('keydown', keyed, true);

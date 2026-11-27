@@ -3,6 +3,7 @@ import { Tab, TabList } from '@astryxdesign/core/TabList';
 import { Text } from '@astryxdesign/core/Text';
 import { VStack } from '@astryxdesign/core/VStack';
 import { useEffect, useState, type ReactNode } from 'react';
+import { CHAT_SITE_IDS, CHAT_SITES, chatConversationSite, type ChatSite } from '../../capture/chat-sites';
 import { CompanionSetup } from '../../companion/CompanionSetup';
 import { useCompanionStatus } from '../../companion/useCompanionStatus';
 import { ProviderSettings } from '../../llm/ProviderSettings';
@@ -31,10 +32,14 @@ function sectionFromUrl(): Section {
   return sections.find(([id]) => `#${id}` === location.hash)?.[0] ?? 'privacy';
 }
 
+/** Saved questions whose reply could not be read, split by where they were asked. */
 async function readExtractionFailures(db: TrailmapDb) {
-  let count = 0;
-  await db.pages.each((page) => { count += page.aiTurns?.filter(({ extractionFailed }) => extractionFailed).length ?? 0; });
-  return count;
+  const counts = { aiMode: 0, ...Object.fromEntries(CHAT_SITE_IDS.map((site) => [site, 0])) } as Record<'aiMode' | ChatSite, number>;
+  await db.pages.each((page) => {
+    const failed = page.aiTurns?.filter(({ extractionFailed }) => extractionFailed).length ?? 0;
+    counts[chatConversationSite(page.canonicalUrl) ?? 'aiMode'] += failed;
+  });
+  return counts;
 }
 
 function LocalEmbeddingsNotice() {
@@ -65,8 +70,11 @@ function CaptureDiagnostics() {
   return (
     <VStack as="section" id="diagnostics" gap={2}>
       <Heading level={2}>Diagnostics</Heading>
-      <Text as="p">AI Mode reply extraction failures: {failures?.data ?? (failures?.error ? 'Unavailable' : 'Loading…')}</Text>
-      <Text as="p" type="supporting">Counts saved AI Mode questions whose replies could not be captured.</Text>
+      <Text as="p">AI Mode reply extraction failures: {failures?.data?.aiMode ?? (failures?.error ? 'Unavailable' : 'Loading…')}</Text>
+      {CHAT_SITE_IDS.map((site) => (
+        <Text as="p" key={site}>{CHAT_SITES[site].label} reply extraction failures: {failures?.data?.[site] ?? (failures?.error ? 'Unavailable' : 'Loading…')}</Text>
+      ))}
+      <Text as="p" type="supporting">Counts saved questions whose replies could not be captured, by where they were asked.</Text>
       {isFirefox && <LocalEmbeddingsNotice />}
       <ModelJobs />
       <ThreadMatching />

@@ -1,7 +1,10 @@
 import { extractPageText, hasPasswordField, hashText, screenableRoots } from '../capture/extract';
-import { PAGE_CONTENT_MESSAGE, type PageContent, type PageContentMessage, type PageContentReply } from '../capture/page-messages';
+import { chatSurfaceFor } from '../capture/chat-extract';
+import { chatSiteOf, sameChatConversation } from '../capture/chat-sites';
+import { googleAiModeSurface } from '../capture/google-ai-mode';
+import { PAGE_CONTENT_MESSAGE, RESCREEN_CHAT_MESSAGE, type PageContent, type PageContentMessage, type PageContentReply } from '../capture/page-messages';
 import { googleSearchSurface } from '../capture/search';
-import { watchAiMode } from '../capture/watch-ai-mode';
+import { watchAiConversation } from '../capture/watch-ai-mode';
 import { captureFavicon, isFirefox, openOrClosedShadowRoot } from '../platform/browser';
 
 const EXTRACTION_DELAY_MS = 2_000;
@@ -18,6 +21,9 @@ function send(content: PageContent): Promise<PageContentReply | undefined> {
   const message: PageContentMessage = { type: PAGE_CONTENT_MESSAGE, pageUrl: location.href, ...content };
   return chrome.runtime.sendMessage(message).catch(() => undefined);
 }
+
+/** Google results and chat assistants are metadata-only: only an opted-in typed turn is ever read from them. */
+const metadataOnly = () => !!googleSearchSurface(location.href) || !!chatSiteOf(location.href);
 
 function selectedText(): string {
   const focused = document.activeElement;
@@ -98,7 +104,7 @@ export default defineContentScript({
       if (generation === started && !passwordDetected) {
         admitted = !!reply;
         if (reply?.aiPending?.length) aiMode.resume(reply.aiPending);
-        if (isFirefox && reply?.visitId && !googleSearchSurface(location.href) && isPublic()) {
+        if (isFirefox && reply?.visitId && !metadataOnly() && isPublic()) {
           favicon ??= captureFavicon(new URL(location.href));
           void favicon.then((icon) => {
             if (icon && generation === started && isPublic()) {
@@ -118,13 +124,15 @@ export default defineContentScript({
       return admitted && !passwordDetected;
     };
 
-    const aiMode = watchAiMode(document, isPublic, send);
+    // The chat sites' composers are not read at all until the background admits the document, which it does
+    // only for a site the user has opted in. The background tells us when that changes (below).
+    const aiMode = watchAiConversation(document, chatSurfaceFor(location.href)?.surface ?? googleAiModeSurface, isPublic, send);
     ctx.onInvalidated(() => aiMode.dispose());
 
     const capture = async (started: number) => {
       if (!document.body) return;
       if (!admitted) await screen(started);
-      if (generation !== started || !isPublic() || googleSearchSurface(location.href)) return;
+      if (generation !== started || !isPublic() || metadataOnly()) return;
       const sourceHash = hashText(document.documentElement.outerHTML);
       const reply = await send({ kind: 'probe', sourceHash, canonicalLink: canonicalLink() });
       if (!reply?.extract || generation !== started || !isPublic()) return;
@@ -193,7 +201,7 @@ export default defineContentScript({
     ctx.addEventListener(document, 'selectionchange', () => {
       clearTimeout(selectionTimer);
       selectionTimer = ctx.setTimeout(() => {
-        if (googleSearchSurface(location.href) || !isPublic()) return;
+        if (metadataOnly() || !isPublic()) return;
         const text = selectedText();
         if (text && text !== lastSelection) {
           void send(isHighlight(text)
@@ -204,7 +212,7 @@ export default defineContentScript({
       }, SELECTION_DELAY_MS);
     }, { capture: true });
     ctx.addEventListener(window, 'copy', (event) => {
-      if (!event.isTrusted || googleSearchSurface(location.href) || !isPublic()) return;
+      if (!event.isTrusted || metadataOnly() || !isPublic()) return;
       const text = event.clipboardData?.getData('text/plain').trim() || selectedText();
       if (text) void send({ kind: 'highlight', source: 'copy', text, canonicalLink: canonicalLink() });
     });
@@ -212,11 +220,24 @@ export default defineContentScript({
     window.navigation?.addEventListener('currententrychange', () => {
       const currentUrl = location.href.split('#', 1)[0]!;
       if (currentUrl === url) return;
-      const sameMode = googleSearchSurface(url) === 'ai-mode' && googleSearchSurface(currentUrl) === 'ai-mode';
+      const sameMode = (googleSearchSurface(url) === 'ai-mode' && googleSearchSurface(currentUrl) === 'ai-mode') ||
+        sameChatConversation(url, currentUrl);
       url = currentUrl;
       if (sameMode) return;
       aiMode.clear();
       schedule();
     });
+
+    if (chatSiteOf(location.href)) {
+      const rescreen = (message: unknown, sender: chrome.runtime.MessageSender) => {
+        if (sender.id !== chrome.runtime.id || (message as { type?: unknown } | null)?.type !== RESCREEN_CHAT_MESSAGE) return;
+        // Settings changed: stop reading the composer at once, then ask the background whether to admit this document.
+        admitted = false;
+        aiMode.clear();
+        schedule();
+      };
+      chrome.runtime.onMessage.addListener(rescreen);
+      ctx.onInvalidated(() => chrome.runtime.onMessage.removeListener(rescreen));
+    }
   },
 });

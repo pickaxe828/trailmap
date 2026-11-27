@@ -39,8 +39,8 @@ function start() {
   const db = openTrailmapDb();
   void recoverModelAttempts(db).catch(() => {});
   let unseenNotes = 0;
-  const privacy = createRecordingPrivacy(() => unseenNotes, (host) => forgetCascade(db, {
-    kind: 'forget-site', host, denied: host === undefined, targetIds: host ? [`site:${host}`] : [],
+  const privacy = createRecordingPrivacy(() => unseenNotes, (host, settings) => forgetCascade(db, {
+    kind: 'forget-site', host, denied: host === undefined, chatCapture: settings?.chatCapture, targetIds: host ? [`site:${host}`] : [],
     now: Date.now, newId: () => crypto.randomUUID(), quiet: true,
   }));
   const recorder = new VisitRecorder({
@@ -49,6 +49,7 @@ function start() {
     store: new ChromeSessionStateStore(),
     now: Date.now,
     shouldRecord: privacy.shouldRecord,
+    shouldCaptureChat: privacy.shouldCaptureChat,
     policyReady: privacy.ready,
     screenDocuments: true,
     onPasswordStatusChanged: privacy.onPasswordStatusChanged,

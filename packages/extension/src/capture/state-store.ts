@@ -1,3 +1,4 @@
+import type { ChatSite } from './chat-sites';
 import type { IdleState } from './events';
 import { WINDOW_ID_NONE } from './events';
 
@@ -19,6 +20,9 @@ export type RecorderState = {
     parentVisitId: string | null;
     screened: boolean;
     carryReply?: true;
+    /** An opted-in chat site (no query URL or chat id is kept). `fresh`: still on its new-chat page. */
+    chat?: ChatSite;
+    fresh?: true;
   }>;
   /** Browser-session tab ids only; never store a password page's URL. */
   passwordTabs?: number[];

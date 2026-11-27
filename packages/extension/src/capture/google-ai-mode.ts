@@ -1,3 +1,4 @@
+import type { AiSurface } from './ai-surface';
 import { canonicalizeUrl } from './canonical';
 import { googleSearchSurface } from './search';
 
@@ -51,7 +52,7 @@ export function aiReplyBoundaries(document: Document): Set<Element> {
 
 export type AiAnswer = { answer: string; citations: string[] };
 
-function citationUrl(value: string, base: string): string | undefined {
+export function citationUrl(value: string, base: string): string | undefined {
   let url = URL.parse(value, base);
   if (url?.origin === URL.parse(base)?.origin && url?.pathname === '/url') {
     url = URL.parse(url.searchParams.get('url') ?? url.searchParams.get('q') ?? '');
@@ -98,3 +99,14 @@ export function findAiModeAnswer(document: Document, question: string | undefine
   const answer = (copy.textContent ?? '').split('\n').map(normalizeQuestion).filter(Boolean).join('\n').slice(0, AI_ANSWER_LIMIT);
   return { boundary: reply, result: answer ? { answer, citations } : null };
 }
+
+/** Google AI Mode as a surface for the shared conversation watcher. */
+export const googleAiModeSurface: AiSurface = {
+  active: (document) => googleSearchSurface(document.URL) === 'ai-mode',
+  composer: aiComposer,
+  formComposer: aiFormComposer,
+  sendComposer: aiSendComposer,
+  read: (field) => (field as HTMLTextAreaElement).value,
+  boundaries: aiReplyBoundaries,
+  find: findAiModeAnswer,
+};

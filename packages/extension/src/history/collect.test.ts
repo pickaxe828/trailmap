@@ -57,3 +57,12 @@ test('cancelling while Chrome returns the final URL does not yield a trail', asy
   };
   await expect(collectHistory(history, { start, end, shouldRecord: () => true, signal: abort.signal })).rejects.toThrow();
 });
+
+test('history import never imports a chat assistant page, even where the privacy policy would allow the host', async () => {
+  const history: HistoryApi = {
+    search: async () => ['https://chatgpt.com/c/abc', 'https://claude.ai/chat/1', 'https://gemini.google.com/app/1', 'https://chatgpt.com/.trailmap-chat/x']
+      .map((url) => ({ url })),
+    getVisits: async () => [{ visitId: '9', referringVisitId: '0', visitTime: 10_000, transition: 'link' }],
+  };
+  expect(await collect(history)).toEqual([]);
+});
