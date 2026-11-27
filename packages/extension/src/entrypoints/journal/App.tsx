@@ -16,6 +16,7 @@ import { planOrganisation, type OrganisationPlan } from '../../journal/organise'
 import { useJournalCorrection } from '../../journal/useJournalCorrection';
 import { readJournalResearch } from '../../threads/read';
 import { TrailmapShell } from '../../ui/TrailmapShell';
+import { AskBox } from './AskBox';
 import { ExpeditionCard } from './ExpeditionCard';
 import { JournalSearch } from './JournalSearch';
 import { OrganiseCard, type DropChoice } from './OrganiseCard';
@@ -101,7 +102,7 @@ export function App() {
   return (
     <TrailmapShell title="Journal" section="journal" focusJournalSearch={focusSearch}
       description="Revisit the questions, trails, and notes from your browsing.">
-      <JournalSearch regionRef={searchRegion}>
+      <JournalSearch regionRef={searchRegion} ask={<AskBox />}>
         {!result && <Text>Loading your Journal…</Text>}
         {result?.error && <Text role="alert">Could not load the Journal. Try reloading the page.</Text>}
         {result?.data && !items.length && !other.length && <Text>Your expeditions will appear here as you browse.</Text>}

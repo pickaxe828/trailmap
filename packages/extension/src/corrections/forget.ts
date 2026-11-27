@@ -128,6 +128,7 @@ export async function forgetCascade(db: TrailmapDb, input: ForgetInput): Promise
     const audit = [...new Set([
       ...await db.sentToModel.where('canonicalUrl').anyOf(urls).primaryKeys(),
       ...await db.sentToModel.filter((row) => (!!row.expeditionId && forgottenExpeditions.includes(row.expeditionId)) ||
+        !!row.expeditionIds?.some((id) => forgottenExpeditions.includes(id)) ||
         !!row.visitIds?.some((id) => gone.has(id)) ||
         !!row.canonicalUrls?.some((url) => orphans.has(url) || invalidated.has(url) || fromForgottenHost(url))).primaryKeys(),
     ])];
