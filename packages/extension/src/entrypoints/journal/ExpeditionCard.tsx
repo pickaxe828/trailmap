@@ -9,7 +9,7 @@ import { expeditionHref, formatExpeditionDate } from '../../journal/links';
 export function ExpeditionCard({ expedition }: { expedition: Expedition }) {
   const { id, title, startedAt, endedAt, drivingQuestion, unseenNotes, imported, kind } = expedition;
   return (
-    <ClickableCard label={title} href={expeditionHref(id)} padding={4} height="100%">
+    <ClickableCard label={title} href={expeditionHref(id)} padding={4} height="100%" variant="transparent">
       <VStack gap={2}>
         <HStack gap={2} justify="between" wrap="wrap">
           <Text type="supporting">{formatExpeditionDate(startedAt)}</Text>

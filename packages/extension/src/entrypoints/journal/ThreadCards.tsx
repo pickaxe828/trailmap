@@ -8,7 +8,7 @@ import { formatExpeditionDate, threadHref } from '../../journal/links';
 
 export function ThreadCard({ thread, count }: { thread: Thread; count: number }) {
   return (
-    <ClickableCard label={thread.title} href={threadHref(thread.id)} padding={4} height="100%">
+    <ClickableCard label={thread.title} href={threadHref(thread.id)} padding={4} height="100%" variant="transparent">
       <VStack gap={2}>
         <HStack gap={2} justify="between" wrap="wrap">
           <Text type="label">Thread</Text>

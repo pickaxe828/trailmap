@@ -48,6 +48,45 @@ test('dismissing an inline merge suggestion removes it from both cards across re
   await expect(journal.getByText(/Same topic as/)).toHaveCount(0);
 });
 
+for (const width of [1280, 360]) {
+  test(`Journal cards share one bottom edge and suggestion rows stay readable at ${width}px`, async ({ openExtensionPage }, info) => {
+    const long = 'Epaxial musculature of the lumbar spine and how it stabilises the human back';
+    const setup = await openExtensionPage('sidepanel.html');
+    await seed(setup, { expeditions: [
+      expedition('a', 'What is a recurrent neural network', start + 3000, { mergeSuggestions: [{ expeditionId: 'b', reason: 'Same topic' }] }),
+      expedition('b', long, start + 2000, { drivingQuestion: 'Which muscles keep the spine upright while we walk?' }),
+      expedition('c', 'Two line card title about replicated deletes and tombstones in CRDTs', start + 1000,
+        { drivingQuestion: 'How do replicated deletes avoid resurrecting removed items?' }),
+    ] });
+    const journal = await openExtensionPage('journal.html');
+    await journal.setViewportSize({ width, height: 900 });
+    const cards = journal.locator('article');
+    await expect(cards).toHaveCount(3);
+    await expect(journal.getByText(`Same topic as ${long}?`).first()).toBeVisible();
+    const surfaces = journal.locator('article > *');
+    const bottoms = await surfaces.evaluateAll((nodes) => nodes.map((node) => Math.round(node.getBoundingClientRect().bottom)));
+    const tops = await surfaces.evaluateAll((nodes) => nodes.map((node) => Math.round(node.getBoundingClientRect().top)));
+    if (width > 1000) expect(new Set(bottoms).size).toBe(1);
+    else for (let i = 1; i < 3; i += 1) expect(tops[i]! - bottoms[i - 1]!).toBe(tops[1]! - bottoms[0]!);
+    const row = journal.getByRole('group', { name: `Same topic as ${long}?` });
+    const text = await row.getByText(`Same topic as ${long}?`).first().boundingBox();
+    const merge = await row.getByRole('button', { name: `Merge: Same topic as ${long}?` }).boundingBox();
+    const dismiss = await row.getByRole('button', { name: `Dismiss: Same topic as ${long}?` }).boundingBox();
+    const box = await row.boundingBox();
+    for (const target of [merge, dismiss]) {
+      expect(target).not.toBeNull();
+      expect(target!.x + target!.width).toBeLessThanOrEqual(box!.x + box!.width + 1);
+      const apart = target!.y >= text!.y + text!.height - 1 || target!.x >= text!.x + text!.width - 1;
+      expect(apart).toBe(true);
+    }
+    expect(await row.getByText(`Same topic as ${long}?`).first().evaluate((node) => node.scrollHeight <= node.clientHeight * 2.2)).toBe(true);
+    for (const colorScheme of ['light', 'dark'] as const) {
+      await journal.emulateMedia({ colorScheme, reducedMotion: 'reduce' });
+      await journal.screenshot({ path: process.env.PROOF_DIR ? join(process.env.PROOF_DIR, `suggestion-rows-${width}-${colorScheme}.png`) : info.outputPath(`rows-${width}-${colorScheme}.png`) });
+    }
+  });
+}
+
 test('select two cards to start a thread, then drop another expedition on it', async ({ openExtensionPage }, info) => {
   const setup = await openExtensionPage('sidepanel.html');
   await seed(setup, { expeditions: [expedition('a', 'Distributed clocks', start), expedition('b', 'Clock drift', start + 500),
