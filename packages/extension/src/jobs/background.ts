@@ -5,6 +5,7 @@ import { resolveConcepts } from '../concepts/resolve';
 import { decideConceptMerges } from '../concepts/verdicts';
 import type { TrailmapDb } from '../db/db';
 import { getEmbedder } from '../embeddings/background';
+import { writeDigest } from '../digest/handler';
 import { enrichPage } from '../enrichment/handler';
 import { onModelRoutesChanged, readModelRoutes } from '../llm/settings';
 import { usesMyNotes, type RecordingSettings } from '../privacy/policy';
@@ -32,7 +33,8 @@ export function startJobs(db: TrailmapDb, ready: Promise<void>, getSettings: () 
     thread_match: matchThread(db, getEmbedder(), Date.now, getSettings),
     living_note: updateLivingNote(db, getSettings),
     notes_enrichment: enrichNotes(db, getSettings, getEmbedder()),
-  }, [db.pages, db.expeditions, db.visits, db.concepts, db.conceptEvidence, db.edges, db.threads, db.highlights, db.queries, db.notes, db.threadMatchRuns]);
+    weekly_digest: writeDigest(db, getSettings),
+  }, [db.pages, db.expeditions, db.visits, db.concepts, db.conceptEvidence, db.edges, db.threads, db.highlights, db.queries, db.notes, db.threadMatchRuns, db.dismissedConcepts, db.digests]);
   const client = getCompanionClient();
   let pumping = false;
   let retryRequested = false;

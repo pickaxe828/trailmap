@@ -3,8 +3,10 @@ import { canonicalizeUrl } from '../capture/canonical';
 import { renderConceptNote } from '../concepts/note';
 import { readConceptEvidenceBatch, readVisibleConcepts } from '../concepts/read';
 import type { TrailmapDb } from '../db/db';
+import { digestTitle } from '../digest/title';
+import { readLooseEnds } from '../digest/loose-ends';
 import { bySessionTime, isClosedLearning } from '../threads/model';
-import { frontmatter, notePath, renderExpeditionNote, renderThreadNote, type MarkdownNote, type NoteLink } from './notes';
+import { frontmatter, notePath, renderDigestNote, renderExpeditionNote, renderThreadNote, type MarkdownNote, type NoteLink } from './notes';
 
 const append = <K, V>(map: Map<K, V[]>, key: K, value: V) => {
   const values = map.get(key);
@@ -20,13 +22,15 @@ function exportUrl(raw: string): string | undefined {
 
 /** The vault and ZIP share this projection. Observe its source tables from the background, not model job hooks. */
 export async function readMarkdownNotes(db: TrailmapDb): Promise<MarkdownNote[]> {
-  const { expeditions, visits, notes, concepts, evidence, threads } = await db.transaction('r',
-    [db.expeditions, db.visits, db.concepts, db.conceptEvidence, db.pages, db.notes, db.threads, db.highlights, db.dismissedConcepts], async () => {
+  const { expeditions, visits, notes, concepts, evidence, threads, digests, digestConcepts } = await db.transaction('r',
+    [db.expeditions, db.visits, db.concepts, db.conceptEvidence, db.pages, db.notes, db.threads, db.highlights, db.dismissedConcepts, db.digests], async () => {
       const [expeditions, visits, notes, concepts, threads] = await Promise.all([
         db.expeditions.toArray(), db.visits.toArray(), db.notes.toArray(), readVisibleConcepts(db), db.threads.toArray(),
       ]);
       const evidence = await readConceptEvidenceBatch(db, concepts.map(({ id }) => id));
-      return { expeditions, visits, notes, concepts, evidence, threads };
+      const digests = await db.digests.toArray();
+      const digestConcepts = await db.concepts.bulkGet([...new Set(digests.flatMap(({ conceptIds }) => conceptIds))]);
+      return { expeditions, visits, notes, concepts, evidence, threads, digests, digestConcepts };
     });
   const urls = new Map<string, string[]>();
   const manual = new Map<string, string[]>();
@@ -71,7 +75,32 @@ export async function readMarkdownNotes(db: TrailmapDb): Promise<MarkdownNote[]>
     markdown: renderThreadNote(thread, (sessionsByThread.get(thread.id) ?? []).sort(bySessionTime)
       .map(({ id }) => byExpedition.get(id)!)),
   })));
-  return [...conceptNotes, ...expeditionNotes, ...threadNotes];
+  const conceptNoteById = new Map(concepts.map(({ id }, i) => [id, conceptNotes[i]!]));
+  const knownConcepts = new Map(digestConcepts.flatMap((concept) => concept ? [[concept.id, concept] as const] : []));
+  const threadNoteById = new Map(threads.map(({ id }, i) => [id, threadNotes[i]!]));
+  const expeditionsById = new Map(expeditions.map((expedition) => [expedition.id, expedition]));
+  const digestNotes = await Promise.all(digests.map(async (digest) => {
+    const title = digestTitle(digest);
+    const named = (note: { path: string; title: string } | undefined) => note && { path: note.path, title: note.title };
+    return {
+      path: await notePath('digest', digest.id), title,
+      markdown: renderDigestNote({
+        title, kind: digest.kind, from: digest.from, to: digest.to, summary: digest.summary,
+        expeditions: digest.expeditions.flatMap(({ id, why }) => byExpedition.has(id) ? [{ ...named(byExpedition.get(id))!, why }] : []),
+        threads: digest.threads.flatMap(({ id, why }) => threadNoteById.has(id) ? [{ ...named(threadNoteById.get(id))!, why }] : []),
+        concepts: digest.conceptIds.flatMap((id) => knownConcepts.get(id) ? [{ name: knownConcepts.get(id)!.name, note: named(conceptNoteById.get(id)),
+          strength: conceptNoteById.has(id) ? 'learned or studied' : 'seen' }] : []),
+        looseEnds: digest.expeditionIds.flatMap((id) => {
+          const expedition = expeditionsById.get(id);
+          const note = named(byExpedition.get(id));
+          return expedition && note && expedition.endedAt !== null && expedition.endedAt >= digest.from && expedition.endedAt < digest.to
+            ? readLooseEnds(expedition).map(({ text, href }) => ({ text, href: href && exportUrl(href), expedition: note })) : [];
+        }),
+        pickingUp: digest.pickingUp.flatMap((id) => threadNoteById.has(id) ? [named(threadNoteById.get(id))!] : []),
+      }),
+    };
+  }));
+  return [...conceptNotes, ...expeditionNotes, ...threadNotes, ...digestNotes];
 }
 
 /** Dump IndexedDB (not extension preferences or companion credentials), representing vectors as arrays. */

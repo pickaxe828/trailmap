@@ -117,16 +117,17 @@ async function readPassage(db: TrailmapDb, id: string, settings: RecordingSettin
   if (prefix === 'concept') return readConcept(db, key, settings, terms, notesOk);
 }
 
-const modelProvenance = (visits: Visit[], extraUrls: string[] = []) => {
+export const modelProvenance = (visits: Visit[], extraUrls: string[] = []) => {
   const { visitIds, canonicalUrls } = modelSources(visits);
   return { visitIds, canonicalUrls: [...new Set([...canonicalUrls, ...extraUrls])] };
 };
 
-/** A Concept's gloss was written by a model from its evidence, so every piece of evidence must itself be sendable. */
-async function readConcept(db: TrailmapDb, conceptId: string, settings: RecordingSettings, terms: string[], notesOk: boolean): Promise<Found | undefined> {
-  if (settings.paused) return;
-  const concept = (await readAtlas(db)).concepts.find(({ id }) => id === conceptId);
-  if (!concept || !mentions(terms, concept.name, concept.gloss, ...concept.aliases)) return;
+/**
+ * Every piece of evidence behind a Concept, if all of it may go to a model now. A Concept's gloss was written by a model from
+ * that evidence, so one blocked row hides the Concept. Call inside a read transaction over `askTables`.
+ */
+export async function readConceptSources(db: TrailmapDb, conceptId: string, settings: RecordingSettings, notesOk: boolean):
+  Promise<{ visits: Visit[]; expeditionIds: string[]; citation: AskCitation } | undefined> {
   const rows = await db.conceptEvidence.where('conceptId').equals(conceptId).toArray();
   const visits: Visit[] = [];
   const expeditionIds = new Set<string>();
@@ -155,7 +156,17 @@ async function readConcept(db: TrailmapDb, conceptId: string, settings: Recordin
       : { kind: 'page', id: visit.canonicalUrl, title: visit.title, href: webUrl(visit.canonicalUrl)?.href };
   }
   if (!citation) return;
-  return { kind: 'concept', title: concept.name, text: cap(`${concept.name}: ${concept.gloss}`, 800), citation, ...modelProvenance(visits), expeditionIds: [...expeditionIds] };
+  return { visits, expeditionIds: [...expeditionIds], citation };
+}
+
+async function readConcept(db: TrailmapDb, conceptId: string, settings: RecordingSettings, terms: string[], notesOk: boolean): Promise<Found | undefined> {
+  if (settings.paused) return;
+  const concept = (await readAtlas(db)).concepts.find(({ id }) => id === conceptId);
+  if (!concept || !mentions(terms, concept.name, concept.gloss, ...concept.aliases)) return;
+  const sources = await readConceptSources(db, conceptId, settings, notesOk);
+  if (!sources) return;
+  return { kind: 'concept', title: concept.name, text: cap(`${concept.name}: ${concept.gloss}`, 800), citation: sources.citation,
+    ...modelProvenance(sources.visits), expeditionIds: sources.expeditionIds };
 }
 
 /**

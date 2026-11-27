@@ -15,6 +15,7 @@ import type {
 import { canonicalizeUrl } from '../capture/canonical';
 import type { ConceptDismissal } from '../concepts/dismiss';
 import type { ConceptEvidence } from '../concepts/evidence';
+import type { Digest } from '../digest/types';
 import type { ThreadMatchRun } from '../threads/runs';
 import type { RequestErrorCode } from '../companion/client';
 import { conceptResolutionJob } from '../concepts/enqueue';
@@ -46,6 +47,7 @@ export type TrailmapDb = Dexie & {
   sentToModel: EntityTable<SentToModel, 'id'>;
   corrections: EntityTable<CorrectionLogEntry, 'id'>;
   threadMatchRuns: EntityTable<ThreadMatchRun, 'expeditionId'>;
+  digests: EntityTable<Digest, 'id'>;
 };
 
 /** A user correction (docs/PLAN.md §4.3 rule 5). `targetIds` lets Forget remove entries that mention forgotten items. */
@@ -232,6 +234,7 @@ export function openTrailmapDb(name: string = DB_NAME): TrailmapDb {
     });
   });
   db.version(12).stores({ threadMatchRuns: 'expeditionId, at' });
+  db.version(13).stores({ digests: 'id, to' });
   // History replay and any other Visit writer use the same persistence boundary.
   db.visits.hook('creating', (_id, visit) => { visit.url = canonicalizeUrl(visit.url); });
   db.visits.hook('updating', (changes) => {

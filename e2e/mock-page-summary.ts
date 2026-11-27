@@ -45,6 +45,15 @@ const mock = startMockOAuth(async (request) => {
       relations: [],
     }));
   }
+  if (task === 'weekly_digest') {
+    // Field notes and living notes only: rank the first Expedition and thread, and name one ref that was never sent.
+    const { expeditions, threads } = JSON.parse(text) as { expeditions: { ref: string }[]; threads: { ref: string }[] };
+    return stream(JSON.stringify({
+      summary: 'You spent the week on how replicas agree on deletes.',
+      expeditions: [...expeditions.map(({ ref }) => ({ ref, why: 'It explained tombstones.' })), { ref: 'e99', why: 'Never sent.' }],
+      threads: threads.map(({ ref }) => ({ ref, why: 'Two sittings built on each other.' })), concepts: [],
+    }));
+  }
   if (task === 'ask_answer') {
     // Only the question and the passages arrive here; answer from the first one that mentions the question's subject.
     const { question, passages } = JSON.parse(text) as { question: string; passages: { ref: string; text: string }[] };
