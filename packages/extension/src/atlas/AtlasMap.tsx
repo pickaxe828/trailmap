@@ -39,8 +39,8 @@ export function AtlasMap({ graph, filter, onFocus }: {
           const view = currentFilter.current;
           const selected = id === view.focused;
           return { ...node, hidden: !isConceptShown(id, node.firstSeen, view),
-            color: (node.learned ? colors.communities : colors.faded)[node.community % colors.communities.length],
-            forceLabel: selected, zIndex: selected ? 1 : 0 };
+            color: (node.strength === 'seen' ? colors.faded : colors.communities)[node.community % colors.communities.length],
+            forceLabel: selected || !!view.labelAll, zIndex: selected ? 1 : 0 };
         },
         edgeReducer: (id, edge) => {
           const [from, to] = graph.extremities(id);

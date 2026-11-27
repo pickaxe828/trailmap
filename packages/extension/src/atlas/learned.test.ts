@@ -98,3 +98,11 @@ test('errand Expeditions never put a concept on the Atlas', async () => {
   await db.expeditions.put({ ...expedition, kind: 'errand' });
   expect((await readAtlas(db)).concepts).toEqual([]);
 });
+
+test('forgetting the only evidence for a dismissed concept drops its dismissal too', async () => {
+  const { forgetCascade } = await import('../corrections/forget');
+  await seed([evidence('1', 'taa', 'a')], [visit('a')]);
+  await dismissConcept(db, 'taa', 100);
+  await forgetCascade(db, { kind: 'forget-page', visitIds: ['a'], now: () => 200, newId: () => crypto.randomUUID() });
+  expect(await db.dismissedConcepts.count()).toBe(0);
+});
