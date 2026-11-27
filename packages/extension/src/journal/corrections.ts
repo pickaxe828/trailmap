@@ -34,6 +34,8 @@ type Undo = {
   action: string;
   sourceUrls: string[];
   autoMatchable: string[];
+  /** The Learning / Not learning choice, so Recent changes can describe it. */
+  toKind?: Expedition['kind'];
 };
 
 export function createJournalCorrections(options: CorrectionsOptions) {
@@ -208,6 +210,7 @@ export function createJournalCorrections(options: CorrectionsOptions) {
       ? present(await db.expeditions.bulkGet(selected)).filter(({ kind, threadId }) => kind === 'learning' && !threadId).map(({ id }) => id) : [];
     const unread = before.expeditions.flatMap((session) => session.unreadStops ?? []);
     const data: Undo = { snapshot: before, selected, scope, threadIds, action: action.action, autoMatchable,
+      ...(action.action === 'classify' ? { toKind: action.kind } : {}),
       sourceUrls: unique([...unread.map(({ url }) => url), ...sources.flatMap((source) => source?.canonicalUrls ?? [])]) };
     const referencedIds = before.expeditions.flatMap((session) => [
       ...(session.rootVisitId ? [session.rootVisitId] : []), ...(session.threadSuggestion ? [session.threadSuggestion.id] : []),
