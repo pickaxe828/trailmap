@@ -74,7 +74,7 @@ test('Google results and passive AI Mode never store reply text; a broken typed 
 });
 
 modelTest('the first typed AI Mode question and same-page follow-up share one enriched, forgettable conversation', async ({
-  context, readCapture, openExtensionPage, installCompanion, mockOrigin,
+  context, readCapture, openExtensionPage, installCompanion, mockOrigin, aiModeScreened,
 }) => {
   await routeGoogle(context);
   await context.route(CITATION, (route) => route.fulfill({ body: '<title>Light and scattering</title><p>Read this cited page.</p>', contentType: 'text/html' }));
@@ -82,6 +82,8 @@ modelTest('the first typed AI Mode question and same-page follow-up share one en
   await signInToMockChatGpt(context, await openExtensionPage('settings.html#model-providers'));
   const google = await context.newPage();
   await google.goto(`${GOOGLE}/aimode`);
+  // A question typed before the recorder screens the document is dropped by design.
+  await aiModeScreened();
   await ask(google, FIRST);
   const conversation = async () => (await readCapture('pages')).find(({ aiTurns }) => aiTurns);
   await expect.poll(conversation).toMatchObject({ aiTurns: [{ question: FIRST, answer: expect.stringContaining('Air scatters'), citations: [CITATION] }] });

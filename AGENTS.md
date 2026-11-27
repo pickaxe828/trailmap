@@ -97,6 +97,7 @@ Only the **public** key is committed (`packages/extension/extension-key.ts`). Th
 - **Companion in E2E.** `test.use({ companionInstalled: true })` installs the real compiled companion (`bun run build:companion` first) into the test's profile folder; `installCompanion()` does it mid-test; override the `companionEnv` fixture to point the companion at mock servers. Every test already gets its own profile (`userDataDir`) and companion data dir, and the real Keychain is never touched. See `e2e/companion.e2e.ts`.
 - You cannot open the real side panel UI headless; test it by opening `sidepanel.html` as a normal tab.
 - Playwright runs under Node (via `bunx playwright`); only the fixture server runs under Bun. Test files must not use Bun-only APIs.
+- **Wait on state, not time.** Use readiness signals (`readCapture`, `aiModeScreened()`, `seedCapture` waits for stores); no sleeps, private short timeouts, or worker handles held across a restart. Details and how to hunt a flake: `trailmap-notes/notes-35.md`.
 
 ## Companion
 

@@ -64,7 +64,7 @@ async function seedAtlas(setup: BrowserPage, count: number, withThread = false) 
 test('the Atlas focuses a Concept through search and shows its Pages, Expeditions and neighbours', async ({ context, openExtensionPage }, info) => {
   const panel = await openExtensionPage('sidepanel.html');
   await seedAtlas(panel, 24);
-  const [atlas] = await Promise.all([context.waitForEvent('page'), panel.getByRole('link', { name: 'Open Atlas' }).click({ timeout: 5000 })]);
+  const [atlas] = await Promise.all([context.waitForEvent('page'), panel.getByRole('link', { name: 'Open Atlas' }).click()]);
   await atlas.emulateMedia({ colorScheme: 'light' });
   await expect(atlas.getByRole('heading', { name: 'Atlas', exact: true })).toBeVisible();
   await expect(atlas.locator('canvas.sigma-nodes')).toBeVisible();
@@ -120,7 +120,7 @@ test('the Atlas Thread filter shows only Concepts with evidence in its sessions'
   await search.fill('Tombstone');
   await atlas.getByRole('option', { name: 'Tombstone' }).click();
   await expect(atlas.getByRole('heading', { name: 'Tombstone' })).toBeVisible();
-  await thread.click({ timeout: 5000 });
+  await thread.click();
   await atlas.getByRole('option', { name: 'Replication foundations' }).click();
   await expect(atlas.getByText('1 of 24 concepts on the map')).toBeVisible();
   await expect(atlas.getByRole('heading', { name: 'Tombstone' })).toHaveCount(0);
