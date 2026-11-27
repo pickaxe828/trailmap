@@ -6,7 +6,7 @@ const relatedSearch = 'crdt tombstones';
 const searchUrl = (query: string) => 'https://www.google.com/search?q=' + encodeURIComponent(query);
 
 test('two topics stay separate and related searches and linked pages join after a service worker restart', async ({
-  context, extensionId, fixtureUrl, openExtensionPage, readCapture, serviceWorker,
+  context, extensionId, fixtureUrl, openExtensionPage, readCapture,
 }, testInfo) => {
   const articleUrl = fixtureUrl('learn.test', '/trail/article.html');
   await context.route('https://www.google.com/search?*', (route) => route.fulfill({
@@ -61,7 +61,9 @@ test('two topics stay separate and related searches and linked pages join after 
 
   // Headless Chromium cannot generate a genuine system idle period.
   // Seed the deadline the idle listener would have saved and fire the real alarm.
-  await (await serviceWorker()).evaluate(async () => {
+  // Run it from the side panel: its chrome.* calls wake the worker, whereas a worker handle can be stale
+  // or stopped after the restart above.
+  await panel.evaluate(async () => {
     await chrome.storage.session.set({ 'trailmap.expeditionIdleDeadline': Date.now() });
     await chrome.alarms.create('trailmap.expedition-close', { when: Date.now() + 100 });
   });

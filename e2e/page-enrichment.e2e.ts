@@ -153,6 +153,8 @@ test('an ineligible ChatGPT account is offered other providers until an eligible
   await page.goto(fixtureUrl('ineligible.test', ARTICLE));
   await expect.poll(async () => (await readCapture('pages')).length).toBe(1);
   await page.locator('#highlight').selectText();
+  // Explicit readiness: the Visit counts as read before we wait for the enrichment it queues.
+  await expect.poll(async () => (await readCapture('visits')).find(({ url }) => url === page.url())?.engagement).toBe('read');
   const banner = panel.getByText('ChatGPT account not eligible');
   await expect(banner).toBeVisible({ timeout: 40_000 });
   await expect(panel.getByText(/Anthropic API key or.*Ollama/)).toBeVisible();
