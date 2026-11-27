@@ -49,3 +49,15 @@ test('keyword matches remain when the local Embedder rejects', async () => {
   index.update([document('page', 'Replication', 'A tombstone marks a delete.')]);
   expect((await index.search('tombstone', 5)).map(({ id }) => id)).toEqual(['page']);
 });
+
+test('keyword search finds an expedition by its symbol-with-name title, by the symbol and by the name', () => {
+  const index = new SearchIndex(embedder);
+  index.update([
+    document('ipa', 'ˤ: the pharyngealization mark in IPA', ''),
+    document('other', 'ʕ: voiced pharyngeal fricative', ''),
+    document('unrelated', 'Sourdough', 'Keeping a starter'),
+  ]);
+  expect(index.keyword('pharyngealization', 10).map(({ id }) => id)).toEqual(['ipa']);
+  expect(index.keyword('ˤ', 10).map(({ id }) => id)).toEqual(['ipa']);
+  expect(index.keyword('ʕ', 10).map(({ id }) => id)).toEqual(['other']);
+});

@@ -241,3 +241,44 @@ test('closing the same Expedition twice queues one wrap-up', async () => {
   await enqueueWrapUp(db, expedition(), now + 1);
   expect(await db.jobs.count()).toBe(1);
 });
+
+const symbolOnly = { ...wrapUp, title: 'ˤ', driving_question: 'What is the pharyngealization mark ˤ in IPA?' };
+
+test('a symbol-only title is retried once with a corrective note, and the worded title is stored', async () => {
+  await seed();
+  const titles = [symbolOnly, { ...symbolOnly, title: 'ˤ: the pharyngealization mark in IPA' }];
+  const calls: { instructions: string }[] = [];
+  const q = queueWith(async (_db, payload) => {
+    calls.push({ instructions: payload.instructions });
+    return { output: payload.task === 'expedition_wrap_up' ? titles.shift() : notes };
+  });
+  await q.runNext();
+  expect((await db.expeditions.get('expedition:v1'))!.title).toBe('ˤ: the pharyngealization mark in IPA');
+  expect(calls).toHaveLength(2);
+  expect(calls[0]!.instructions).toContain('readable words');
+  expect(calls[1]!.instructions).toContain('previous title');
+});
+
+test('when the retry is still symbol-only, the driving question is appended', async () => {
+  await seed();
+  const calls: Call[] = [];
+  await queue({ expedition_wrap_up: symbolOnly }, calls).runNext();
+  expect(calls).toHaveLength(2);
+  expect((await db.expeditions.get('expedition:v1'))!.title).toBe('ˤ: What is the pharyngealization mark ˤ in IPA?');
+});
+
+test('with no driving question the first search text is appended', async () => {
+  await seed();
+  await db.visits.put(visit('v3', 'www.google.com', { url: 'https://www.google.com/search?q=pharyngealization', canonicalUrl: 'https://www.google.com/search?q=pharyngealization', startedAt: 500 }));
+  await db.queries.put({ id: 'q1', visitId: 'v3', expeditionId: 'expedition:v1', q: 'pharyngealization', engine: 'google', at: 500 });
+  await queue({ expedition_wrap_up: { ...symbolOnly, driving_question: '' } }).runNext();
+  expect((await db.expeditions.get('expedition:v1'))!.title).toBe('ˤ: pharyngealization');
+});
+
+test('the local fallback title gets the same guard', async () => {
+  await seed();
+  await db.pages.clear();
+  await db.visits.update('v1', { engagement: 'bounced', title: 'ˤ' });
+  await queue({}).runNext();
+  expect((await db.expeditions.get('expedition:v1'))!.title).toBe('ˤ: learn.test');
+});

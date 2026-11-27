@@ -131,7 +131,7 @@ try {
   // Read IndexedDB through extension pages, never the fixture site's origin.
   await call('/window', { handle: captureTab });
   await openExtensionPage('sidepanel.html');
-  await until('Trailmap sidebar app', () => execute<string>('return document.body.innerText'), (body) => body.includes('Open Journal'));
+  await until('Trailmap sidebar app', () => execute<string>('return document.body.innerText'), (body) => body.includes('Open expeditions'));
 
   const read = <T>(table: 'visits' | 'pages') => asyncScript<T[]>(`
     const done = arguments[arguments.length - 1];
@@ -197,6 +197,26 @@ try {
   await call('/window', { handle: captureTab });
   await until('late password frame removes the Visit', visits, (rows) => !rows.some(({ url }) => url === second));
   console.log('A late password field in an iframe removes its top-level Visit.');
+
+  // IPA symbols must render from a system font in Gecko too (ticket 27).
+  await asyncScript(`
+    const done = arguments[arguments.length - 1];
+    const request = indexedDB.open('trailmap');
+    request.onerror = () => done(false);
+    request.onsuccess = () => {
+      const db = request.result;
+      const tx = db.transaction('expeditions', 'readwrite');
+      tx.objectStore('expeditions').put({ id: 'ipa', title: 'ˤ: the pharyngealization mark in IPA', startedAt: 1_747_000_000_000,
+        endedAt: 1_747_000_001_000, centroid: null, drivingQuestion: 'What are ʕ and ʔ next to ˤ?', kind: 'learning',
+        threadId: null, userEdited: false, fieldNotes: null });
+      tx.oncomplete = () => { db.close(); done(true); };
+    };
+  `);
+  await openExtensionPage('journal.html');
+  await until('IPA title in the Journal', () => execute<string>('return document.body.innerText'),
+    (body) => body.includes('ˤ: the pharyngealization mark in IPA'));
+  await screenshot('firefox-journal-ipa.png');
+  console.log('The Journal shows an IPA symbol title in Gecko.');
 } catch (error) {
   const log = Bun.file(join(root, 'geckodriver.log'));
   if (await log.exists()) console.error((await log.text()).slice(-6000));
@@ -206,5 +226,5 @@ try {
   if (session) await request(session, undefined, 'DELETE').catch(() => {});
   driver?.kill();
   await driver?.exited;
-  rmSync(root, { recursive: true, force: true });
+  try { rmSync(root, { recursive: true, force: true }); } catch { /* Gecko may still be exiting; the OS temp dir is cleaned later. */ }
 }

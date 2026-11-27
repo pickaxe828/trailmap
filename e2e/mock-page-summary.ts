@@ -61,6 +61,13 @@ const mock = startMockOAuth(async (request) => {
       key_ideas: [{ idea: 'Shorter wavelengths scatter more strongly.', page: ai.ref }],
       trail: 'The conversation explored Rayleigh scattering.', loose_ends: ['Check the cited reference.'],
     }));
+    if (task === 'expedition_wrap_up' && text.includes('pharyngealization')) {
+      // First answer is symbol-only; the corrective retry names the symbol.
+      return stream(JSON.stringify({
+        title: body.instructions?.includes('no readable words') ? 'ˤ: the pharyngealization mark in IPA' : 'ˤ',
+        driving_question: 'What does the IPA mark ˤ mean?', kind: 'learning', merge_with: [],
+      }));
+    }
     if (task === 'expedition_wrap_up') {
       return stream(JSON.stringify({
         title: 'How replicated lists delete items', driving_question: 'How do replicated lists represent deletes?',
@@ -83,6 +90,13 @@ const mock = startMockOAuth(async (request) => {
       { name: 'Wavelength', kind: 'concept', gloss: 'Distance between wave crests.', role: 'mentions', salience: 'passing' },
     ],
     relations: [{ from: 'Rayleigh scattering', to: 'Wavelength', type: 'related_to' }],
+  }));
+  if (task === 'page_enrichment' && text.includes('pharyngealization')) return stream(JSON.stringify({
+    summary: 'The modifier letter ˤ marks pharyngealization in the IPA.',
+    takeaways: ['ˤ marks pharyngealization.', 'ʕ and ʔ are neighbouring pharyngeal and glottal sounds.'],
+    answers_question: 'What does ˤ mean in the IPA?', page_kind: 'article',
+    concepts: [{ name: 'Pharyngealization', kind: 'concept', gloss: 'A secondary articulation marked by ˤ.', role: 'explains', salience: 'central' }],
+    relations: [],
   }));
   if (body.store !== false || body.stream !== true ||
     !text.includes('Tombstones preserve causal history across replicas.') || text.includes('This paragraph appears after the extraction limit.')) {
