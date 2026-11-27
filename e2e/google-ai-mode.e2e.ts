@@ -137,7 +137,10 @@ modelTest('the first typed AI Mode question and same-page follow-up share one en
   await expect.poll(async () => (await readCapture('sentToModel')).filter(({ visitIds }) => visitIds?.includes(visit!.id)).length).toBeGreaterThan(0);
 
   await panel.getByRole('button', { name: 'Actions for Google AI Mode · AI-generated' }).click();
-  await panel.getByRole('menuitem', { name: 'Forget AI conversation' }).click();
+  // Playwright can scroll the panel during a pointer click and move this anchored menu out from under it.
+  const forget = panel.getByRole('menuitem', { name: 'Forget AI conversation' });
+  await expect(forget).toBeVisible();
+  await forget.press('Enter');
   await panel.getByRole('alertdialog').getByRole('button', { name: 'Forget AI conversation', exact: true }).click();
   await expect.poll(conversation).toBeUndefined();
   expect(await readCapture('queries')).toEqual([]);
