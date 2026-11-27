@@ -16,13 +16,14 @@ import { HistoryImportSettings } from '../../ui/HistoryImportSettings';
 import { TrailmapShell } from '../../ui/TrailmapShell';
 import { ExportSettings } from '../../vault/ExportSettings';
 import { VaultSettings } from '../../vault/VaultSettings';
+import { ReviewSettingsPanel } from '../../review/ReviewSettingsPanel';
 import { ModelJobs } from './ModelJobs';
 import { ThreadMatching } from './ThreadMatching';
 import { SentToModelLog } from './SentToModelLog';
 
 const sections = [
   ['privacy', 'Privacy'], ['companion', 'Companion'], ['model-providers', 'Model providers'],
-  ['obsidian', 'Obsidian sync'], ['history-import', 'History import'], ['exports', 'Exports'],
+  ['review', 'Review'], ['obsidian', 'Obsidian sync'], ['history-import', 'History import'], ['exports', 'Exports'],
   ['sent-to-model', 'Sent-to-model log'], ['diagnostics', 'Diagnostics'],
 ] as const;
 
@@ -107,6 +108,7 @@ export function App() {
       </VStack>
     ),
     'model-providers': <ProviderSettings companion={companion} />,
+    review: <ReviewSettingsPanel />,
     obsidian: <VaultSettings companion={companion} headingLevel={2} />,
     'history-import': <HistoryImportSettings />,
     exports: <ExportSettings />,

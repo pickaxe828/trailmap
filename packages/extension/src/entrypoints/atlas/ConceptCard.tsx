@@ -10,6 +10,9 @@ import { VStack } from '@astryxdesign/core/VStack';
 import type { Concept } from '@trailmap/shared';
 import type { EvidenceStrength } from '../../concepts/strength';
 import { useCallback } from 'react';
+import { readStarred, starConcept, unstarConcept } from '../../review/deck';
+import { reviewEnabled } from '../../review/settings';
+import { useReviewSettings } from '../../review/useReviewSettings';
 import { readAtlasEvidence } from '../../atlas/data';
 import { dismissConcept, restoreConcept } from '../../concepts/dismiss';
 import { openTrailmapDb, type TrailmapDb } from '../../db/db';
@@ -34,6 +37,8 @@ export function ConceptCard({ concept, hidden = false, neighbours, onFocus, onCl
 }) {
   const read = useCallback((db: TrailmapDb) => readAtlasEvidence(db, concept.id), [concept.id]);
   const evidence = useJournalData(read);
+  const reviewOn = reviewEnabled(useReviewSettings() ?? {});
+  const starred = useJournalData(readStarred)?.data?.has(concept.id) === true;
   return (
     <VStack as="aside" aria-label="Concept details" className="min-w-0">
       <Card padding={5}>
@@ -58,6 +63,9 @@ export function ConceptCard({ concept, hidden = false, neighbours, onFocus, onCl
               {hidden
                 ? <Button size="sm" variant="secondary" label="Undo: show on the Atlas" onClick={() => void change((db) => restoreConcept(db, concept.id))} />
                 : <Button size="sm" variant="secondary" label="I didn’t learn this" onClick={() => void change((db) => dismissConcept(db, concept.id, Date.now()))} />}
+              {reviewOn && !hidden && (starred
+                ? <Button size="sm" variant="secondary" label="Starred for review: remove" onClick={() => void change((db) => unstarConcept(db, concept.id))} />
+                : <Button size="sm" variant="secondary" label="Star for review" onClick={() => void change((db) => starConcept(db, concept.id, Date.now()))} />)}
               <VStack gap={1}>
                 <Heading level={3}>Evidence pages</Heading>
                 {evidence.data.pages.length ? (

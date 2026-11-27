@@ -4,6 +4,8 @@ import { HStack } from '@astryxdesign/core/HStack';
 import { Icon } from '@astryxdesign/core/Icon';
 import { Link } from '@astryxdesign/core/Link';
 import type { SVGProps } from 'react';
+import { reviewEnabled } from '../review/settings';
+import { useReviewSettings } from '../review/useReviewSettings';
 
 export const JOURNAL_PATH = '/journal.html';
 const SETTINGS_PATH = '/settings.html';
@@ -30,6 +32,13 @@ function AtlasIcon(props: SVGProps<SVGSVGElement>) {
   </svg>;
 }
 
+function ReviewIcon(props: SVGProps<SVGSVGElement>) {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} {...props}>
+    <rect x="3" y="7" width="14" height="12" rx="2" />
+    <path strokeLinecap="round" d="M7 4h12a2 2 0 0 1 2 2v9" />
+  </svg>;
+}
+
 // Heroicons cog (MIT); Astryx's semantic settings icon is a wrench.
 function SettingsGear(props: SVGProps<SVGSVGElement>) {
   return (
@@ -46,7 +55,10 @@ const destinations = [
   { section: 'atlas', label: 'Atlas', href: '/atlas.html', icon: AtlasIcon },
 ] as const;
 
-export type TrailmapSection = (typeof destinations)[number]['section'] | 'settings';
+/** Review is opt-in: its destination exists only while the setting is on. */
+const reviewDestination = { section: 'review', label: 'Review', href: '/review.html', icon: ReviewIcon } as const;
+
+export type TrailmapSection = (typeof destinations)[number]['section'] | 'review' | 'settings';
 
 export function TrailmapNavigation({ compact = false, section, detail = false, onSearch }: {
   compact?: boolean;
@@ -55,6 +67,8 @@ export function TrailmapNavigation({ compact = false, section, detail = false, o
   onSearch?: () => void;
 }) {
   const target = compact ? '_blank' : undefined;
+  const reviewSettings = useReviewSettings();
+  const shown = reviewSettings && reviewEnabled(reviewSettings) ? [...destinations, reviewDestination] : destinations;
   return (
     <HStack as="nav" aria-label="Trailmap navigation" gap={2} align="center" justify="between" wrap="wrap"
       paddingInline={4} paddingBlock={2} className={compact
@@ -67,7 +81,7 @@ export function TrailmapNavigation({ compact = false, section, detail = false, o
       </HStack>
       <HStack gap={1} align="center" className={compact ? undefined
         : '[&_a]:rounded-md [&_a]:px-1.5 [&_a]:py-1 sm:[&_a]:px-3 [&_a[aria-current]]:bg-body'}>
-        {destinations.map(({ section: key, href, label, icon }) => compact ? (
+        {shown.map(({ section: key, href, label, icon }) => compact ? (
           <Button key={key} href={href} target={target} label={`Open ${label}`} tooltip={label}
             icon={<Icon icon={icon} />} isIconOnly size="sm" variant="secondary" />
         ) : (
