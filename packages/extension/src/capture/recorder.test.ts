@@ -123,15 +123,33 @@ test('Google results record the search query but never DOM text or highlights', 
   for (const table of [db.pages, db.highlights, db.jobs, db.sentToModel]) expect(await table.count()).toBe(0);
 });
 
+test.each(['different question', 'back', 'new tab', 'unrelated parent', 'password', 'expired'] as const)(
+  'a Search-to-Mode click does not admit a turn for %s', async (reason) => {
+    const source = reason === 'unrelated parent' ? `${LEARN}/search?q=light` : 'https://www.google.com/search?q=light';
+    const destination = `https://www.google.com/search?mstk=fixture&q=${reason === 'different question' ? 'sound' : 'light'}`;
+    const modeTab = reason === 'new tab' ? TAB + 1 : TAB;
+    await browser.commit(TAB, source);
+    await browser.reportPageContent(TAB, source, { kind: 'ai-enter' });
+    if (reason === 'expired') clock.advance(60_000);
+    await browser.commit(modeTab, destination, { transitionType: 'link', qualifiers: reason === 'back' ? ['forward_back'] : [] });
+    const screen = await browser.reportPageContent(modeTab, destination, { kind: 'screen', hasPassword: reason === 'password' });
+    expect(screen?.aiPending).toBeUndefined();
+    expect(recorder.getCurrentVisit(modeTab)).toBeUndefined();
+    expect(await db.pages.toArray()).toEqual([]);
+  },
+);
+
 test('leaving Mode before a reply arrives retains the typed question as a diagnostic failure', async () => {
   const url = 'https://www.google.com/search?udm=50';
   await browser.commit(TAB, url);
   await browser.reportPageContent(TAB, url, { kind: 'ai-submit', turnId: 'pending', question: 'What is light?' });
+  expect(await db.aiModeStats.get('google-ai-mode')).toBeUndefined();
   await browser.commit(TAB, `${LEARN}/other`);
   const aiVisit = (await visits()).find((visit) => visit.aiConversation);
   expect(await db.pages.get(aiVisit!.canonicalUrl)).toMatchObject({
     text: '', aiTurns: [{ id: 'pending', question: 'What is light?', answer: null, citations: [], extractionFailed: true }],
   });
+  expect(await db.aiModeStats.get('google-ai-mode')).toMatchObject({ successes: 0, failures: 1 });
   expect(await db.jobs.count()).toBe(0);
 });
 

@@ -3,6 +3,7 @@ import { Tab, TabList } from '@astryxdesign/core/TabList';
 import { Text } from '@astryxdesign/core/Text';
 import { VStack } from '@astryxdesign/core/VStack';
 import { useEffect, useState, type ReactNode } from 'react';
+import { AI_MODE_STATS_ID } from '../../capture/ai-mode-stats';
 import { CHAT_SITE_IDS, CHAT_SITES, chatConversationSite, type ChatSite } from '../../capture/chat-sites';
 import { CompanionSetup } from '../../companion/CompanionSetup';
 import { useCompanionStatus } from '../../companion/useCompanionStatus';
@@ -33,14 +34,17 @@ function sectionFromUrl(): Section {
   return sections.find(([id]) => `#${id}` === location.hash)?.[0] ?? 'privacy';
 }
 
-/** Saved questions whose reply could not be read, split by where they were asked. */
-async function readExtractionFailures(db: TrailmapDb) {
-  const counts = { aiMode: 0, ...Object.fromEntries(CHAT_SITE_IDS.map((site) => [site, 0])) } as Record<'aiMode' | ChatSite, number>;
-  await db.pages.each((page) => {
-    const failed = page.aiTurns?.filter(({ extractionFailed }) => extractionFailed).length ?? 0;
-    counts[chatConversationSite(page.canonicalUrl) ?? 'aiMode'] += failed;
+async function readCaptureDiagnostics(db: TrailmapDb) {
+  return db.transaction('r', db.aiModeStats, db.pages, async () => {
+    const aiMode = await db.aiModeStats.get(AI_MODE_STATS_ID) ?? { successes: 0, failures: 0 };
+    const chatFailures = Object.fromEntries(CHAT_SITE_IDS.map((site) => [site, 0])) as Record<ChatSite, number>;
+    await db.pages.each(({ aiTurns, canonicalUrl }) => {
+      if (!aiTurns) return;
+      const site = chatConversationSite(canonicalUrl);
+      if (site) chatFailures[site] += aiTurns.filter(({ extractionFailed }) => extractionFailed).length;
+    });
+    return { aiMode, chatFailures };
   });
-  return counts;
 }
 
 function LocalEmbeddingsNotice() {
@@ -67,15 +71,18 @@ function LocalEmbeddingsNotice() {
 }
 
 function CaptureDiagnostics() {
-  const failures = useJournalData(readExtractionFailures);
+  const diagnostics = useJournalData(readCaptureDiagnostics);
+  const missing = diagnostics?.error ? 'Unavailable' : 'Loading…';
   return (
     <VStack as="section" id="diagnostics" gap={2}>
       <Heading level={2}>Diagnostics</Heading>
-      <Text as="p">AI Mode reply extraction failures: {failures?.data?.aiMode ?? (failures?.error ? 'Unavailable' : 'Loading…')}</Text>
+      <Text as="p">AI Mode reply extraction successes: {diagnostics?.data?.aiMode.successes ?? missing}</Text>
+      <Text as="p">AI Mode reply extraction failures: {diagnostics?.data?.aiMode.failures ?? missing}</Text>
+      <Text as="p" type="supporting">AI Mode totals stay on this device, even when you forget a conversation. Upgrades start with still-saved turns.</Text>
       {CHAT_SITE_IDS.map((site) => (
-        <Text as="p" key={site}>{CHAT_SITES[site].label} reply extraction failures: {failures?.data?.[site] ?? (failures?.error ? 'Unavailable' : 'Loading…')}</Text>
+        <Text as="p" key={site}>{CHAT_SITES[site].label} reply extraction failures: {diagnostics?.data?.chatFailures[site] ?? missing}</Text>
       ))}
-      <Text as="p" type="supporting">Counts saved questions whose replies could not be captured, by where they were asked.</Text>
+      <Text as="p" type="supporting">Chat counts include only saved questions whose replies could not be captured.</Text>
       {isFirefox && <LocalEmbeddingsNotice />}
       <ModelJobs />
       <ThreadMatching />

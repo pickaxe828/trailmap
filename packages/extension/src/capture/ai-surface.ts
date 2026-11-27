@@ -8,6 +8,8 @@ export type AiSurface = {
   composer(target: EventTarget | null): HTMLElement | undefined;
   formComposer(target: EventTarget | null): HTMLElement | undefined;
   sendComposer(document: Document, target: EventTarget | null): HTMLElement | undefined;
+  /** Label of a native follow-up control, read only for an admitted, trusted click. */
+  suggestedQuestion?(target: EventTarget | null): string | undefined;
   read(field: HTMLElement): string;
   /** A reply is already being written, so an Enter keypress does not send a turn. */
   busy?(document: Document): boolean;

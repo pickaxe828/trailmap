@@ -15,19 +15,17 @@ import type {
 import { WINDOW_ID_NONE } from './events';
 import { isPageContentMessage, isPageVisibilityMessage, OPEN_AI_CITATION } from './page-messages';
 import type { VisitRecorder } from './recorder';
-import type { RecorderState, RecorderStateStore } from './state-store';
+import { RECORDER_STATE_KEY, type RecorderState, type RecorderStateStore } from './state-store';
 import { isActiveDocument } from '../platform/browser';
-
-const STORAGE_KEY = 'trailmap.recorderState';
 
 /** Session storage shares the browser lifetime of the tab IDs in RecorderState. */
 export class ChromeSessionStateStore implements RecorderStateStore {
   async load() {
-    const stored = (await chrome.storage.session.get(STORAGE_KEY))[STORAGE_KEY] as RecorderState | undefined;
+    const stored = (await chrome.storage.session.get(RECORDER_STATE_KEY))[RECORDER_STATE_KEY] as RecorderState | undefined;
     return stored?.version === 1 ? stored : null;
   }
   async save(state: RecorderState) {
-    await chrome.storage.session.set({ [STORAGE_KEY]: state });
+    await chrome.storage.session.set({ [RECORDER_STATE_KEY]: state });
   }
 }
 

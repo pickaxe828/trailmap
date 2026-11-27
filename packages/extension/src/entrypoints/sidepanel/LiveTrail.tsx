@@ -83,6 +83,7 @@ export function LiveTrail({ trail, currentVisitId, priorReads }: {
     const host = hostOf(visit.url);
     const note = trail.notes[visit.id];
     const prior = priorReads?.get(visit.id);
+    const followUps = trail.aiFollowUps[visit.id];
     return {
       id: visit.id,
       label: (
@@ -93,6 +94,7 @@ export function LiveTrail({ trail, currentVisitId, priorReads }: {
             {visit.starred && <Text type="supporting">Key page</Text>}
             {prior && <Token size="sm" label={`Read on ${readDate.format(prior.at)}`} />}
           </HStack>
+          {followUps && <Text type="supporting" maxLines={2} wordBreak="break-word">{followUps.count} questions · Latest: {followUps.latest}</Text>}
           {prior?.summary && <Text type="supporting">{prior.summary}</Text>}
         </VStack>
       ),

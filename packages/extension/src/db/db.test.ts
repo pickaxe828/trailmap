@@ -114,9 +114,23 @@ describe('database', () => {
       .toEqual([['e1', 'CRDT', 'supporting'], ['e2', 'Taa', 'passing'], ['e3', 'Tombstone', 'central']]);
   });
 
+  test('upgrade seeds AI Mode totals from saved, settled Google turns only', async () => {
+    const previous = new Dexie(dbName);
+    previous.version(14).stores({ pages: 'canonicalUrl, textHash, enrichedAt' });
+    const success = { id: '1', question: 'First?', answer: 'Yes.', citations: [] };
+    const pending = { id: '2', question: 'Second?', answer: null, citations: [] };
+    const failure = { ...pending, id: '3', extractionFailed: true };
+    await previous.table('pages').bulkAdd([
+      { canonicalUrl: 'https://www.google.com/search?udm=50#trailmap-ai-1', aiTurns: [success, pending, failure] },
+      { canonicalUrl: 'https://chatgpt.com/.trailmap-chat/2', aiTurns: [success, failure] },
+    ]);
+    previous.close();
+    expect(await db.aiModeStats.toArray()).toEqual([{ id: 'google-ai-mode', successes: 1, failures: 1 }]);
+  });
+
   test('has tables for domain entities, durable jobs, model dispatches and the correction log', () => {
     expect(db.tables.map((t) => t.name).sort()).toEqual([
-      'conceptEvidence', 'conceptStars', 'concepts', 'corrections', 'digests', 'dismissedConcepts', 'edges', 'expeditions', 'highlights', 'jobs', 'modelHealth', 'notes', 'pages', 'queries', 'queueHolds', 'reviewCards', 'reviewLogs', 'sentToModel', 'threadMatchRuns', 'threads', 'visits',
+      'aiModeStats', 'conceptEvidence', 'conceptStars', 'concepts', 'corrections', 'digests', 'dismissedConcepts', 'edges', 'expeditions', 'highlights', 'jobs', 'modelHealth', 'notes', 'pages', 'queries', 'queueHolds', 'reviewCards', 'reviewLogs', 'sentToModel', 'threadMatchRuns', 'threads', 'visits',
     ]);
   });
 });

@@ -24,14 +24,15 @@ async function readCurrentPage(db: TrailmapDb, visitId: string) {
   });
 }
 
-export function ThisPage({ visitId }: { visitId: string | null }) {
+export function ThisPage({ visitId, aiModeWaiting }: { visitId: string | null; aiModeWaiting: boolean }) {
   const read = useCallback((db: TrailmapDb) => visitId ? readCurrentPage(db, visitId) : Promise.resolve(undefined), [visitId]);
   const current = useJournalData(read)?.data;
   return (
     <VStack as="section" aria-label="This page" gap={2}>
       <Heading level={2}>This page</Heading>
       {current ? <CurrentPage key={current.visit.id} {...current} /> : (
-        <Text type="supporting">This page isn’t recorded.</Text>
+        <Text type="supporting">{aiModeWaiting
+          ? 'Ask a question in AI Mode to start recording this conversation.' : 'This page isn’t recorded.'}</Text>
       )}
     </VStack>
   );

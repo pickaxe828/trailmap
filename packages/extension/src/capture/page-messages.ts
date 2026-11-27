@@ -30,6 +30,7 @@ export type AiCapture =
   | { kind: 'ai-result'; turnId: string; result: AiAnswer | null };
 
 export type PageContent = AiCapture
+  | { kind: 'ai-enter' }
   | { kind: 'screen'; hasPassword: boolean }
   | { kind: 'probe'; canonicalLink?: string; sourceHash: string; pdf?: true }
   | ({ kind: 'text'; visitId: string } & PageText)
@@ -49,7 +50,7 @@ export function isPageContentMessage(value: unknown): value is PageContentMessag
   const message = value as Record<string, unknown>;
   if (message.type !== PAGE_CONTENT_MESSAGE || typeof message.pageUrl !== 'string') return false;
   if (message.kind === 'screen') return typeof message.hasPassword === 'boolean';
-  if (message.kind === 'selection') return true;
+  if (message.kind === 'selection' || message.kind === 'ai-enter') return true;
   if (message.kind === 'favicon') return typeof message.visitId === 'string' && isCapturedIcon(message.icon);
   if (message.kind === 'ai-submit' || message.kind === 'ai-result') {
     if (typeof message.turnId !== 'string' || !/^[\da-f-]{36}$/i.test(message.turnId)) return false;

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { JSDOM } from 'jsdom';
 import type { AiSurface } from './ai-surface';
+import { googleAiModeSurface } from './google-ai-mode';
 import type { AiCapture } from './page-messages';
 import { watchAiConversation } from './watch-ai-mode';
 
@@ -36,6 +37,49 @@ function setup({ busy = false } = {}) {
   return { watcher, sent, reads, type, enter, composer, document, click: () => document.querySelector('#send')!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })),
     open: () => { publicNow = true; }, close: () => { publicNow = false; } };
 }
+
+async function savedConversation() {
+  const markup = await Bun.file(new URL('../../../../e2e/site/google/ai-mode-saved.html', import.meta.url)).text();
+  const { window } = new JSDOM(markup, { url: 'https://www.google.com/search?udm=50' });
+  Object.assign(globalThis, { Element: window.Element, MutationObserver: window.MutationObserver });
+  const { document } = window;
+  document.addEventListener('click', (event) => event.preventDefault()); // Keep test links local.
+  let admitted = false;
+  const userClicks = new WeakSet<Event>();
+  const sent: AiCapture[] = [];
+  const watcher = watchAiConversation(document, googleAiModeSurface, () => admitted, async (message) => {
+    sent.push(message);
+    return undefined;
+  }, { trusted: (event) => userClicks.has(event) });
+  const click = (selector: string, trusted = true) => {
+    const event = new window.MouseEvent('click', { bubbles: true });
+    if (trusted) userClicks.add(event);
+    document.querySelector(selector)!.dispatchEvent(event);
+  };
+  return { watcher, sent, click, admit: () => { admitted = true; } };
+}
+
+const suggestion = '[role="link"] strong';
+
+test('a trusted click on a suggested follow-up submits its label without typing', async () => {
+  const page = await savedConversation();
+  page.admit();
+  page.click(suggestion);
+  expect(page.sent).toMatchObject([{ kind: 'ai-submit', question: 'vitamin B12' }]);
+  page.watcher.dispose();
+});
+
+test('suggestion clicks before admission or untrusted clicks are not recorded; citations and links never start turns', async () => {
+  const page = await savedConversation();
+  page.click(suggestion);
+  page.admit();
+  page.click(suggestion, false);
+  page.click('a.PMDqCb');
+  page.click('[aria-label="Related results"]');
+  page.click('a.c0nryc');
+  expect(page.sent).toEqual([]);
+  page.watcher.dispose();
+});
 
 describe('conversation watching only starts after the document is admitted', () => {
   test('an unadmitted document never has its composer read, so a draft or send is invisible', () => {

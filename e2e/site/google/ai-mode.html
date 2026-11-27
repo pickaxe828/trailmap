@@ -1,22 +1,38 @@
 <!doctype html>
+<!-- Reply envelopes reduced from a real saved Google AI Mode page on 2026-11-28; synthetic sky/scattering content. -->
 <html lang="en">
 <head><meta charset="utf-8"><title>Google Search</title></head>
 <body>
-<main data-container-id="main-col">
-  <section data-complete="true">
-    <h3>AI Mode reply for Why is the sky blue?</h3>
-    <div><p>Air scatters shorter wavelengths more strongly.</p>
-      <p>Blue light is scattered in many directions. <sup><button aria-label="Related results">1</button><a href="https://science.test/light.html">Light and scattering</a></sup></p>
-      <p hidden>Hidden content</p>
-      <div aria-roledescription="carousel"><p>Related image caption</p><img alt="Sky photo"></div>
-      <aside aria-label="Sources"><p>Source side panel</p><a href="https://science.test/side.html">Sidebar result</a></aside>
-      <p>AI responses may include mistakes.</p>
-    </div>
-  </section>
-</main>
+<section class="bzXtMb">
+  <div data-complete="true"><div jsname="coFSxe"><div class="qRuFed"><div class="CKgc1d" jsname="CS7uPe">
+    <div data-subtree><div class="FkX2oe">
+      <h3 class="MheKwc" data-ignore-copy>AI Mode reply for Why is the sky blue?</h3>
+      <div class="pWvJNd j2luwe"><div data-container-id="main-col" jsname="KFl8ub" class="mZJni Dn7Fzd">
+        <div>
+          <div class="n6owBd awi2gc">Air scatters shorter wavelengths more strongly.</div>
+          <div class="n6owBd awi2gc">Blue light is scattered in many directions. <span class="WBgIic Wg1cdb notranslate"><a class="PMDqCb" href="https://science.test/light.html">Light and scattering</a></span></div>
+          <div hidden>Hidden content</div>
+          <div aria-roledescription="carousel">Related image caption</div>
+        </div>
+        <div class="alk4p q4PqPb">Reply actions</div>
+      </div></div>
+      <div><div data-container-id="rhs-col">Source side panel</div></div>
+    </div></div>
+  </div></div></div></div>
+</section>
+<div jsname="RH7zg" class="tonYlb"></div>
+<template id="follow-up">
+  <div class="CKgc1d" jsname="CS7uPe"><div data-subtree><div class="Zkbeff" data-complete="false">
+    <h3 class="iMqumd" data-ignore-copy></h3>
+    <div class="pWvJNd"><div data-container-id="main-col" jsname="KFl8ub" class="mZJni">
+      <div data-container-id="8"><div class="n6owBd awi2gc"></div></div>
+      <div class="alk4p q4PqPb">Reply actions</div>
+    </div></div>
+  </div></div></div>
+</template>
 <form><textarea aria-label="Ask anything"></textarea><button type="submit" aria-label="Send">Send</button></form>
 <script>
-  // Local test driver; never use Google or an inference endpoint in this fixture.
+  // Local test driver (not part of the saved page).
   const form = document.querySelector('form');
   form.addEventListener('submit', (event) => {
     event.preventDefault();
@@ -26,25 +42,22 @@
     url.searchParams.set('q', question);
     url.searchParams.set('aai', 'fixture-session-token');
     history.pushState({}, '', url);
+    const turn = document.querySelector('#follow-up').content.cloneNode(true);
+    const reply = turn.querySelector('.Zkbeff');
+    const prose = turn.querySelector('.n6owBd');
+    turn.querySelector('h3').textContent = `AI Mode reply for ${question}`;
+    document.querySelector('[jsname="RH7zg"]').append(turn);
     if (question === 'Where did the answer go?') {
-      const broken = document.createElement('section');
-      broken.dataset.complete = 'true';
-      broken.innerHTML = '<h3>AI Mode reply for Where did the answer go?</h3><aside>Sidebar junk</aside>';
-      document.querySelector('main').append(broken);
+      prose.remove();
+      reply.querySelector('[data-container-id="8"]').textContent = 'Sidebar junk';
+      reply.dataset.complete = 'true';
       return;
     }
-    if (question !== 'What is Rayleigh scattering?' && question !== 'Why is the sky blue?') return;
-    const section = document.createElement('section');
-    section.dataset.complete = 'false';
-    const heading = document.createElement('h3');
-    heading.textContent = `AI Mode reply for ${question}`;
-    section.append(heading, document.createElement('p'));
-    document.querySelector('main').append(section);
     setTimeout(() => {
-      section.lastChild.textContent = question === 'What is Rayleigh scattering?'
+      prose.textContent = question === 'What is Rayleigh scattering?'
         ? 'Rayleigh scattering explains how light scatters from particles much smaller than its wavelength.'
         : 'Molecules scatter blue light more than red light.';
-      section.dataset.complete = 'true';
+      reply.dataset.complete = 'true';
     }, 250);
   });
 </script>

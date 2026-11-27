@@ -2,6 +2,8 @@ import type { ChatSite } from './chat-sites';
 import type { IdleState } from './events';
 import { WINDOW_ID_NONE } from './events';
 
+export const RECORDER_STATE_KEY = 'trailmap.recorderState';
+
 /**
  * Everything the recorder needs to keep attributing parents and active time
  * after the MV3 service worker is killed and restarted (docs/PLAN.md §4.1).
@@ -13,13 +15,17 @@ export type RecorderState = {
   currentVisitByTab: Record<number, string>;
   /** Document ids distinguish successive visits with the same URL, such as reloads. */
   documentIdsByTab?: Record<number, string>;
-  /** Mode entry is not a Visit until a composer submission. Do not keep its query URL. */
+  /** One-shot intent from a trusted Search click, bound to the existing Visit and its document. */
+  aiEntryClicks?: Record<number, { visitId: string; documentId?: string; at: number }>;
+  /** Mode entry is not a Visit until a question was asked. Do not keep its query URL. */
   aiEntries?: Record<number, {
     origin: string;
     documentId?: string;
     parentVisitId: string | null;
     screened: boolean;
     carryReply?: true;
+    /** This entry was opened by clicking AI Mode from its matching parent Query. */
+    askParentQuery?: true;
     /** An opted-in chat site (no query URL or chat id is kept). `fresh`: still on its new-chat page. */
     chat?: ChatSite;
     fresh?: true;

@@ -1,6 +1,7 @@
 import { liveQuery } from 'dexie';
 import type { Expedition, Visit } from '@trailmap/shared';
 import { useEffect, useState } from 'react';
+import { googleSearchSurface } from '../capture/search';
 import { openTrailmapDb } from '../db/db';
 import { startOfLocalDay } from './tree';
 
@@ -11,6 +12,7 @@ type LiveTrail = {
   finished: Expedition[];
   /** The user's own Note text, by Visit or Expedition id. */
   notes: Record<string, string>;
+  aiFollowUps: Record<string, { count: number; latest: string }>;
 };
 
 let db: ReturnType<typeof openTrailmapDb> | undefined;
@@ -21,7 +23,7 @@ export function useLiveTrail(): LiveTrail | undefined {
   useEffect(() => {
     const database = db ??= openTrailmapDb();
     const subscription = liveQuery(() =>
-      database.transaction('r', database.expeditions, database.visits, database.notes, async () => {
+      database.transaction('r', database.expeditions, database.visits, database.notes, database.pages, async () => {
         const expeditions = await database.expeditions.orderBy('startedAt').reverse()
           .filter(({ endedAt }) => endedAt === null).toArray();
         const openIds = new Set(expeditions.map(({ id }) => id));
@@ -33,11 +35,20 @@ export function useLiveTrail(): LiveTrail | undefined {
           .filter(({ expeditionId }) => expeditionId === null || !openIds.has(expeditionId)).toArray();
         const finished = await database.expeditions.orderBy('endedAt').reverse()
           .filter((expedition) => expedition.endedAt !== null && expedition.wrappedUpAt !== undefined).limit(10).toArray();
-        const nodeIds = [...open.flatMap(({ expedition, visits }) => [expedition.id, ...visits.map(({ id }) => id)]),
-          ...today.map(({ id }) => id)];
+        const visits = [...open.flatMap((group) => group.visits), ...today];
+        const nodeIds = [...openIds, ...visits.map(({ id }) => id)];
         const notes = Object.fromEntries((await database.notes.where('nodeId').anyOf(nodeIds).toArray())
           .map(({ nodeId, text }) => [nodeId, text]));
-        return { open, today, notes, finished };
+        const conversations = visits.filter(({ aiConversation, url }) => aiConversation && googleSearchSurface(url) === 'ai-mode');
+        const pages = await database.pages.bulkGet(conversations.map(({ canonicalUrl }) => canonicalUrl));
+        const aiFollowUps: LiveTrail['aiFollowUps'] = {};
+        for (const [index, page] of pages.entries()) {
+          const turns = page?.aiTurns;
+          if (turns && turns.length > 1) {
+            aiFollowUps[conversations[index]!.id] = { count: turns.length, latest: turns.at(-1)!.question };
+          }
+        }
+        return { open, today, notes, finished, aiFollowUps };
       }),
     ).subscribe({ next: setTrail });
     return () => subscription.unsubscribe();

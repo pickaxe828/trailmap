@@ -21,6 +21,7 @@ const service = ({ paused = false, incognito = false } = {}) => {
     recorder: {
       ready: Promise.resolve(),
       getCurrentVisit: (tabId) => (tabId === 7 ? { id: 'a' } : undefined),
+      isWaitingForAiModeQuestion: () => false,
       forgetVisits: async (remove) => { forgetCalls++; return remove(); },
     },
     privacy: {
