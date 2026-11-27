@@ -16,6 +16,7 @@ export function modelTaskLabel(task: string) {
   if (isModelJob(task)) return MODEL_JOB_LABELS[task];
   if (task === 'page_summary') return 'Page summary';
   if (task === 'ask') return 'Ask';
+  if (task === 'review_questions') return 'Review questions';
   if (task === 'forgotten') return 'Entries removed by Forget';
   return 'Model call';
 }

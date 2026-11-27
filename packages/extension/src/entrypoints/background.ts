@@ -16,6 +16,7 @@ import { startHistoryImport } from '../history/background';
 import { startSearch } from '../search/background';
 import { startAsk } from '../ask/background';
 import { startDigests } from '../digest/background';
+import { startReview } from '../review/background';
 import { configurePanelAction, isFirefox } from '../platform/browser';
 import { readPdfOnPlatform } from '../platform/pdf';
 
@@ -75,6 +76,7 @@ function start() {
   const search = startSearch(db);
   startAsk(db, privacy.ready, privacy.getSettings, search.rank);
   startDigests(db, privacy.ready, privacy.getSettings);
+  startReview(db, privacy.ready, privacy.getSettings);
   // The toolbar badge counts field notes nobody has viewed yet. No pop-ups.
   watchUnseenNotes(db, (count) => {
     unseenNotes = count;

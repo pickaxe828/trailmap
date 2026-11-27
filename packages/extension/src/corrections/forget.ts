@@ -49,7 +49,8 @@ export const hostMatches = (url: string | undefined, host: string) => {
 export async function forgetCascade(db: TrailmapDb, input: ForgetInput): Promise<ForgetResult> {
   const { kind, now, newId } = input;
   const tables = [db.visits, db.queries, db.pages, db.highlights, db.notes, db.edges, db.jobs, db.sentToModel,
-    db.expeditions, db.corrections, db.concepts, db.conceptEvidence, db.dismissedConcepts, db.threads, db.threadMatchRuns, db.digests];
+    db.expeditions, db.corrections, db.concepts, db.conceptEvidence, db.dismissedConcepts, db.threads, db.threadMatchRuns, db.digests,
+    db.reviewCards, db.reviewLogs, db.conceptStars];
   return db.transaction('rw', tables, async () => {
     const fromForgottenHost = (url: string | undefined) => !!url && (!!input.host && hostMatches(url, input.host) ||
       !!input.denied && isDefaultDenied(url, { redditThreads: input.redditThreads }) && !chatConversationRetained(url, input.chatCapture && { paused: false, skippedHosts: [], chatCapture: input.chatCapture }));
@@ -167,6 +168,13 @@ export async function forgetCascade(db: TrailmapDb, input: ForgetInput): Promise
       await forgetConceptEvidence(db, gone, [...urls, ...invalidated], now(), sourceRemoved, forgottenExpeditions);
     const nodeIds = new Set([...visitIds, ...queryIds, ...forgottenExpeditions, ...urls, ...removedConceptIds]);
     await db.dismissedConcepts.bulkDelete(removedConceptIds);
+    // A review card (its schedule, its model-written question) and its grades were earned from the Concept's evidence: once any
+    // of that evidence goes, the card and its log go with it. A star is the user's own choice, so it only goes with the Concept.
+    const reviewIds = [...changedConceptIds];
+    const reviewCards = await db.reviewCards.bulkGet(reviewIds);
+    await db.reviewCards.bulkDelete(reviewIds);
+    const reviewLogs = await db.reviewLogs.where('conceptId').anyOf(reviewIds).delete();
+    await db.conceptStars.bulkDelete(removedConceptIds);
     const notes = await db.notes.where('nodeId').anyOf([...nodeIds]).primaryKeys();
     await db.notes.bulkDelete(notes);
 
@@ -246,7 +254,7 @@ export async function forgetCascade(db: TrailmapDb, input: ForgetInput): Promise
       before: {
         visits: visitIds.length, pages: pagesDeleted, queries: queryIds.size, highlights: highlights.size,
         notes: notes.length, jobs: jobs.length + replacedJobs + removedJobs, auditRows: audit.length, edges: edgesTouched, concepts: removedConceptIds.length,
-        expeditions: forgottenExpeditions.length, digests: digests.length,
+        expeditions: forgottenExpeditions.length, digests: digests.length, reviewCards: reviewCards.filter(Boolean).length, reviewLogs,
       },
     });
     return { visitIds };
