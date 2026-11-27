@@ -71,7 +71,9 @@ async function seed() {
     { id: 'edge3', from: 'c1', to: 'c3', type: 'uses', weight: 1, evidence: ['s'] },
   ]);
   const c = corrections();
-  await c.note('s', SECRET); // creates a log entry that mentions the secret
+  const edit = { sessionId: 'secret-stop-edit' };
+  await c.note('s', `${SECRET} draft`, edit);
+  await c.note('s', SECRET, edit); // the session's before and after both mention the secret
   await c.star('a', true);
 }
 

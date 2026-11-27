@@ -84,6 +84,7 @@ export function createJournalCorrections(options: CorrectionsOptions) {
 
   async function undo(id: string, at: number) {
     const entry = await db.corrections.get(id);
+    if (entry?.kind === 'note') return corrections.undoNote(entry, at);
     if (!entry?.kind.startsWith('journal-') || entry.kind === 'journal-undo' || !entry.before) return null;
     const data = entry.before as Undo;
     const { snapshot: before, selected, threadIds, action } = data;
@@ -127,7 +128,8 @@ export function createJournalCorrections(options: CorrectionsOptions) {
     return undoId;
   }
 
-  return async (input: JournalAction): Promise<string | null> => db.transaction('rw', tables, async () => {
+  return async (input: JournalAction): Promise<string | null> => db.transaction('rw', input.action === 'undo'
+    ? [...tables, db.conceptEvidence, db.concepts, db.edges] : tables, async () => {
     const at = now();
     if (input.action === 'undo') return undo(input.correctionId, at);
     let action = input;

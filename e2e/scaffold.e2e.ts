@@ -6,12 +6,11 @@ test('the extension loads with its stable extension ID', async ({ extensionId })
   expect(extensionId).toBe(EXTENSION_ID);
 });
 
-test('the side panel page renders Astryx content saying recording is on', async ({ openExtensionPage }) => {
+test('the side panel page renders Astryx content with recording enabled', async ({ openExtensionPage }) => {
   const page = await openExtensionPage('sidepanel.html');
   await expect(page.getByRole('heading', { name: 'Trailmap' })).toBeVisible();
-  await expect(page.getByText('Recording is on')).toBeVisible();
-  await expect(page.locator('.astryx-heading')).toHaveCount(1);
-  await expect(page.locator('.astryx-status-dot').first()).toBeVisible();
+  await expect(page.locator('.astryx-heading', { hasText: 'This page' })).toBeVisible();
+  await expect(page.getByRole('switch', { name: 'Record browsing' })).toBeChecked();
 });
 
 test('the onboarding page renders Astryx content', async ({ openExtensionPage }) => {
@@ -29,7 +28,7 @@ test('installing the extension opens the onboarding tab by itself', async ({ con
 
 test('dark mode follows the operating system', async ({ openExtensionPage }) => {
   const page = await openExtensionPage('sidepanel.html');
-  const headingColor = () => page.locator('.astryx-heading').evaluate((el) => getComputedStyle(el).color);
+  const headingColor = () => page.getByRole('heading', { name: 'This page' }).evaluate((el) => getComputedStyle(el).color);
 
   await page.emulateMedia({ colorScheme: 'light' });
   const light = await headingColor();
@@ -54,6 +53,6 @@ test('extension pages make no network requests outside the extension', async ({ 
   const requested: string[] = [];
   page.on('request', (req) => requested.push(req.url()));
   await page.goto(`chrome-extension://${extensionId}/sidepanel.html`);
-  await expect(page.getByText('Recording is on')).toBeVisible();
+  await expect(page.getByRole('switch', { name: 'Record browsing' })).toBeChecked();
   expect(requested.filter((url) => !url.startsWith(`chrome-extension://${extensionId}/`))).toEqual([]);
 });

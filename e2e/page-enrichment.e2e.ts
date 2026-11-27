@@ -26,7 +26,7 @@ test('queued Page notes survive a worker restart, filter at dispatch, and log ev
   await expect(recordSite).not.toBeChecked();
   await skipped.close();
 
-  await (await read('learn.test')).close();
+  const learned = await read('learn.test');
   const bounced = await context.newPage();
   await bounced.goto(fixtureUrl('bounced.test', ARTICLE));
   await expect.poll(async () => (await readCapture('pages')).some(({ canonicalUrl }) => new URL(canonicalUrl).hostname === 'bounced.test')).toBe(true);
@@ -49,6 +49,10 @@ test('queued Page notes survive a worker restart, filter at dispatch, and log ev
   installCompanion();
   await panel.reload();
   await signInToMockChatGpt(context, await openExtensionPage('settings.html#model-providers'));
+  await learned.bringToFront();
+  const generated = panel.getByRole('button', { name: 'Generated page notes' });
+  await expect(generated).toHaveAttribute('aria-expanded', 'false');
+  await generated.evaluate((button: HTMLButtonElement) => button.click());
   await expect(panel.getByText('Tombstones retain deletion history across replicas.')).toBeVisible();
   await expect(panel.getByText('A tombstone records that an item was deleted.')).toBeVisible();
   await expect(panel.getByText('Replicas can process updates out of order.')).toBeVisible();
@@ -138,7 +142,9 @@ test('a plan usage limit pauses ChatGPT notes but not capture; a successful prob
     }
     await chrome.alarms.create('trailmap.jobs', { when: Date.now() + 1000 });
   }, DB_NAME);
-  await expect(panel.getByText('Tombstones retain deletion history across replicas.')).toBeVisible();
+  await expect.poll(async () => (await readCapture('pages')).find(({ canonicalUrl }) =>
+    canonicalUrl === fixtureUrl('limit.test', '/replicated-lists?chapter=2'))?.summary, { timeout: 0 })
+    .toBe('Tombstones retain deletion history across replicas.');
   await expect(banner).toHaveCount(0);
 });
 
@@ -170,6 +176,10 @@ test('an ineligible ChatGPT account is offered other providers until an eligible
   expect((await fetch(mockOrigin + '/test/clear-plan-error', { method: 'POST' })).status).toBe(204);
   await settings.getByRole('button', { name: 'Sign out' }).click();
   await signInToMockChatGpt(context, settings);
+  await page.bringToFront();
+  const generated = panel.getByRole('button', { name: 'Generated page notes' });
+  await expect(generated).toHaveAttribute('aria-expanded', 'false');
+  await generated.evaluate((button: HTMLButtonElement) => button.click());
   await expect(panel.getByText('Tombstones retain deletion history across replicas.')).toBeVisible();
   await expect(banner).toHaveCount(0);
 });

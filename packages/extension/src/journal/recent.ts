@@ -13,6 +13,7 @@ const quote = (titles: string[]) => {
 };
 
 function describe(kind: string, data: Logged): string {
+  if (kind === 'note') return 'Edited page note';
   const titles = (data.selected ?? []).flatMap((id) => data.snapshot?.expeditions?.find((item) => item.id === id)?.title ?? []);
   const names = titles.length ? quote(titles) : 'expeditions';
   switch (data.action ?? kind.replace('journal-', '')) {
@@ -26,10 +27,11 @@ function describe(kind: string, data: Logged): string {
   }
 }
 
-/** The latest Journal organise actions that can still be undone, read from the durable corrections log. */
+/** The latest reversible edits and organise actions, read from the durable corrections log. */
 export async function readRecentChanges(db: TrailmapDb): Promise<RecentChange[]> {
   const rows = await db.corrections.orderBy('at').reverse()
-    .filter(({ kind, before }) => kind.startsWith('journal-') && kind !== 'journal-undo' && !!before && typeof before === 'object')
+    .filter(({ kind, before }) => (kind === 'note' || (kind.startsWith('journal-') && kind !== 'journal-undo')) &&
+      !!before && typeof before === 'object')
     .limit(RECENT_CHANGES_LIMIT).toArray();
   return rows.map(({ id, at, kind, before }) => ({ id, at, label: describe(kind, before as Logged) }));
 }
@@ -43,5 +45,5 @@ export async function undoRefusal(db: TrailmapDb, id: string): Promise<UndoRefus
 export const REFUSAL_MESSAGE: Record<UndoRefusal, string> = {
   forgotten: 'Could not undo: the data for this change was forgotten, so it can’t be restored.',
   undone: 'This change was already undone.',
-  conflict: 'Could not undo: a later change touched the same expeditions. Undo that change first.',
+  conflict: 'Could not undo: a later change touched the same data. Undo that change first.',
 };

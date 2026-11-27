@@ -1,5 +1,4 @@
 import { HStack } from '@astryxdesign/core/HStack';
-import { StatusDot } from '@astryxdesign/core/StatusDot';
 import { Switch } from '@astryxdesign/core/Switch';
 import { Text } from '@astryxdesign/core/Text';
 import { VStack } from '@astryxdesign/core/VStack';
@@ -64,23 +63,18 @@ export function RecordingControls({ activeSite = true }: { activeSite?: boolean 
 
   if (!status) return <Text type="supporting">{failed ? 'Recording controls unavailable' : 'Checking recording…'}</Text>;
   const { paused, site } = status;
-  const label = paused ? 'Recording paused' : site?.state === 'skipped' ? 'Site is skipped' : 'Recording is on';
   return (
-    <VStack gap={2}>
-      {activeSite && (
-        <HStack gap={2} align="center">
-          <StatusDot variant={paused ? 'warning' : site?.skipped ? 'neutral' : 'success'} label={label} />
-          <Text>{label}</Text>
-        </HStack>
-      )}
-      <Switch size="sm" label="Record browsing" value={!paused}
-        description={paused ? 'Recording resumes on the next navigation.' : undefined}
-        changeAction={(checked) => change({ type: RECORDING_MESSAGE, action: 'set-pause', paused: !checked })} />
-      {site && (
-        <Switch size="sm" label={`Record ${site.host}`} value={!site.skipped} isDisabled={!site.editable}
-          description={!site.editable ? 'This page is protected by a privacy filter.' : undefined}
-          changeAction={(checked) => change({ type: RECORDING_MESSAGE, action: 'set-site', tabId: site.tabId, host: site.host, skip: !checked })} />
-      )}
+    <VStack gap={1}>
+      <HStack gap={3} align="center" wrap="wrap" className="wrap-anywhere">
+        <Switch size="sm" label="Record browsing" value={!paused}
+          description={paused && !activeSite ? 'Recording resumes on the next navigation.' : undefined}
+          changeAction={(checked) => change({ type: RECORDING_MESSAGE, action: 'set-pause', paused: !checked })} />
+        {site && (
+          <Switch size="sm" label={`Record ${site.host}`} value={!site.skipped} isDisabled={!site.editable}
+            disabledMessage={!site.editable ? 'This page is protected by a privacy filter.' : undefined}
+            changeAction={(checked) => change({ type: RECORDING_MESSAGE, action: 'set-site', tabId: site.tabId, host: site.host, skip: !checked })} />
+        )}
+      </HStack>
       {failed && <Text type="supporting">Could not update recording settings.</Text>}
     </VStack>
   );

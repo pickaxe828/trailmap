@@ -25,7 +25,8 @@ test('Wrap up titles the Expedition, writes field notes with citations and loose
   expect(await readCapture('expeditions')).toHaveLength(1);
 
   await panel.getByRole('button', { name: /^Wrap up expedition/ }).first().click();
-  await expect(panel.getByRole('heading', { name: 'Field notes' })).toBeVisible({ timeout: 60_000 });
+  const history = panel.getByRole('button', { name: 'Finished expeditions · Field notes' });
+  await expect(history).toHaveAttribute('aria-expanded', 'false', { timeout: 60_000 });
   await expect.poll(async () => (await readCapture('expeditions'))[0]?.fieldNotes, { timeout: 60_000 }).not.toBeNull();
 
   const [expedition] = await readCapture('expeditions');
@@ -53,6 +54,7 @@ test('Wrap up titles the Expedition, writes field notes with citations and loose
   expect(wrapUpCall.input[0]!.content).not.toContain('This paragraph appears');
   expect(JSON.parse(wrapUpCall.input[0]!.content).trail[0]).not.toHaveProperty('text');
 
+  await history.click();
   await panel.getByText('How replicated lists delete items (new)').click();
   await expect(panel.getByRole('heading', { name: 'What you found' })).toBeVisible();
   await expect(panel.getByText('How are tombstones garbage collected?')).toBeVisible();
@@ -129,6 +131,6 @@ test.describe('automatic wrap-up', () => {
     expect((await readCapture('expeditions')).find(({ id }) => id !== first!.id)?.endedAt).toBeNull();
 
     const panel = await openExtensionPage('sidepanel.html');
-    await expect(panel.getByRole('heading', { name: 'Field notes' })).toBeVisible();
+    await expect(panel.getByRole('button', { name: 'Finished expeditions · Field notes' })).toHaveAttribute('aria-expanded', 'false');
   });
 });

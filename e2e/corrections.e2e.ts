@@ -38,7 +38,7 @@ test('the live trail marks the current page, and split, rename, star and forget 
   // Add a note.
   await articleRow.getByRole('button', { name: /Actions for/ }).click();
   await panel.getByRole('menuitem', { name: 'Add note' }).click();
-  await panel.getByRole('textbox', { name: 'Note' }).fill('check the delete semantics');
+  await panel.getByRole('dialog').getByRole('textbox', { name: 'Note', exact: true }).fill('check the delete semantics');
   await panel.getByRole('button', { name: 'Save note' }).click();
   await expect(articleRow.getByText('Note: check the delete semantics')).toBeVisible();
 

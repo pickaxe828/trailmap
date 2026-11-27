@@ -1,12 +1,15 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test';
 import type { Expedition, Visit } from '@trailmap/shared';
 import { openTrailmapDb } from '../db/db';
+import { createJournalCorrections } from '../journal/corrections';
+import { readRecentChanges } from '../journal/recent';
 import { createCorrections } from './corrections';
 
 let db: ReturnType<typeof openTrailmapDb>;
 let ids: number;
 let time: number;
-const corrections = () => createCorrections({ db, now: () => ++time, newId: () => `id-${++ids}` });
+const options = () => ({ db, now: () => ++time, newId: () => `id-${++ids}` });
+const corrections = () => createCorrections(options());
 beforeEach(() => { db = openTrailmapDb(crypto.randomUUID()); ids = 0; time = 1_000; });
 afterEach(() => db.delete());
 
@@ -40,6 +43,21 @@ test('starring a Visit and noting it persist and are logged with before and afte
 
   await c.star('a', false);
   expect((await db.visits.get('a'))?.starred).toBeUndefined();
+});
+
+test('autosaves across worker wakeups give one Recent change that restores the original note', async () => {
+  await db.expeditions.put(expedition('e1'));
+  await db.visits.put(visit('a'));
+  await corrections().note('a', 'Original thought');
+  const edit = { sessionId: 'one-edit' };
+  await corrections().note('a', 'New draft', edit);
+  await corrections().note('a', 'A better explanation', edit);
+  const changes = await readRecentChanges(db);
+  expect(changes.map(({ label }) => label)).toEqual(['Edited page note', 'Edited page note']);
+  const undo = createJournalCorrections(options());
+  expect(await undo({ action: 'undo', correctionId: changes[0]!.id })).not.toBeNull();
+  expect((await db.notes.where('nodeId').equals('a').first())?.text).toBe('Original thought');
+  expect(await corrections().note('a', 'Late autosave', edit)).toBe(false);
 });
 
 test('renaming an Expedition marks it user-edited and logs the title change', async () => {

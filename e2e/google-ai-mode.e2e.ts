@@ -27,6 +27,38 @@ async function ask(page: Page, question: string) {
   await page.getByRole('button', { name: 'Send' }).click();
 }
 
+modelTest('AI Mode shows the same page note editor after a conversation is captured', async ({
+  context, openExtensionPage, installCompanion, aiModeScreened, readCapture,
+}) => {
+  await routeGoogle(context);
+  installCompanion();
+  await signInToMockChatGpt(context, await openExtensionPage('settings.html#model-providers'));
+  const panel = await openExtensionPage('sidepanel.html');
+  await panel.setViewportSize({ width: 400, height: 820 });
+  const google = await context.newPage();
+  await google.goto(`${GOOGLE}/aimode`);
+  await aiModeScreened();
+  const thisPage = panel.getByRole('region', { name: 'This page' });
+  await expect(thisPage.getByText('This page isn’t recorded.')).toBeVisible();
+  await ask(google, FIRST);
+  const conversation = async () => (await readCapture('pages')).find(({ aiTurns }) => aiTurns);
+  await expect.poll(conversation, { timeout: 0 }).toMatchObject({ aiTurns: [{ question: FIRST, answer: expect.stringContaining('Air scatters') }] });
+  await ask(google, NEXT);
+  await expect.poll(conversation, { timeout: 0 }).toMatchObject({ summary: 'The AI conversation explains Rayleigh scattering.' });
+  const note = thisPage.getByRole('textbox', { name: 'Page note' });
+  const text = '**Rayleigh scattering**\n\nFind a source that explains the wavelength dependence.';
+  await note.fill(text);
+  await expect(thisPage.getByRole('status')).toHaveText('Saved');
+  const ai = (await readCapture('visits')).find(({ aiConversation }) => aiConversation);
+  expect(await readCapture('notes')).toMatchObject([{ nodeId: ai?.id, text }]);
+  await expect(thisPage.getByRole('button', { name: 'Generated page notes' })).toHaveAttribute('aria-expanded', 'false');
+  const dir = process.env.NOTES_PROOF_DIR;
+  if (dir) for (const colorScheme of ['light', 'dark'] as const) {
+    await panel.emulateMedia({ colorScheme });
+    await panel.screenshot({ path: join(dir, `google-ai-mode-note-saved-${colorScheme}.png`), animations: 'disabled' });
+  }
+});
+
 test('Google results and passive AI Mode never store reply text; a broken typed reply leaves only its question', async ({
   context, readCapture, openExtensionPage,
 }) => {
