@@ -16,6 +16,7 @@ import { TrailmapShell } from '../../ui/TrailmapShell';
 import { ExportSettings } from '../../vault/ExportSettings';
 import { VaultSettings } from '../../vault/VaultSettings';
 import { ModelJobs } from './ModelJobs';
+import { ThreadMatching } from './ThreadMatching';
 import { SentToModelLog } from './SentToModelLog';
 
 const sections = [
@@ -68,6 +69,7 @@ function CaptureDiagnostics() {
       <Text as="p" type="supporting">Counts saved AI Mode questions whose replies could not be captured.</Text>
       {isFirefox && <LocalEmbeddingsNotice />}
       <ModelJobs />
+      <ThreadMatching />
     </VStack>
   );
 }

@@ -32,7 +32,7 @@ export function startJobs(db: TrailmapDb, ready: Promise<void>, getSettings: () 
     thread_match: matchThread(db, getEmbedder(), Date.now, getSettings),
     living_note: updateLivingNote(db, getSettings),
     notes_enrichment: enrichNotes(db, getSettings, getEmbedder()),
-  }, [db.pages, db.expeditions, db.visits, db.concepts, db.conceptEvidence, db.edges, db.threads, db.highlights, db.queries, db.notes]);
+  }, [db.pages, db.expeditions, db.visits, db.concepts, db.conceptEvidence, db.edges, db.threads, db.highlights, db.queries, db.notes, db.threadMatchRuns]);
   const client = getCompanionClient();
   let pumping = false;
   let retryRequested = false;

@@ -150,7 +150,7 @@ export const Expedition = z.object({
   threadId: z.string().nullable(),
   threadSuggestion: SuggestionTarget.optional(),
   dismissedSuggestions: z.array(SuggestionTarget).optional(),
-  threadSignature: z.object({ vector: z.instanceof(Int8Array), conceptIds: z.array(z.string()) }).optional(),
+  threadSignature: z.object({ vector: z.instanceof(Int8Array), conceptIds: z.array(z.string()), descriptionHash: z.string().optional() }).optional(),
   threadAutoExcluded: z.boolean().optional(),
   wrappedUpAt: z.number().optional(), // The wrap-up pass (title, question, kind) committed.
   wrapUpSource: ModelSources.optional(),

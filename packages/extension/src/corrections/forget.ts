@@ -44,7 +44,7 @@ export const hostMatches = (url: string | undefined, host: string) => {
 export async function forgetCascade(db: TrailmapDb, input: ForgetInput): Promise<ForgetResult> {
   const { kind, now, newId } = input;
   const tables = [db.visits, db.queries, db.pages, db.highlights, db.notes, db.edges, db.jobs, db.sentToModel,
-    db.expeditions, db.corrections, db.concepts, db.conceptEvidence, db.dismissedConcepts, db.threads];
+    db.expeditions, db.corrections, db.concepts, db.conceptEvidence, db.dismissedConcepts, db.threads, db.threadMatchRuns];
   return db.transaction('rw', tables, async () => {
     const fromForgottenHost = (url: string | undefined) => !!url && (!!input.host && hostMatches(url, input.host) ||
       !!input.denied && isDefaultDenied(url));
@@ -190,6 +190,10 @@ export async function forgetCascade(db: TrailmapDb, input: ForgetInput): Promise
       await db.expeditions.update(id, { threadSignature: undefined, threadSuggestion: undefined });
       if (threadId) threadIds.add(threadId);
     }
+    // A match run recorded against forgotten or re-derived material no longer says anything true.
+    const runIds = new Set([...affected, ...forgottenExpeditions, ...invalidSignatures.map(({ id }) => id)]);
+    await db.threadMatchRuns.filter((run) => runIds.has(run.expeditionId) ||
+      run.candidates.some(({ id }) => runIds.has(id) || threadIds.has(id))).delete();
     const survivingThreads = new Set<string>();
     for (const id of threadIds) {
       await refreshThread(db, id, now(), true);

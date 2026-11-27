@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test';
-import type { Expedition, Visit } from '@trailmap/shared';
+import type { Expedition, Page, Visit } from '@trailmap/shared';
+import { enqueueConceptResolution } from '../concepts/enqueue';
 import { openTrailmapDb } from '../db/db';
 import type { Embedder } from '../embeddings/embedder';
 import { JobQueue } from '../jobs/queue';
@@ -8,9 +9,10 @@ import { enqueueThreadMatch, matchThread } from './match';
 import { readDormantThreads } from './model';
 
 const day = 86_400_000;
-const now = () => 100 * day;
+let clock = 100 * day;
+const now = () => clock;
 let db: ReturnType<typeof openTrailmapDb>;
-beforeEach(() => { db = openTrailmapDb(crypto.randomUUID()); });
+beforeEach(() => { resolutionStalled = false; clock = 100 * day; db = openTrailmapDb(crypto.randomUUID()); });
 afterEach(() => db.delete());
 
 const expedition = (id: string, title: string, age: number, kind: Expedition['kind'] = 'learning'): Expedition => ({
@@ -18,17 +20,20 @@ const expedition = (id: string, title: string, age: number, kind: Expedition['ki
   drivingQuestion: null, fieldNotes: 'Session notes', userEdited: false, threadId: null,
 });
 
+let embedderDown = false;
 const embedder: Embedder = { async embed(texts) {
+  if (embedderDown) throw new Error('offline');
   return texts.map((text) => Float32Array.from(text.startsWith('Borderline') ? [0.9, 0.436] : text.startsWith('Related') ? [0.8, 0.6] :
     text.startsWith('Other') ? [0, 1] : [1, 0]));
 } };
 
+let resolutionStalled = false;
 async function match(session: Expedition) {
   const written = { ...session, notesWrittenAt: now() };
   await db.expeditions.put(written);
   await enqueueThreadMatch(db, written, now());
-  const queue = new JobQueue(db, now, { ...discardJobs, thread_match: matchThread(db, embedder, now) },
-    [db.expeditions, db.threads, db.visits, db.concepts, db.conceptEvidence]);
+  const queue = new JobQueue(db, now, { ...discardJobs, thread_match: matchThread(db, embedder, now), ...(resolutionStalled ? { concept_resolution: async () => ({ retryAt: now() + day }) } : {}) },
+    [db.expeditions, db.threads, db.visits, db.concepts, db.conceptEvidence, db.threadMatchRuns]);
   while (await queue.runNext()) { /* drain matching work */ }
   return db.expeditions.get(session.id);
 }
@@ -88,4 +93,57 @@ test('no match when the candidate is unrelated, older than 60 days, or an errand
   expect(result?.threadId).toBeNull();
   expect(result?.threadSuggestion).toBeUndefined();
   expect(await db.threads.count()).toBe(0);
+});
+
+const page = (canonicalUrl: string): Page => ({ canonicalUrl, title: 'Page', text: '', textHash: 'h', summary: null, takeaways: [], embedding: null,
+  pageKind: null, enrichedAt: 5, enrichmentVisitId: `visit:${canonicalUrl}`, conceptMentions: [{ name: 'Tombstone', kind: 'concept', role: 'explains', salience: 'supporting', gloss: 'g' }] } as unknown as Page);
+
+async function readPage(expeditionId: string, canonicalUrl: string) {
+  await db.visits.add({ id: `visit:${canonicalUrl}`, url: canonicalUrl, canonicalUrl, expeditionId, engagement: 'read', startedAt: now(), tabId: 1,
+    parentVisitId: null, transition: 'typed', title: 'Page', activeMs: 75_000, scrollDepth: 1 } satisfies Visit);
+  const resolution = page(canonicalUrl);
+  await db.pages.put(resolution);
+  await enqueueConceptResolution(db, resolution, now());
+}
+
+test('thread matching waits for concept resolution of the Expedition\'s pages, then gives up after 15 minutes', async () => {
+  await readPage('current', 'https://learn.test/read');
+  resolutionStalled = true;
+  expect(await match(expedition('current', 'Replicated list deletes', 0))).toMatchObject({ threadId: null });
+  expect((await db.expeditions.get('current'))?.threadSignature).toBeUndefined();
+  expect(await db.threadMatchRuns.get('current')).toMatchObject({ outcome: 'waiting', reason: 'waiting-on-concepts' });
+  clock += 16 * 60_000;
+  const queue = new JobQueue(db, now, { ...discardJobs, thread_match: matchThread(db, embedder, now) },
+    [db.expeditions, db.threads, db.visits, db.concepts, db.conceptEvidence, db.threadMatchRuns]);
+  while (await queue.runNext()) { /* the unresolved page no longer holds matching back */ }
+  expect((await db.expeditions.get('current'))?.threadSignature).toBeDefined();
+  expect(await db.threadMatchRuns.get('current')).toMatchObject({ outcome: 'none' });
+});
+
+test('a stored signature is embedded again when the Expedition is described differently', async () => {
+  await match(expedition('first', 'Replicated lists', 2));
+  await db.expeditions.update('first', { title: 'Other topic' });
+  const second = await match(expedition('second', 'Replicated list deletes', 0));
+  expect(second?.threadId).toBeNull();
+  expect(second?.threadSuggestion).toBeUndefined();
+});
+
+test('every run is recorded with its candidates and the reason, and never with titles or text', async () => {
+  await match(expedition('first', 'Replicated lists', 2));
+  expect(await db.threadMatchRuns.get('first')).toMatchObject({ outcome: 'none', reason: 'no-candidates', candidates: [] });
+  await match(expedition('far', 'Other topic', 1));
+  expect(await db.threadMatchRuns.get('far')).toMatchObject({ outcome: 'none', reason: 'below-suggestion-band',
+    candidates: [{ kind: 'expedition', id: 'first', similarity: 0, shared: 0, band: 0 }] });
+  await match(expedition('related', 'Related list algorithms', 0));
+  const suggested = await db.threadMatchRuns.get('related');
+  expect(suggested).toMatchObject({ outcome: 'suggested', reason: 'suggestion-band', candidates: [{ id: 'first', band: 1 }, { id: 'far', band: 1 }] });
+  expect(JSON.stringify(suggested)).not.toMatch(/Replicated|Related|Session notes/);
+  await match(expedition('same', 'Replicated list deletes', 0));
+  expect(await db.threadMatchRuns.get('same')).toMatchObject({ outcome: 'joined', reason: 'strong-match' });
+});
+
+test('an unavailable Embedder is recorded and retried', async () => {
+  embedderDown = true;
+  try { await match(expedition('first', 'Replicated lists', 1)); } finally { embedderDown = false; }
+  expect(await db.threadMatchRuns.get('first')).toMatchObject({ outcome: 'waiting', reason: 'embedder-unavailable' });
 });
