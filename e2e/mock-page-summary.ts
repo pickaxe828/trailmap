@@ -102,6 +102,17 @@ const mock = startMockOAuth(async (request) => {
       relations: [],
     }));
   }
+  if (task === 'page_enrichment' && JSON.parse(text).contentKind === 'pdf') {
+    // Only the PDF's own text layer may arrive here.
+    if (!text.includes('Compaction merges sorted runs')) return new Response(null, { status: 400 });
+    return stream(JSON.stringify({
+      summary: 'The paper explains how a log-structured merge tree buffers and compacts writes.',
+      takeaways: ['A memtable buffers writes before a flush.', 'Compaction merges sorted runs and discards overwritten keys.'],
+      answers_question: 'How does an LSM tree store writes?', page_kind: 'paper',
+      concepts: [{ name: 'Compaction', kind: 'concept', gloss: 'Merging sorted runs into larger ones.', role: 'explains', salience: 'central' }],
+      relations: [],
+    }));
+  }
   if (task === 'page_enrichment' && text.includes('pharyngealization')) return stream(JSON.stringify({
     summary: 'The modifier letter ˤ marks pharyngealization in the IPA.',
     takeaways: ['ˤ marks pharyngealization.', 'ʕ and ʔ are neighbouring pharyngeal and glottal sounds.'],

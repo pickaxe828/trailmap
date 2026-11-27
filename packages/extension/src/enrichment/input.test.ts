@@ -53,3 +53,17 @@ test('a YouTube watch Page is sent as a video transcript, through the same priva
     expect(buildEnrichmentInput({ visit: video, page: transcript, highlights: [] }, settings)).toBeUndefined();
   }
 });
+
+test('a PDF Page is sent as a pdf document, through the same privacy gate as any Page', () => {
+  const url = 'https://papers.test/lsm.pdf';
+  const paper = { ...visit, url, canonicalUrl: url, title: 'LSM trees', pdf: true as const, parentVisitId: null };
+  const text = { ...newPage(url, 'A memtable buffers writes.', 'hash'), sourceUrl: url };
+  expect(buildEnrichmentInput({ visit: paper, page: text, highlights: [] }, { paused: false, skippedHosts: [] }))
+    .toMatchObject({ contentKind: 'pdf', title: 'LSM trees', url, text: 'A memtable buffers writes.' });
+  for (const settings of [{ paused: true, skippedHosts: [] }, { paused: false, skippedHosts: ['papers.test'] }]) {
+    expect(buildEnrichmentInput({ visit: paper, page: text, highlights: [] }, settings)).toBeUndefined();
+  }
+  // A password-protected or bounced Visit sends nothing, and neither does a Page that has no text layer.
+  expect(buildEnrichmentInput({ visit: { ...paper, privacyBlocked: true }, page: text, highlights: [] }, { paused: false, skippedHosts: [] })).toBeUndefined();
+  expect(buildEnrichmentInput({ visit: { ...paper, engagement: 'bounced' }, page: text, highlights: [] }, { paused: false, skippedHosts: [] })).toBeUndefined();
+});

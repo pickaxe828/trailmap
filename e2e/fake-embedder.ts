@@ -1,4 +1,5 @@
 import type { Embedder } from '../packages/extension/src/embeddings/embedder';
+import { serveReadPdfRequests, usePdfWorker } from '../packages/extension/src/capture/pdf-runtime';
 import { EMBEDDING_DIMENSIONS, serveEmbeddingRequests } from '../packages/extension/src/embeddings/messages';
 
 const embedder: Embedder = {
@@ -16,3 +17,7 @@ const embedder: Embedder = {
 };
 
 serveEmbeddingRequests(embedder);
+// The real PDF reader, with the real bundled worker: fixtures.ts defines where the build emitted it.
+declare const PDF_WORKER_URL: string;
+usePdfWorker(PDF_WORKER_URL);
+serveReadPdfRequests();

@@ -15,6 +15,7 @@ import { startVaultSync } from '../vault/background';
 import { startHistoryImport } from '../history/background';
 import { startSearch } from '../search/background';
 import { configurePanelAction, isFirefox } from '../platform/browser';
+import { readPdfOnPlatform } from '../platform/pdf';
 
 export default defineBackground({
   // ESM keeps the lazy Firefox model runtime and its WASM out of the startup bundle.
@@ -53,6 +54,10 @@ function start() {
     policyReady: privacy.ready,
     screenDocuments: true,
     onPasswordStatusChanged: privacy.onPasswordStatusChanged,
+    readPdf: readPdfOnPlatform,
+    isIncognitoTab: async (tabId) => (await chrome.tabs.get(tabId)).incognito,
+    // Gecko's PDF viewer runs no content scripts, so a .pdf URL has no document to wait for.
+    admitPdfUrls: isFirefox,
     newId: () => crypto.randomUUID(),
   });
   recorder.start();

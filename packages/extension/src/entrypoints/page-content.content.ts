@@ -3,6 +3,7 @@ import { chatSurfaceFor } from '../capture/chat-extract';
 import { chatSiteOf, sameChatConversation } from '../capture/chat-sites';
 import { googleAiModeSurface } from '../capture/google-ai-mode';
 import { PAGE_CONTENT_MESSAGE, RESCREEN_CHAT_MESSAGE, type PageContent, type PageContentMessage, type PageContentReply } from '../capture/page-messages';
+import { isPdfDocument } from '../capture/pdf';
 import { googleSearchSurface } from '../capture/search';
 import { watchAiConversation } from '../capture/watch-ai-mode';
 import { WatchClock } from '../capture/watch-video';
@@ -148,7 +149,9 @@ export default defineContentScript({
       if (!admitted) await screen(started);
       if (generation !== started || !isPublic() || metadataOnly()) return;
       const sourceHash = hashText(document.documentElement.outerHTML);
-      const reply = await send({ kind: 'probe', sourceHash, canonicalLink: canonicalLink() });
+      // A PDF's text is read by the background (the viewer's document is not ours to read), so a PDF only says so here.
+      const pdf = isPdfDocument(document);
+      const reply = await send({ kind: 'probe', sourceHash, canonicalLink: canonicalLink(), ...(pdf ? { pdf: true as const } : {}) });
       if (!reply?.extract || generation !== started || !isPublic()) return;
 
       // The DOM may have changed while the service worker looked up the Page.

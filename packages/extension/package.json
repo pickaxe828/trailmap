@@ -26,6 +26,7 @@
     "graphology-communities-louvain": "2.0.2",
     "graphology-layout-forceatlas2": "0.10.1",
     "minisearch": "7.2.0",
+    "pdfjs-dist": "6.5.438",
     "react": "19.2.9",
     "react-dom": "19.2.9",
     "sigma": "3.0.3",

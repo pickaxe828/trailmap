@@ -11,7 +11,7 @@
  */
 import { chromium, test as base, expect, type BrowserContext, type Page, type Worker } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
@@ -126,8 +126,9 @@ export const test = base.extend<Fixtures & Options, WorkerFixtures>({
     const dir = mkdtempSync(join(tmpdir(), 'trailmap-e2e-extension-'));
     try {
       cpSync(EXTENSION_DIR, dir, { recursive: true });
+      const worker = readdirSync(join(dir, 'assets')).find((name) => /^pdf\.worker\.min-.+\.mjs$/.test(name));
       execFileSync('bun', ['build', fileURLToPath(new URL('./fake-embedder.ts', import.meta.url)),
-        '--outfile', join(dir, 'fake-embedder.js')], { stdio: 'pipe' });
+        '--outfile', join(dir, 'fake-embedder.js'), '--define', `PDF_WORKER_URL=${JSON.stringify(`/assets/${worker}`)}`, '--define', 'import.meta.env.FIREFOX=false'], { stdio: 'pipe' });
       writeFileSync(join(dir, 'offscreen.html'), '<script type="module" src="./fake-embedder.js"></script>');
       await use(dir);
     } finally {

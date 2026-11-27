@@ -81,6 +81,15 @@ Before you finish a ticket run all of: `bun run typecheck && bun run test && bun
 
 `packages/extension/src/capture/youtube.ts` holds every YouTube selector, JSON path and URL rule (none verified against the live site; fixtures in `e2e/site/youtube/`). On a `youtube.com/watch` page the content script (after the recorder admitted the Visit) takes the Page text from the inline `ytInitialPlayerResponse` caption track, fetched once same-origin with no cookies, or the title and description without captions, or nothing when the shape is not exactly as expected; it never runs Readability on a watch page. After a single-page navigation the inline data is stale, so the watch URL's own HTML is fetched once instead. Engagement for a watch Visit is `Visit.watchMs` (video playing while the tab is visible, `watch-video.ts`) scored by `scoreVideoEngagement`, never scroll depth. Enrichment input carries `contentKind: 'video'`. Details: `trailmap-notes/notes-38.md`.
 
+## PDFs
+
+`packages/extension/src/capture/pdf.ts` re-fetches a PDF the browser's viewer is showing and reads its text layer with the bundled pdf.js. Neither viewer's document can be read (Chromium's is a cross-origin frame, Gecko's runs no content scripts), so the background fetches the same URL once, `credentials: 'include'`, and only for a Visit the recorder admitted: never paused, skipped, denied, password-protected or incognito (`isIncognitoTab`). It runs in the offscreen document on Chromium (`platform/pdf.ts`, `pdf-runtime.ts`) and in the Gecko background page. Never from a companion verb. Redirects to another origin, non-`%PDF-` bodies and files over `PDF_MAX_BYTES` (25 MB) are dropped. pdf.js and its worker are bundled (`pdf-worker-url.ts`); `isEvalSupported: false` keeps the CSP as it is.
+
+- **Detection.** Chromium: the content script's top-level document is the `application/pdf` wrapper (`isPdfDocument`), and it says `pdf: true` in its probe, so a PDF with no `.pdf` URL works. Gecko: a `.pdf` path (`isPdfUrl`) is admitted at commit (`admitPdfUrls`) with no screening. `Visit.pdf` marks it; the recorder reads the file itself (`startPdfRead`/`commitPdf`) and the content script sends no text.
+- **Result.** Text is capped as for pages. A scan (no text layer) stores an empty Page with its source (so it is not fetched again) and the title only: no enrichment job. Enrichment input has `contentKind: 'pdf'`; the model sets `paper` or `reference`.
+- **Engagement** is active time only (`scorePdfEngagement`): no viewer exposes page progress.
+- Page text joins the usual gates (`maySendToModel`, Sent-to-model log) and the Forget cascade; tests: `recorder-pdf.test.ts`, `input.test.ts`, `handler.test.ts`, `e2e/pdf.e2e.ts`. Fixtures (`e2e/site/pdf/`) are rebuilt with `bun e2e/site/pdf/make-fixtures.ts`. Details: `trailmap-notes/notes-39.md`.
+
 ## Extension identity
 
 The manifest `key` pins the extension ID, so it is the same on every machine and every build:

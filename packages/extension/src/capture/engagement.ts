@@ -12,6 +12,16 @@ export function scoreEngagement(activeMs: number, scrollDepth: number, interacte
 }
 
 /**
+ * A PDF is read by spending time in it. Neither browser's viewer lets the extension see how far down the file the
+ * reader got (Chromium's is a cross-origin frame, Gecko's runs no content scripts), so there is no page progress,
+ * and the thresholds are a page's active-time ones.
+ */
+export function scorePdfEngagement(activeMs: number): Visit['engagement'] {
+  if (activeMs >= READ_ACTIVE_MS) return 'read';
+  return activeMs >= SKIM_ACTIVE_MS ? 'skimmed' : 'bounced';
+}
+
+/**
  * A video is read by watching it (playing, tab visible), not by scrolling, and a paused tab left open is not reading.
  * The thresholds match a page's active-time ones.
  */
