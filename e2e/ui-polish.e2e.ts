@@ -5,9 +5,10 @@ import { expect, seedCapture, test } from './fixtures';
 test('the header gear opens Settings and arrow keys and Tab navigate its sections', async ({ context, openExtensionPage }) => {
   const panel = await openExtensionPage('sidepanel.html');
   await panel.setViewportSize({ width: 360, height: 820 });
-  const gear = panel.getByRole('banner').getByRole('button', { name: 'Settings', exact: true });
+  const gear = panel.getByRole('banner').getByRole('link', { name: 'Settings', exact: true });
   await expect(gear).toBeVisible({ timeout: 5000 });
-  await expect(panel.getByRole('link', { name: /^(Settings|Sent-to-model log)$/ })).toHaveCount(0);
+  await expect(panel.getByRole('link', { name: 'Settings', exact: true })).toHaveCount(1);
+  await expect(panel.getByRole('link', { name: 'Sent-to-model log', exact: true })).toHaveCount(0);
   const opened = context.waitForEvent('page');
   await gear.click();
   const settings = await opened;
@@ -17,6 +18,8 @@ test('the header gear opens Settings and arrow keys and Tab navigate its section
   const companion = tabs.getByRole('tab', { name: 'Companion' });
   const log = tabs.getByRole('tab', { name: 'Sent-to-model log' });
   await expect(privacy).toHaveAttribute('aria-selected', 'true');
+  await settings.getByRole('link', { name: 'Skip to content' }).focus();
+  await settings.keyboard.press('Enter');
   await settings.keyboard.press('Tab');
   await expect(privacy).toBeFocused();
   await settings.keyboard.press('ArrowRight');
@@ -134,8 +137,8 @@ for (const colorScheme of ['light', 'dark'] as const) {
       const star = panel.getByRole('button', { name: 'Star page', exact: true });
       await textDoesNotOverlap(panel.getByRole('treeitem').getByText(url, { exact: true }), star);
       await contrast(star.getByText('Star page'), 4.5);
-      await contrast(panel.getByRole('link', { name: 'Open Journal' }), 4.5);
-      await contrast(panel.getByRole('button', { name: 'Settings', exact: true }).locator('svg path'), 3, 'stroke');
+      await contrast(panel.getByRole('link', { name: 'Open Journal' }).locator('svg path'), 3, 'stroke');
+      await contrast(panel.getByRole('link', { name: 'Settings', exact: true }).locator('svg path'), 3, 'stroke');
       await panel.screenshot({ path: proof('side-panel'), fullPage: true });
 
       const journal = await open('journal.html');

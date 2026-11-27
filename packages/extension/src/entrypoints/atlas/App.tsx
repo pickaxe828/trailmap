@@ -1,11 +1,9 @@
-import { AppShell } from '@astryxdesign/core/AppShell';
 import { Card } from '@astryxdesign/core/Card';
 import { Heading } from '@astryxdesign/core/Heading';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Selector } from '@astryxdesign/core/Selector';
 import { Slider } from '@astryxdesign/core/Slider';
 import { Text } from '@astryxdesign/core/Text';
-import { TopNav, TopNavHeading, TopNavItem } from '@astryxdesign/core/TopNav';
 import { Typeahead, type SearchableItem, type SearchSource } from '@astryxdesign/core/Typeahead';
 import { VStack } from '@astryxdesign/core/VStack';
 import { useMemo, useState } from 'react';
@@ -14,6 +12,7 @@ import { readAtlas } from '../../atlas/data';
 import { buildAtlasGraph, isConceptInScope, isConceptShown, topConceptIds } from '../../atlas/graph';
 import { conceptNameKey } from '../../concepts/evidence';
 import { useJournalData } from '../../journal/data';
+import { TrailmapShell } from '../../ui/TrailmapShell';
 import { ConceptCard } from './ConceptCard';
 
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
@@ -90,7 +89,7 @@ function AtlasView({ concepts, edges, threads }: AtlasData) {
         </VStack>
       </HStack>
       <VStack className="grid min-h-0 grow grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]">
-        <Card variant="muted" padding={0}>
+        <Card padding={0}>
           <VStack className="min-h-full" gap={1}>
             <HStack paddingInline={4} paddingBlockStart={3} gap={2} wrap="wrap" justify="between" align="center">
               <Text type="supporting">{numberFormat.format(shown)} of {numberFormat.format(graph.order)} concepts on the map</Text>
@@ -117,25 +116,12 @@ function AtlasView({ concepts, edges, threads }: AtlasData) {
 export function App() {
   const result = useJournalData(readAtlas);
   return (
-    <AppShell variant="surface" contentPadding={6} mobileNav={false} topNav={(
-      <TopNav label="Trailmap navigation" heading={<TopNavHeading heading="Trailmap" />} centerContent={(
-        <>
-          <TopNavItem label="Journal" href={chrome.runtime.getURL('/journal.html')} />
-          <TopNavItem label="Atlas" href={chrome.runtime.getURL('/atlas.html')} isSelected />
-        </>
-      )} />
-    )}>
-      <VStack gap={4} className="mx-auto min-h-full w-full">
-        <VStack gap={1}>
-          <Heading level={1}>Atlas</Heading>
-          <Text type="supporting">Explore the concepts you’ve learned across expeditions.</Text>
-        </VStack>
-        {!result && <Text role="status">Loading your Atlas…</Text>}
-        {result?.error && <Text role="alert">Could not load the Atlas. Try reloading the page.</Text>}
-        {result?.data && (result.data.concepts.length ? <AtlasView {...result.data} /> : (
-          <Card padding={5}><Text>Your Atlas will grow as you read pages that explain concepts or encounter them across multiple pages.</Text></Card>
-        ))}
-      </VStack>
-    </AppShell>
+    <TrailmapShell title="Atlas" section="atlas" description="Explore the concepts you’ve learned across expeditions.">
+      {!result && <Text role="status">Loading your Atlas…</Text>}
+      {result?.error && <Text role="alert">Could not load the Atlas. Try reloading the page.</Text>}
+      {result?.data && (result.data.concepts.length ? <AtlasView {...result.data} /> : (
+        <Card padding={5}><Text>Your Atlas will grow as you read pages that explain concepts or encounter them across multiple pages.</Text></Card>
+      ))}
+    </TrailmapShell>
   );
 }

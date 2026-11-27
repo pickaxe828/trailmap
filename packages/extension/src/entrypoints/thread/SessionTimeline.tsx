@@ -69,14 +69,14 @@ export function SessionTimeline({ sessions, recurrences, onDetach }: Pick<Thread
               <Button variant="destructive" size="sm" label="Detach session" onClick={() => onDetach(expedition.id)} />
             </HStack>
             {recurrences.filter(({ to }) => to === expedition.id).map(({ from, pages, concepts }) => (
-              <VStack gap={1} key={from} padding={2} className="rounded-lg border border-border bg-body">
+              <VStack gap={1} key={from} padding={2} className="rounded-lg border border-border bg-card">
                 <Text type="supporting">From <Link hasUnderline href={`#${encodeURIComponent(sessionAnchor(from))}`}>{titles.get(from)}</Link></Text>
                 {!!pages.length && <Text type="supporting">Revisited: {pages.join(', ')}</Text>}
                 {!!concepts.length && <Text type="supporting">Concepts returned: {concepts.join(', ')}</Text>}
               </VStack>
             ))}
             {graph.nodes.length > 0 ? (
-              <VStack height="clamp(14rem, 32dvh, 24rem)" className="overflow-hidden rounded-lg border border-border">
+              <VStack height="clamp(14rem, 32dvh, 24rem)" className="overflow-hidden rounded-lg border border-border bg-card">
                 <TrailGraphView graph={graph} />
               </VStack>
             ) : <Text type="supporting">This session has no recorded stops.</Text>}

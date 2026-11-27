@@ -10,6 +10,7 @@ import { useCompanionStatus } from '../../companion/useCompanionStatus';
 import { ProviderSettings } from '../../llm/ProviderSettings';
 import { PrivacySettings } from '../../privacy/PrivacySettings';
 import { HistoryImportSettings } from '../../ui/HistoryImportSettings';
+import { TrailmapShell } from '../../ui/TrailmapShell';
 import { VaultSettings } from '../../vault/VaultSettings';
 
 const steps = ['privacy', 'companion', 'providers', 'extras'] as const;
@@ -21,17 +22,15 @@ export function App() {
   const [step, setStep] = useState<Step>('privacy');
   const progress = useRef<HTMLElement>(null);
   const stepIndex = steps.indexOf(step);
+  const previousStep = useRef(step);
   useEffect(() => {
-    progress.current?.focus();
+    if (previousStep.current !== step) progress.current?.focus();
+    previousStep.current = step;
   }, [step]);
 
   return (
-    <VStack as="main" gap={4} padding={8} maxWidth="44rem" className="mx-auto">
-      <VStack gap={1}>
-        <Heading level={1}>Welcome to Trailmap</Heading>
-        <Text as="p">Trailmap turns your browsing into trails, field notes, and a concept map.</Text>
-        <Text as="p">Recording starts straight away.</Text>
-      </VStack>
+    <TrailmapShell title="Welcome to Trailmap" description="Trailmap turns your browsing into trails, field notes, and a concept map.">
+      <Text as="p">Recording starts straight away.</Text>
       <VStack gap={1} tabIndex={-1} ref={progress} aria-label={`Step ${stepIndex + 1} of ${steps.length}`}>
         <Text type="label">Step {stepIndex + 1} of {steps.length}</Text>
       </VStack>
@@ -61,6 +60,6 @@ export function App() {
         {step === 'extras' && <Link hasUnderline href="/journal.html">Finish setup</Link>}
         <Link hasUnderline href="/settings.html">Open Settings</Link>
       </HStack>
-    </VStack>
+    </TrailmapShell>
   );
 }
