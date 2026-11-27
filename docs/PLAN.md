@@ -227,6 +227,19 @@ An expedition is one sitting. When you come back to a topic days later, that sit
   - **Strong match:** attach it automatically.
   - **Possible match:** show a compact **Part of *CRDTs*?** chip on the expedition's Journal card, with **Add** and **Dismiss**. Matching skips dismissed expedition–target pairs, even for strong matches.
   - **No match:** the expedition stays on its own. It becomes a thread only when a second session joins, so one-off lookups don't clutter the Journal.
+- **Calibration (ticket 28, issue #63).**
+  - **What is embedded**, most trusted first: title, driving question, My notes (when the setting allows; first 600 characters), top concepts, then the "What you found" paragraph of the field notes (first 400 characters). Built by `threads/description.ts`. It is embedded on the device and never sent to a model.
+  - **When it runs:** `thread_match` waits (retry every 30 s, for at most 15 minutes after the field notes were written) while a `page_enrichment` or `concept_resolution` job for the Expedition's pages is pending, so concepts exist. A stored signature carries a hash of its description and is embedded again when the description changed.
+  - **Why the old bands missed:** real MiniLM-L6 similarity for two sessions on the same topic is 0.30–0.62 on the labelled fixtures (`threads/fixtures/`, recorded vectors; re-record with `bun scripts/record-thread-fixtures.ts`), while the old suggestion band needed 0.72, or 0.60 with two shared concepts. Unrelated pairs, including same-field ones such as two cooking topics, stay below 0.30 without a shared concept.
+  - **Bands** (`THREAD_BANDS` in `threads/match.ts`):
+
+    | Band | Similarity | With 1 shared concept | With 2 shared concepts |
+    |---|---|---|---|
+    | Strong (attach) | ≥ 0.94 | ≥ 0.88 | ≥ 0.88 |
+    | Possible (suggest) | ≥ 0.40 | ≥ 0.28 | ≥ 0.22 |
+
+  - **Result on the fixtures** (21 Expeditions, 210 pairs, 9 related): 8 of 9 related pairs reach the suggestion band; the known miss is "EDM build-ups" and "Sidechain compression" (0.31, no shared concept). No unrelated pair reaches either band, so automatic joins keep their false-positive rate of zero. Automatic joining is unchanged: recall improves through suggestions only.
+  - **Diagnostics:** Settings → Diagnostics → Thread matching lists the latest runs (one per Expedition, newest first, at most 50 kept): candidate, similarity, shared concepts, band, and the reason there was or was not a suggestion. It stores ids and numbers only, and a Forget removes the runs it affects.
 - **Picking up where you left off.** When a new search or page matches a dormant thread, the side panel shows:
   - "Picking up: *CRDTs* (last session 4 days ago)";
   - last time's summary and loose ends;

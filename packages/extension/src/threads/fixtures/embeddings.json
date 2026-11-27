@@ -1,0 +1,86 @@
+{
+ "epaxial": {
+  "text": "Epaxial musculature\nWhat are the epaxial muscles and what do they do?\nErector spinae\nMultifidus\nLongissimus\nThe epaxial muscles lie along the spine and extend and stabilise the trunk; the erector spinae is the largest group.",
+  "vector": "+v4G/e71+gEBAwr9Afz5/fkH+AIH+wQG8QD//ATtAvv/+vwGAPgA/Ar9Av36AwH7BQf99v8F/v35/ff/EAMDCfwG+vz9+ATz9wQD/f37CPj8AfwCBwX+//b/BPz1/gUC/QTv/Qf9CAft+Pv6AQb6AfkHBAb1AQn8/vr//wUG+AD+/gL++gT8AAL89QMKDQH0/Qr8+wwQBgUG/f378wb+8fkEBAUE+/8EAvgAAQIGBf0C/gIACfj/AgIF8v4FB/4C+QP0AQUE/fkCDQQJ+wr7CP//BQUGAfr8Cw0ABfcH/QAJ/gr8BAL2EP/5Bgb8/woD+v4DBAsBBAUGAwH5Cwf8AP8E/Qb0Bv3/Bv8QAQ329/7rAf4EEAIK+v37/vn++f0IAQT78voEBPn3+QEK9foC+f0EA///CwAHBQICAgH+BQD+AAX+/QP+/gMB/f4L+gkB+wb+9/7zCQoCAPz2+wcFBP39/ggB/vYD+wEMAQj/BAEH9/39/wTwAvsC+gEQBAn+"
+ },
+ "back-group": {
+  "text": "Back muscle group\nWhich muscles make up the back?\nErector spinae\nLatissimus dorsi\nTrapezius\nThe back has superficial muscles for shoulder movement and deep muscles, such as the erector spinae, that hold the spine upright.",
+  "vector": "9fv3/fD++voG/ggHCvj+/v4JBQH5BAUF+PoD/f/2/f//9/sL/P0EAP8GBgIACgwCBQUF+PwA+gL6AvgFCfsBAPsG/P389wb/9AH+AwIEB/wE/vcM//4DBPj8BQD3+AEF/wX2+/74Fwjz+gj2/wH5AgADA/wD+f7x/QcJ/AH88QD+BAT69fr9AAgA9PkKCPv9BAv69QMWB/z//gP28/0I+v0ABgz9AgQFBAT5BAX6BPoAAf3/Avj9+woL9ggJBgEA9wD+AQYFBPz7CwQK/wEAAvv6+QIFBv78CQ3x+gAJ/gAA/wv9B///Cvz/A/8FABEK/AH6AgQADAP9AAcBDwT79QAC9wPxCgH5A/8ICQLv9P/uA/r8CvsH/wYC+wH++vkBAwn/9/YEC/v9BwAJ+/oG/vv/AQMDCP8FBAEGAAADBgD8/wUF+fv+/P32/QAH+QQH9gb++AP3BwsDAPT9APwUAP34AAYF/foK/PoMBP/+/gID9QD2BQP1A/8G/wUGAwIB"
+ },
+ "knee": {
+  "text": "Knee ligaments\nHow do the ACL and meniscus differ?\nAnterior cruciate ligament\nMeniscus\nPatella\nThe ACL stops the shin sliding forward, while the meniscus cushions the joint.",
+  "vector": "8/r4Av4BAP8OA/4KCgb/+fz/+/cO+vX97vv7Bvj/9QQCAAH++AEEAvf8+wMDDQL+AAgACAIJAgr7Af3+9fb8BPn++fcDBv4H/v8C9AD4/AEACfkFAv0HAfkIAPn8/P39AgHy+fz6Avv7+f4IBAv8CPoG9gL/AgD6AgP+AwP++wD3/PoD+v7/AAoFBQoG/wD+//72BQcOCvz9/AH6AAEBAQUCCgcDAAcBAwIBAAn//QgB/QYQA/QFAAIB+wgG+wP9AgX+/P0KBQEIFAQHABcC/fT/AgD4/QYGBf0C+gQQCQD7AAMB+gL9BQULBALtBP/6AP/7DPsHCPYFAvwC/wQB+Prz+v7r/AMDB/8N+gkB+QP69/wG/vIH/QL19/f+CQED+gX/8v4F+vMD+wn9/AP9+Pv9+v/3DAD7AAsD/wQC/gAEBwX3/P79AAz98/0D+/cL+wQJ9/f1/QIABwPz9gED/vz9CgkI+wj/Af4MCgX6CQABBAX0AO8BA//3Awb8AP8G"
+ },
+ "maillard": {
+  "text": "Maillard reaction\nWhy does searing brown meat?\nMaillard reaction\nAmino acids\nReducing sugars\nHeat above about 140 degrees makes amino acids and sugars react into brown, savoury compounds.",
+  "vector": "APoC/wb/BfYMA/n8+fgG/w/89vr+BPsG+wQE+PH9B/D9//3/+/X8/AQAAwkGBPwEAfbz+fv6/ALzAAD5/AD69QL0CwIA9AX+/gUHAgb+BP0GAf4K+/8C+f8DCfv5/ff9Bf8F/vj9/Pvz/wMF/QAEB/v+AwQDA/z++QkICvIACQAG/AH6CPbxAgECAPQF/voBAP8IAvgQCAfy+fv+/AMA//z/BgX7AgkCBQH/BQII/AED/wX9EAcACgYABv/6BQj8/vT+/wIEAAIO9vz1+/4HAAP++wDxCf8FBgj8+AH4CwAM8PkK/fgI/AAACfX5CAIH9wz++fUBBAYCAvoOCAEIAgP0/QcGCgP+CQQNCQYH/gD9AQsCA/8C+f8AAAL39An7CQH++w7//v0G/QX6+Af+A/wB/P4A/AAIBf/7/AwBAQAB9wQSAAsBAQn69QwABf7++/IA/P4B+v//A/YEBPgC/QABBAAD/gb28//0APr+/RL6DfoFAQv4/AX+DPoI/Pj/"
+ },
+ "sear": {
+  "text": "Searing steak\nHow hot should the pan be for a good crust?\nMaillard reaction\nSmoke point\nBrowning\nA dry surface and a hot pan favour browning; moisture holds the temperature down at the boiling point.",
+  "vector": "+/oC/PoAC/oF/Pr4AQEC+BL8AwL8BPoI/f4FAe0G/gL4Avr3/v34AAUFBQEKCgMHAvv6Av/79v75Bv77+Pz6+Qn4BgEAA/4IAAEBAAb+A/QBAvsLAwH9/AQCBgb0AfkBAwb4/Pv++Pv9BgQC+fj7BAD2AAP+AAH78wgFDPAACQAACv4C+PX7Bfr9DfIGCAIACv39/PsLCQP2/P/58AX9/AX5Awj/DAn7//0DCQQA/AEG+wIBFAABCAkD/PgBAQD9+PsD/QABBwEO/Pr+A/0HAgD49P70AgkI/gv/+Qv/DAAHAvUT9Pr++voD/vT5+/kH8f4L+Pn7/wz++QAJ+/75AwsB+Q0H/wYDCAEGAAoIBgYCDggABAMB/fz9+wD7/QUH/QL/AgcG8/oE/AX6AAr8AwH9+wcKB/v+/f/5+wnr9QAH+goEAQQA/gH/+fz5BwMACff+/wQNAvkBBfwDBQYE+QD6BQb5AgT7+Qb8/P/+BAX9BPkCBgP4BQX/D/8GA+kA"
+ },
+ "sourdough": {
+  "text": "Sourdough starter\nHow do I keep a starter alive?\nWild yeast\nLactobacillus\nHydration\nA starter is a culture of wild yeast and bacteria fed with flour and water on a regular schedule.",
+  "vector": "AfkC/QwB+wj2/v38/Qb3/Pv9AAP/BgUCAwIN/wT0+f0C9vcPAf8HBQT+AwD8B/wGC/8C+AQBCQIC7wL6AAUE/AX9AgkJ/O4C/A75CAr7BP35+AYJ+vsR/wkD8ggH+PcHAAX/+AL/CwIJ+/0DCfz8BwIGAgIC+PYBBP8I+fkHCwAF+gEDAP39/wD7Bfz5Bf/7AvX6BAMIAfwI/QYG/fwF9/MCAfv+AwL7/wz/+gX9+gMI+gcC+wT5AP0DAvgDCv8U/QAD/wj2/fX8/PkCCP/7/Qfy+Qf8BPr//f78AAABBQAZAQkC/f8DAvL8/wH8BAD9Agj6AAMG7wAACP4Q7/sLAAj09AT3+wIJCAEBAP8DAu34AwT7/vr7AgcD//wDAwT58/z7Bfz8AwoEBPwE8fYE/f78+gMI+fv+AQT69fYIBQAB/wIPBP//AgP+9wr9BgMBAvz4AvEAAQYEAxAFBvoHCv78/wv3/AL9BAsBAv0D9AD7+gX3AwoGBf3+/f8A/Qv3"
+ },
+ "edm": {
+  "text": "EDM build-ups\nHow do producers build tension before a drop?\nRiser\nSnare roll\nHigh-pass filter\nBuild-ups raise pitch, density and filter cutoff over a few bars, then drop everything for contrast.",
+  "vector": "+/gJ/v4A/gD7//32/vb6BAAH+fsB9vsC/wADBwnwA/8FBfkDAgv7AQUHBf8ABfv/9/MA/wEAAQQG/P77BPn4/QwGEQkDBvn79QUE///9BAYCBPv+9wQB9wMBBgLyBAEE/fgCAgAABP769gIF+Q8FAgEA/QgA+vr8/QP2APv/+gAK+PIAAPb+AwMJ+f71BwDs///6AOz3//wDAwEC/v32/v8JAQz8Bg0AAwb9BP4A9/cDAA4EBgACBAb4AQH9B/4IBAYAAwH09ff+/wQA/AgK/wgK+vv8/QT+AAD6AAgBEQAAAvsOCAYGBQgC//35Bf78/gQC+gMBAwL8/gAEB///+AAB8wX5EP36AgP9BvkCB/r4AQYGAP3//g/9+An2APzyBQUE//UHAwMK+QH28PwG/v4A/RD9AfcDBAcL+wQC/AAE+/v/AgcPBwnvBwAADwr39xr4+QD/DAEI+gIC/QQGB/sABRH8/gYH8gL7Av4C+fz//gEFDf77//gDBfz/+wIL"
+ },
+ "sidechain": {
+  "text": "Sidechain compression\nHow do I make the bass duck under the kick?\nSidechain compression\nKick drum\nCompressor\nA compressor on the bass listens to the kick and turns the bass down on each hit, so the kick stays clear.",
+  "vector": "/AX9AwAC/f3++/wEA/r+BwADBPT5AAMC9fwBBgP5//gE/PQBBA8DCP8EBfv/BP/9CQQC8gcNBgf4AAP5/f8EA/kEBv77CwH3AfsB//wFBgz/+/T08gMN+PQB+wEG9/z4+wf+Cfv8APj9/vsEBAX4/P//AAf9A/f3DvX7+QQA8wAL+vv+BfkDA/wVBP78+f/4+AD2+v3++fwCAwH6A/8E/v7+/wAIAf/+Avf/+/7/BP0I/AgDBQAC/wT9///89AnyAQj1AgL0B/r//PkF/wAI8vv9/QYG/f0DB/vuAQL/BwAHBfkHBAMPBgcAAv/yAAUA/wAIBf0ACQcIBQQOCA/6+wP48wIBCgD4APz7Av7/AP0ABAcBAf4ABQH/DPr9Bfr9Awn5AgT8/QUMC/7+APcHDQH7/AT9A/8LAQABDQUBCQABBQgF/gIL9PzlAQMJBP8A9BX4/fT8CgAB/AQD/AX2Bvj6Bgn5AP0A9wX8AAH8Bf78Bwj7BgAI/fYE+Qb1ABIA"
+ },
+ "piano": {
+  "text": "Jazz chord voicings\nWhat is a rootless voicing?\nRootless voicing\nSeventh chord\nIi-V-I\nPianists leave out the root and play the third and seventh with extensions, since the bass covers the root.",
+  "vector": "+/33/vv9+gQG+gQE//36APoD+f0DA/kCBwf8AQv9BQkTAPwAAQQCAgQDCPr6/fT4/wMF9/cT/gP4BAMFCwH8APX+Afz1/P4E9P0H+wL9/gMG//3+8vz+DPr99v8E+/wF/QH3CP8B+/8ABPkI/vn9+wP9/vsLAgQKAf8A/P/+AgAECAz3A/z2BAYD/P0E8wgAAAL1/f8N/gIC+vn6Af4AAQH9BgQA/voB/PT6Afv+/AEEAwYHBwcC/wcH9fkA9fMD9AH1/AH49wP5CP7+BgIHA+n4/wUCAP/4B/f0Bvb/CwD+AfYF/ggB//7yAAMCAf0D+voABf0HAAL+BAkKCQ8L/QH0+wv4/Qb++P0KAf8CCQX6/AAB/RT//v4GCf0DAwL1/QMHCAPz/AYBAPz++f7/+fkF+vwI+gQCCAAAEfoNAQADBPr6CP0M+f0BAPX//gwNBAX8CPj4CPf69QH8BfwEG//89xMF/voA+QP0APz6DwgEAAAF/QYEBAEKBQL8AAv+"
+ },
+ "crdt-1": {
+  "text": "Replicated lists\nHow do CRDTs order list inserts?\nCRDT\nTombstone\nSequence CRDT\nEach element gets a unique identifier so concurrent inserts converge to the same order on every replica.",
+  "vector": "9/8C/P0A+vwFBAYHDfnw+P78BfkAAfgKA/77AgX7/QD9AP0D/gEB/v8C/wL9/fUG9v/1APYSAgn9+wQDA/sE/gj5BgEC/gEE+f0G/fT39QDzAAj5AfkIA/sD/gT/9v8ACA0C+gMC+wID9vf/+fcDCAT+9wHzAwb+BP/3+f7/CwD8/wUA/f3vAPX5BQEDBvf6+w32/wP+A/v/BvwC/wABBAMGCQgH8/75CAP7/P8B/gYPAwIDAf8A/gTxAxYAAPcLAgUD9w0DBv4B//3++/b8APsD/vn89wMFBfkJ/RAFAgD/+RAIBv75/Qf7BgP5BQT8D/n//RD9BAsGA/4CB/4F+AEKAf0GEP8EBgD3AwD8/AwEBP8G/PcDAPMLDvwEAQYHBgD58PUCAQX98v73/fn2BPgBBgb1/wMAAwT9AP8AAwD79P3/B/kFAgUBAf8H/ggI+vT9APcBDQH2BwQGAAgE/Qf8+gMBCP3w/fsCBAj78wL+/f79BvQCAAj7DgMHAxMB"
+ },
+ "crdt-2": {
+  "text": "Related list algorithms\nWhich sequence CRDTs exist?\nCRDT\nRGA\nLogoot\nRGA, Logoot and Yjs differ in how they identify elements and how much metadata they keep.",
+  "vector": "/AH58wn//QP8+/kGAwX4+vwAD/AJBf0FAP8I/QMBAAsIAPkEBQAD//YGCQAD+/AB7wD8/fQNCAH3+wUK//r6/gf+AP0DAfsD+fgACQD99vH5BgoCA/z+BP0A/ggD/v0IBAIFAP0L//3//v8D+fQAD/j2A/bzBgwD//34+g37/QD+A/78+wT5//kHCBL9/Qr3/Ab0/QMCBgIFAgIAAwMFCAAICQP/9gADCAT7+f34+f8NCP4G+vf8+QIABxH6A//8/wQB8wMFCQMJ/QH5//j0AvkEBf4E8P8B/vz7AAQG/gD//QkHAPoA/gr5DAX7AQH/B/n3AQoE+AIKCAIDAfz9+gIE/PkJDPwGCAj7AP378xQIAf///voDCfQIDQME/gQIB/r38wEBBQP9+fb2APn3BAYGAwMDBfz/BAH/AAkCBgD18gL8EQL/AgMB/f/8AQEEBPj8Cvr9AwT6AP8FAAUHBQz2/wUECPbzBPr7AAP59//9+vv7+PME/wL2DvwE/g3/"
+ },
+ "crdt-3": {
+  "text": "Collaborative editing garbage\nWhen can tombstones be removed?\nTombstone\nGarbage collection\nCRDT\nTombstones can be dropped once every replica has seen the delete, which needs some causal stability tracking.",
+  "vector": "+Ab99QL/+P0C/QMHBv/y/P8H/QL6//8IBP79/gD3/gP59gAH+woC9fsN9wH+9f768/8K/v4OAAAA/P8DAf0B9QkFDv0EBfsA/vf8Afbz9wAA+wP2AP38AQIIAgwN9vj3AAkCBfwD+/8C//wE/P7+BP4A/Qv5//3+Afz/+QIDAQADCPf8A/32AwHxCvz9/AACAAj5+gP+9v0D//0JBQL+Bf4DBAb9/vr6Cwn59wH3Cgr//AoJAwb+AgnvCwgNCfcAAxEAAf7yAP3+/vz9AQIG+wH7/PQF9QUB/gMAAAMKAQD4/AgRAv/6/gj09//2CQT4A/T8AQj9/w3+Bf/7DP72+///A/n8CfgFBgnvC/z//QsGBQEEAPf+BgICDPwDAPcIDP8EBPUKAgP99Aj++fr/+PoBB/0B/fEBAfsB/QYB9AAEAgIGBvYNDwoDAAH3Af0D9QH2/voBBwP+BQwP/AgDAQYE/gEGD/0F/f/2BgX6AQL7//78/AIEBw4ACvsM+Qv/"
+ },
+ "raft": {
+  "text": "Raft consensus\nHow does Raft elect a leader?\nRaft\nLeader election\nQuorum\nA follower that hears nothing becomes a candidate and wins with votes from a majority of the servers.",
+  "vector": "//z7/P34AP79BwEFB/z6BwL9Aff3+vsE/gD7AQDyAvwHAgIBAfv9+wYB+wH7/fUI/AT6+QAJBgj7/Qf4AP/4AQb6AAf8AQ/7Bv0G+AD9Cg36//r7AfsD/QAA7ggB+/0G+Qf/B/gAAvMB/QALAwD6/gUH//cGBvQJC/4G+gQR/gABAAUEAwL79/kHAQIKCAf0BPz59wgP//sL+v4DBQgI+fUABBQE9vz9+Pr3/PUB/gEECP38BgoF/ggE+fv89/P8AwH/9wTzBAL9BfQC/AEFAPj5/wAH9wICBv0AAQcHAADxAwIKDAD/9v368QL7CQ7/B/0A/wAI/QwIAQn9CfwD9gH2Ag0DBAECAPsH+PoICQnvAPoFCAb8+gIGBwAE+wEKA/z6+vsD9wP7AgMA7f4B9vkF/f0G/RD5//8G+gAD+QD8/wMGDgsM+AgNAAL/+Q0C+/309vj/+QQBAf0G+AL8DfX/+g3//gEC/Q4EBPcEAf399wD3BAIEAgcBDf0HAwIA"
+ },
+ "borrow": {
+  "text": "Rust borrow checker\nWhy does the borrow checker reject this code?\nOwnership\nLifetime\nBorrowing\nA mutable borrow cannot overlap with any other borrow of the same value.",
+  "vector": "9gL//gfyBAAB+wUACPr0AfT4/An+9wUACAb7BAcAAAgE/gYN+fz4AvgAAvz3BAH8AP74BAr9CQID/v8ABAQA+g8H/wf0+Ab4/Af/CQQA//nu/vv0/gX9+A0NCv79+fwG/gv5Bf8D//wK/Af/Af8FBQkCAwP6CAUABAL2Av0EAAD+9foC9fv8BfgAB/j+9P0D/vkFBgf/Bfz18/3+CwT8/AQCA/8EAvT8B/0ABAjyAAj3CPwF+Af7+gP7AAr8AwADAgr3CAIG+Pv6D/n0BgcLAQAB/g/vBwLx/wH/+AP4DAAF+P4C+/X2+v0B//j/BAn8AQH+AwMPBwX7B+wGCAX9Af8FAfYDBQABCQEAB/0IBPkGBAoCBAn9+g/9BQoG/AUEAvwFBQb6C/kC+AIL/f/9/vkAAgsH+gP6/v/+/QH8+QD7+/gFDP3/8fkIBgb1+QD0+f31Cvz4/wPx/v4LB/8FCQUF/gX8B/kB9PzyAAcB+vv+/gL/CAn//QEDA/sJAQD4"
+ },
+ "lifetimes": {
+  "text": "Rust lifetimes\nWhen do I need to write lifetime annotations?\nLifetime\nOwnership\nElision\nAnnotations are needed when the compiler cannot tell which input a returned reference came from.",
+  "vector": "8QX9CAoCBAYE9vz/Avz7CfwA/v4A+/oFAf74AAUF+gv8+QMM/vv5+/YH/wME/Qf8/Qj2Agb8CgEG+vUF+vwC+gcCDwEB/f7/8wUBDv3+/PX2CQf0Bgn/AhALA/cBAQMG/AD8BPoD/f8O/v8A/AMC+gcJAf/5AQkF/gX/Bf0AAwAA+/UI8PsCAAT0BfwE9AIDAAP9AAgK//kDAQH89gQH9wT+CPwBBv/7Af8CBQfw/xD39gAI/AL7/wj7/Qf6DQEEAgn5/AX+Cv75BPj1BPcDAgAC+w8C/AH2+QUI/QH5/AD/AQIG9PrwAQD++f/9B/76+vX+//4A+gYGBPn/Avz6+vr1DPkD/f4IDAr2AgAB9foP/wj7BQH49g4DBgoJ/QEI//wCBP39GAf7+fsGA/4B/fz+AgsF+AL9AAIF+vT+9AD+AwkLBwIH+/8GCAX39QUBBPz0/QD6//vy+w0KCv77BAYD/v77Bf4G7wf3/Qj//vv0/v76AAr5BQb9Av7+AwcB"
+ },
+ "tokio": {
+  "text": "Tokio runtime\nHow does Tokio schedule tasks?\nTokio\nAsync runtime\nWork stealing\nTokio runs futures on a work-stealing thread pool and parks idle workers.",
+  "vector": "8QH/BQr6APsC//oG9Qf6/wz89/oH8wEJ/vf7AfoE9QX/+/8QAP4D+wX9AP4AA/35/vz7+wT9/gcE///4A/f3Dgv7BAP+9AIDBgEEBAb8/OwH/wP5/QP5CBADAgD+/QABCAn/AQP7Bf0F/AHz/v8F/BEA+gP7Af4MBwH9A/oDBAAE/gD4AfUH/QEC+v/7AP//CwL+CgQC8v0IAwD2+wn+A/cKAgn6BQL6Af73//jyAAILBwT8AvoA+gX8DBACAPEF+vwB/QD8AgP7Cf4HCfryAwr9APsBCwj8A/8R/AMDCQD+/fH/AAf0//wG9vX5BwH/DgL3/AEH/QH9APkC9wf57vj/Cv/xCP8EDvn+APoG9P3//gX/BvwC/AX8+AID+AAGBQYC+wAEBAT7AfX9/vz+AvwCBgUA+wkH+fUG//oLBQAI+wIDAPgOAAIFDv8KAwgDDAz59gT7APf9BwcLD/r4+vP++gX0/wMAAwYDCQIA+fsB+vYABQX//AwB/voDBP0D"
+ },
+ "css-grid": {
+  "text": "CSS grid\nHow do grid-template-areas work?\nCSS Grid\nGrid template areas\nFlexbox\nNamed areas let a layout be written as an ASCII picture of the page.",
+  "vector": "BQfuDAn9+voI+wAL/foA+gD/+ggH8wXz/Qv6DQr5AQYOCv8JBQP/AQH8/wIE//YB+/0B/AEC/QUE/AECAAADDQb/9wL49QD7AvcF/Pz8BAT/BgD9Agf7Af4LAgAHA/gFCvr2+Pf6CP0I9PwDCQcA+Pf89vD/9gb7AwD3/gcD9gD++/kLDgD++QUHBgIECgb7BgD29/0EB/8CB/8E//78Aff7CQgG9v4N8/sC/AT8Av4M+v8IB/gI/voBBQsD9wb+AvgEAPsBBvsKBPwD9wAA//4C9/8BBAYBAOX8/gn6AAD8//MB+AQD/wMIAgX1APwA/QT6/gD9AwsA/v72+wwD+gUCAvb1/wD8AfgHBfcB/wD8+wP9+f8B/vgCAP4CCAEDCQf26wEABhD3APn8BQj6/vv++AP5+AID/P/+BAUK/AD8BP/x/v8C9/wEBPv8+QkH/Q3++AMB/AgIBvoHBvwF9w8HBgD/9AL9//EN//wDBwkB/gP7/AkA+P//EQMADgD2"
+ },
+ "flex": {
+  "text": "Flexbox alignment\nWhat is the difference between align-items and align-content?\nFlexbox\nAlign items\nCross axis\nalign-items places items in each line, while align-content spaces whole lines when the container is taller.",
+  "vector": "AADxBAoI+QUMBAUK//0EBf7/+wf7/AX/9hD+/wP5BAMOB/4EBP33+/39+/j8AwD1/gj7CPkE/w3/AAkDCQMGBQMC/AP3+AABAv0E+Aj7/A33Cv7z///3Af0DA/oHCQb9+wbz+AEG/gAA8vr4AQMB/PcM9/r5/wYBA/8D+wEKBAD/+wEFCf34AgMN/gkHAPz59QbyBvL9AgYC/AQC7vz2/AT+BQUA9PgD+AEDAAj8AfoN//0F+vUE/P0EAQj69wT1DA39/goLBgH/AgIFAPwG/v4GBALq/P8BCPgCAwT7CAADAPsCBgkFAAQCAPfy+PsJ//gI+Qn+BgH+9wb2AQQO+wP3//v3AwP/AQMBAPr++PgBBvwBAfr2Ae8A8QACBAP/BRAK9v8EC/0DAv/3DQEGAAEB+wvu/AMEAwn6+f0A/gD49f7/+gkBAv4A/ALz9AsE+AEBCwMDAgP+B/0L/wP8+Qj6+/gG9f8C/gML/QL8+Qf+/fz/+AIC//32CwECBQz8"
+ },
+ "roman": {
+  "text": "Roman republic collapse\nWhy did the Roman Republic fall?\nJulius Caesar\nRoman Senate\nOptimates and populares\nRival generals with loyal armies and a divided Senate ended the Republic.",
+  "vector": "/P8KBAIA+hD2CgAECfj89/MEBAT8+vgAAQT7Av36CgQA9f/5/QEM//kIAwv/AQEHAQMEAgEB+P/0+QwGAQb//v//BAH3BwH8AwL8/Az1BQf5CfUD+vwG8f/1/wgFAwII/PsIB/v+///6/Ar7CAf7+wL+/QgA//cK+/34AgYBBADz8AIGAvcJ9Pv/8/32AwEDBAQF//sKC/0NA/4NBv8G+AECCgT8BP8F+QYAAwYAA/n1/gUA/goB//gG+wMAAQX3AQH7Afz+/AL4/gQPBPkB9Pn8Af0O9gD6/wL//wIJAQD3A/wGAAL3+/n4+f33CPoCCgn7CAIJ+fYDA/wBCAEE8foDCgfy+QYCAgAIAQD6CwL8Afz0CwIC/g8N+wP/+P0EBQL+BwYBAgP9BQUN9v8E+vkB+/n5DQL4CgEG9Q7/AgD/Af4OBfYE+QQA/PoA+wj89QP8+vP2+wME+gAI9wMJ//30CAn/+QT3AA8D/gQHDAUA8f7+/wP9+gEQ/v/3Afb/"
+ },
+ "punic": {
+  "text": "Punic Wars\nWhy did Rome fight Carthage?\nHannibal\nCarthage\nRoman Senate\nRival claims over Sicily and trade led to three wars, ending with the destruction of Carthage.",
+  "vector": "/wQHAPwBBwj3CAD0/Qb/AP7/AwEN/wgFAAf9AvP9AAUI9vr5BQcMAfgGCwf8/wYHCAECCAD+8wT+/wz9/AMCBv4BBQH0CAX0AvYCCgb0Bvr7B/gF//sG9gj3/gICBf4A/wcDBgXw//v/Bf/4/QH1Avr+BBQF/PsJ//n3Av3+BAD19vr+AwME+vn/+gQCBfoKAP/89wEFBvwHAgUKAAAO+wMCCgP4+f4H7Ab4AAX5+fz1+gMABAoI+QAD/AYB/gkBAAoBBf35AgD7+wAG//z4/vX2/gQD/vb5A/8HAv0ICAD9CfsA9/r5/P0C//j2+v4BDQf8/AML8fgC/vv/BAIA//39DwgBAg33/gAKBAP/AQQBCQP0DvMF+wUC/Pb8+gQFAf32AwgA/wr7DgIM9wAABv/9CAn9CwECCgIG+wn/BgAJ/AAM+wED/wIGAQ0B+/0AAfT/+/j2+gT//gQI+PkM+Pb5BAnz+AL58hIL/AgD+fX89fv6BgX++wQKAgX8//78"
+ },
+ "flights": {
+  "text": "Flights to Lisbon\nWhich airline is cheapest in March?\nLisbon\nBudget airline\nFares are lowest on Tuesday departures and with hand baggage only.",
+  "vector": "CwICCf0C+AQAAvz28f/6Agf8/wX69/ACAAIHAAH/+vr2CPv4BPYEBf4E8gQCBAUA+QYE/PcA+v/7AwX/APz+/f3+BAQAAP4BCwgICAv4Bv//+u7+A/8F9/0CAwr+//YH/QP7/QEPBQX9//7x/QH5AgL0/wb8+AYI9QADD/77AAAAAPryAvn5/P8E+/T4+gv7B/r9/fH8/vYHAv/0AwL7CQIC9gQBBP4D+gD+/gj+//8U8PH+AwMB+/kDBgD7AQELBvj9Cfr9AgYS+QAAD/8LCAIGBgIDBQUG/gX3AwD9CQAOAgEI/wb8/P4B8/8D/Qj9+/wGAfsL9v4E+QEQ+Pn6Cwv8/wsABgYJBAEE+QYBAfwK/Af67g0FBfz9Av/3/v36/wT8/gEH+fkGDP39BA4GAwr+AAcBAf76+AP//wr3/AAP9goBCf//CPcI/P32Av4I9wEA+e0KA/r/Bv7/AAP6/wT0AAgB//T7BPv8+gb3APj9+/0EBAQC/vwC/gcIBvkB"
+ }
+}

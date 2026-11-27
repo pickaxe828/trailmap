@@ -69,6 +69,10 @@ Before you finish a ticket run all of: `bun run typecheck && bun run test && bun
 
 `ConceptEvidence.salience` (from enrichment; `central` for notes) × the Visit's current engagement × highlights and stars give an evidence strength: `learned | studied | seen` (`concepts/strength.ts`, pure; `strength-read.ts` loads the context). `readAtlas` returns `concepts` (learned or studied), `seen` (shown only on the "Include concepts I only saw" switch) and `dismissed`; `readVisibleConcepts` (search, vault) follows the same rule. "I didn't learn this" is a `dismissedConcepts` row (`concepts/dismiss.ts`) keyed by `evidenceKey`; it joins the Forget cascade. A table read inside a `db.transaction` must be listed in it (`highlights` and `dismissedConcepts` now are, for every caller of `readVisibleConcepts`). Read thresholds are `READ_ACTIVE_MS` and `READ_SCROLL_DEPTH` in `capture/engagement.ts`. Details: `trailmap-notes/notes-46.md`.
 
+## Thread matching
+
+`packages/extension/src/threads/`: `description.ts` builds the text embedded for an Expedition (title, question, My notes, concepts, field-notes summary); `match.ts` holds `THREAD_BANDS`, `scoreMatch` and the `thread_match` handler, which waits for concept resolution and re-embeds a stored `threadSignature` whose `descriptionHash` changed; `runs.ts` is the diagnostics log (`threadMatchRuns`, ids and numbers only, part of the Forget cascade). Band thresholds are calibrated against recorded MiniLM vectors in `threads/fixtures/`: after changing `buildDescription` or the fixtures run `bun scripts/record-thread-fixtures.ts` (needs the network once) in `packages/extension`; `fixtures.test.ts` fails until you do. Details: `trailmap-notes/notes-28.md`.
+
 ## Extension identity
 
 The manifest `key` pins the extension ID, so it is the same on every machine and every build:

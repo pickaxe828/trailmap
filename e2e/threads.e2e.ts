@@ -77,6 +77,43 @@ test('two related sittings become one Journal thread with both trails and an inc
     .toEqual(['thread-rename', 'thread-done']);
 });
 
+test('two related sittings that are not near-duplicates get a "Part of …?" suggestion and show why in Diagnostics', async ({
+  context, openExtensionPage, readCapture,
+}, info) => {
+  const panel = await openExtensionPage('sidepanel.html');
+  await signInToMockChatGpt(context, await openExtensionPage('settings.html#model-providers'));
+  const now = Date.now();
+  const sessions = ['Epaxial musculature', 'Back muscle group'].map((title, i) => {
+    const canonicalUrl = `https://learn.test/muscles-${i}`;
+    const expedition: Expedition = { id: `muscle-${i}`, rootVisitId: `muscle-visit-${i}`, title, startedAt: now - (2 - i) * 86_400_000,
+      endedAt: null, drivingQuestion: null, kind: 'learning', fieldNotes: null, userEdited: true, threadId: null };
+    const visit: Visit = { id: `muscle-visit-${i}`, startedAt: expedition.startedAt, expeditionId: expedition.id, url: canonicalUrl, canonicalUrl,
+      title, tabId: 1, parentVisitId: null, transition: 'typed', engagement: 'read', activeMs: 80_000, scrollDepth: 1 };
+    const page: Page = { canonicalUrl, sourceUrl: canonicalUrl, text: 'Raw article text must not be sent.', textHash: 'fixture',
+      summary: 'The erector spinae holds the spine upright.', takeaways: [], embedding: null, pageKind: 'article', enrichedAt: now };
+    return { expedition, visit, page };
+  });
+  const wrapUp = (expeditionId: string) => panel.evaluate((id) => chrome.runtime.sendMessage({ type: 'trailmap.wrapUp', expeditionId: id }), expeditionId);
+  for (const { expedition, visit, page } of sessions) {
+    await seed(panel, { expeditions: [expedition], visits: [visit], pages: [page] });
+    await wrapUp(expedition.id);
+    await expect.poll(async () => (await readCapture('expeditions')).find(({ id }) => id === expedition.id)?.fieldNotes).toContain('A tombstone');
+  }
+  const journal = await openExtensionPage('journal.html');
+  await expect(journal.getByRole('button', { name: 'Add: Part of Epaxial musculature?' })).toBeVisible({ timeout: 30_000 });
+  await expect(journal.getByText('2 sessions')).toHaveCount(0);
+  const settings = await openExtensionPage('settings.html#diagnostics');
+  const run = settings.getByRole('region', { name: 'Thread match for Back muscle group' });
+  await expect(run.getByText('A possible match: "Part of …?" is shown.')).toBeVisible();
+  await expect(run.getByRole('cell', { name: 'Epaxial musculature' })).toBeVisible();
+  await settings.setViewportSize({ width: 1280, height: 900 });
+  for (const scheme of ['light', 'dark'] as const) {
+    await settings.emulateMedia({ colorScheme: scheme });
+    await run.scrollIntoViewIfNeeded();
+    await settings.screenshot({ path: process.env.PROOF_DIR ? join(process.env.PROOF_DIR, `diagnostics-${scheme}.png`) : info.outputPath(`diagnostics-${scheme}.png`) });
+  }
+});
+
 test('a one-tap suggestion groups two sessions; detaching restores their Expedition cards', async ({ openExtensionPage, readCapture }, info) => {
   const setup = await openExtensionPage('sidepanel.html');
   const at = Date.now();

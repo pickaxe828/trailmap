@@ -221,3 +221,12 @@ test('Forget Site also removes imported history Visits and stored URLs never kee
   await corrections().forgetSite('secret.example');
   expect((await db.visits.toArray()).map(({ id }) => id)).toEqual(['history:2']);
 });
+
+test('forgetting an Expedition removes the thread-match runs about it or that considered it', async () => {
+  await seed();
+  const run = (expeditionId: string, candidateIds: string[]) => ({ expeditionId, at: 1, outcome: 'none' as const, reason: 'below-suggestion-band' as const,
+    dismissed: 0, candidates: candidateIds.map((id) => ({ kind: 'expedition' as const, id, similarity: 0.1, shared: 0, band: 0 as const })) });
+  await db.threadMatchRuns.bulkPut([run('e1', []), run('e2', ['e1']), run('e3', ['e2']), run('e2b', [])]);
+  await corrections().forgetExpedition('e1');
+  expect((await db.threadMatchRuns.toArray()).map((row) => row.expeditionId).sort()).toEqual(['e2b', 'e3']);
+});
