@@ -31,7 +31,7 @@ test('the header gear opens Settings and arrow keys and Tab navigate its section
   await expect(settings.getByRole('tabpanel', { name: 'Companion' })).toBeFocused();
   await settings.keyboard.press('Shift+Tab');
   await expect(companion).toBeFocused();
-  for (const label of ['Model providers', 'Obsidian sync', 'History import', 'Exports', 'Sent-to-model log', 'Diagnostics']) {
+  for (const label of ['Model providers', 'Review', 'Obsidian sync', 'History import', 'Exports', 'Sent-to-model log', 'Diagnostics']) {
     await settings.keyboard.press('ArrowRight');
     await expect(tabs.getByRole('tab', { name: label })).toBeFocused();
   }

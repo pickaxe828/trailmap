@@ -69,7 +69,7 @@ test('review is off until turned on, then schedules learned concepts and keeps i
   await page.getByRole('button', { name: 'Show answer' }).click();
   await page.getByRole('button', { name: 'Easy' }).click();
   await expect(page.getByRole('heading', { name: 'All done for now' })).toBeVisible();
-  await expect(page.getByText(/Your next review is/)).toBeVisible();
+  await expect(page.getByText(/Your next review is/).first()).toBeVisible();
   for (const scheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme: scheme });
     await page.screenshot({ path: proof(`review-empty-${scheme}.png`) });
