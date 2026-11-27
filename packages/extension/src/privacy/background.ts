@@ -1,6 +1,8 @@
+import { CHAT_SITES } from '../capture/chat-sites';
+import { RESCREEN_CHAT_MESSAGE } from '../capture/page-messages';
 import type { VisitRecorder } from '../capture/recorder';
 import { isRecordingRequest, PASSWORD_STATUS_CHANGED, TOGGLE_RECORDING_COMMAND, type RecordingStatus } from './messages';
-import { recordingState, siteKey, type RecordingSettings, type RecordingState } from './policy';
+import { chatCaptureAllowed, recordingState, siteKey, type RecordingSettings, type RecordingState } from './policy';
 import { readRecordingSettings, saveRecordingSettings } from './settings';
 
 const badges: Record<RecordingState, { text: string; title: string }> = {
@@ -10,11 +12,12 @@ const badges: Record<RecordingState, { text: string; title: string }> = {
 };
 
 /** `unseenNotes` is the toolbar count of field notes nobody has looked at yet; it takes the badge over from the recording state. */
-export function createRecordingPrivacy(unseenNotes: () => number, purge: (host?: string) => Promise<unknown>) {
+export function createRecordingPrivacy(unseenNotes: () => number, purge: (host?: string, settings?: RecordingSettings) => Promise<unknown>) {
   // Start fail-closed until preferences load and any interrupted purge completes.
   let settings: RecordingSettings = { paused: true, skippedHosts: [] };
   const ready = readRecordingSettings().then(async (saved) => {
-    await purge();
+    // Captured chat conversations survive this deny-list purge only for sites that are still opted in.
+    await purge(undefined, saved);
     for (const host of saved.skippedHosts) await purge(host);
     settings = saved;
   });
@@ -42,7 +45,16 @@ export function createRecordingPrivacy(unseenNotes: () => number, purge: (host?:
       id === undefined ? undefined : refreshBadge(id).catch(() => {})));
   }
 
+  const chatRules = ({ paused, skippedHosts, chatCapture }: RecordingSettings) => JSON.stringify([paused, skippedHosts, chatCapture ?? {}]);
+
+  /** Chat tabs stop reading their composer, or start being admitted, as soon as the capture rules change. */
+  async function rescreenChatTabs() {
+    const tabs = await chrome.tabs.query({ url: Object.values(CHAT_SITES).map(({ host }) => `https://${host}/*`) });
+    await Promise.all(tabs.map(({ id }) => id === undefined ? undefined : chrome.tabs.sendMessage(id, { type: RESCREEN_CHAT_MESSAGE }).catch(() => {})));
+  }
+
   function changeSettings(edit: (current: RecordingSettings) => RecordingSettings, skipHost?: string) {
+    let chatChanged = false;
     const written = recorder.changeRecordingPolicy(async () => {
       const next = edit(settings);
       // Block dispatch as soon as a skip begins, before the cascade runs.
@@ -50,10 +62,16 @@ export function createRecordingPrivacy(unseenNotes: () => number, purge: (host?:
       settings = next;
       try { await saveRecordingSettings(next); }
       catch (error) { settings = previous; throw error; }
+      chatChanged = chatRules(previous) !== chatRules(next);
       if (skipHost) await purge(skipHost);
+      // Turning a chat site off removes what was captured from it.
+      if (chatChanged) await purge(undefined, next);
     });
     settingsWritten = written.catch(() => {});
-    return written.then(refreshBadges);
+    return written.then(async () => {
+      await refreshBadges();
+      if (chatChanged) await rescreenChatTabs().catch(() => {});
+    });
   }
 
   /** Use the same settings writer for future ignore-site actions. */
@@ -83,6 +101,7 @@ export function createRecordingPrivacy(unseenNotes: () => number, purge: (host?:
     refreshBadges,
     getSettings: () => settings,
     shouldRecord: (url: string) => recordingState(url, settings) === 'recording',
+    shouldCaptureChat: (url: string) => chatCaptureAllowed(url, settings),
     setSiteSkipped,
     onPasswordStatusChanged(tabId: number) {
       void refreshBadge(tabId).catch(() => {});
@@ -108,7 +127,7 @@ export function createRecordingPrivacy(unseenNotes: () => number, purge: (host?:
         if (!page) return;
         const fromSettings = settingsPages.has(page);
         if (page !== panel && !fromSettings) return;
-        if ((input.action === 'edit-skip-list' || input.action === 'set-expedition-threshold' || input.action === 'set-use-my-notes') && !fromSettings) return;
+        if ((input.action === 'edit-skip-list' || input.action === 'set-expedition-threshold' || input.action === 'set-use-my-notes' || input.action === 'set-chat-capture') && !fromSettings) return;
         if (fromSettings && (input.action === 'set-site' || (input.action === 'status' && input.tabId !== undefined))) return;
         void (async () => {
           switch (input.action) {
@@ -125,6 +144,9 @@ export function createRecordingPrivacy(unseenNotes: () => number, purge: (host?:
               return true;
             case 'set-use-my-notes':
               await changeSettings((current) => ({ ...current, useMyNotes: input.enabled }));
+              return true;
+            case 'set-chat-capture':
+              await changeSettings((current) => ({ ...current, chatCapture: { ...current.chatCapture, [input.site]: input.enabled } }));
               return true;
             case 'edit-skip-list': {
               const value = input.site.trim();

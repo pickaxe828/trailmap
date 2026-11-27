@@ -194,7 +194,7 @@ export function renderFieldNotes(draft: FieldNotesDraft, built: NonNullable<Retu
   return [
     '## Question', '', oneLine(built.question), '',
     '## What you found', '',
-    ...([...built.links.values()].some(({ aiGenerated }) => aiGenerated) ? ['Includes AI-generated material from Google AI Mode, not an independent source.', ''] : []),
+    ...([...built.links.values()].some(({ aiGenerated }) => aiGenerated) ? ['Includes AI-generated material from an AI conversation, not an independent source.', ''] : []),
     draft.found.trim(), '',
     '## Key ideas', '', ...ideas, '',
     '## How the trail went', '', draft.trail.trim(), '',

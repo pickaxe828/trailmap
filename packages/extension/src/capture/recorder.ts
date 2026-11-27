@@ -4,6 +4,7 @@ import { forgetCascade } from '../corrections/forget';
 import { enqueuePageEnrichment } from '../enrichment/enqueue';
 import { aiEngagement, conversationPage, mergeAiTurn, pendingAiTurns } from './ai-conversation';
 import { canonicalizeUrl } from './canonical';
+import { CHAT_SITES, chatConversationUrl, chatSiteOf, isNewChatUrl } from './chat-sites';
 import { normalizeQuestion } from './google-ai-mode';
 import { scoreEngagement } from './engagement';
 import { WINDOW_ID_NONE, type BrowserEventHandlers, type BrowserEventSource, type NavigationEvent, type PageContentEvent } from './events';
@@ -49,6 +50,8 @@ export type VisitRecorderOptions = {
   canonicalize?: typeof canonicalizeUrl;
   /** URL policy; production waits for persisted settings before using it. */
   shouldRecord?: (url: string) => boolean;
+  /** May a conversation typed on this real chat page be captured? Opt-in per site; never true by default. */
+  shouldCaptureChat?: (url: string) => boolean;
   policyReady?: Promise<void>;
   /** Wait for the active top-level content script to screen the document. */
   screenDocuments?: boolean;
@@ -118,7 +121,7 @@ export class VisitRecorder {
         if (!this.isRecordable(pending.event.url)) this.endTrail(tabId);
       }
       for (const [tabId, entry] of Object.entries(this.state.aiEntries ?? {})) {
-        if (!this.isRecordable(entry.origin)) this.endTrail(Number(tabId));
+        if (!(entry.chat ? this.chatAllowed(entry.origin) : this.isRecordable(entry.origin))) this.endTrail(Number(tabId));
       }
       this.state.pendingNewTabParent = {};
       this.state.pendingAiCitationParent = {};
@@ -289,6 +292,15 @@ export class VisitRecorder {
     return /^https?:/i.test(url) && (this.options.shouldRecord?.(url) ?? true);
   }
 
+  /** Opt-in conversation capture for a real chat page. Closed unless the privacy policy says otherwise. */
+  private chatAllowed(url: string): boolean {
+    return !!chatSiteOf(url) && (this.options.shouldCaptureChat?.(url) ?? false);
+  }
+
+  private pageAllowed(url: string): boolean {
+    return chatSiteOf(url) ? this.chatAllowed(url) : this.isRecordable(url);
+  }
+
   /** The tab no longer shows a recorded page, so the next navigation has no parent. */
   private endTrail(tabId: number) {
     this.pending.delete(tabId);
@@ -313,6 +325,17 @@ export class VisitRecorder {
     this.endTrail(event.tabId);
     if (event.documentId && this.state.passwordDocumentIdsByTab?.[event.tabId] === event.documentId) return;
     this.setPasswordStatus(event.tabId, false);
+    // A chat page is never a Visit of its own: only an opted-in conversation typed here becomes a node.
+    const chat = chatSiteOf(event.url);
+    if (chat) {
+      if (this.chatAllowed(event.url)) {
+        (this.state.aiEntries ??= {})[event.tabId] = {
+          origin: new URL(event.url).origin, documentId: event.documentId, parentVisitId: null,
+          screened: !this.options.screenDocuments, chat, ...(isNewChatUrl(event.url) ? { fresh: true as const } : {}),
+        };
+      }
+      return;
+    }
     if (!this.isRecordable(event.url)) return;
     if (googleSearchSurface(event.url) === 'ai-mode') {
       (this.state.aiEntries ??= {})[event.tabId] = {
@@ -408,15 +431,18 @@ export class VisitRecorder {
     const { db, now, newId } = this.options;
     const active = this.current.get(tabId);
     if (!active && content.kind !== 'ai-submit') return;
+    const chat = entry.chat;
     const visit = active ? { ...active } : {
       url: `${entry.origin}/search?udm=50`, id: newId(), tabId, captureDocumentId: entry.documentId,
-      title: 'Google AI Mode · AI-generated', parentVisitId: entry.parentVisitId, transition: 'link' as const,
+      title: chat ? `${CHAT_SITES[chat].label} · AI-generated` : 'Google AI Mode · AI-generated',
+      parentVisitId: entry.parentVisitId, transition: chat ? 'typed' as const : 'link' as const,
       startedAt: now(), activeMs: 0, scrollDepth: 0, engagement: 'skimmed' as const,
       expeditionId: null, segmentationPending: 1 as const, aiConversation: true as const, canonicalUrl: '',
     };
     // Keep a local, per-session key on the real host (privacy/Forget), never a
     // canonical URL with Google's session IDs or the user's questions in it.
-    if (!active) visit.canonicalUrl = `${visit.url}#trailmap-ai-${visit.id}`;
+    if (!active && chat) visit.url = visit.canonicalUrl = chatConversationUrl(chat, visit.id);
+    else if (!active) visit.canonicalUrl = `${visit.url}#trailmap-ai-${visit.id}`;
     let opening: Visit | undefined;
     const changed = await db.transaction('rw', db.visits, db.pages, db.queries, db.jobs, async () => {
       const previous = active && await db.pages.get(active.canonicalUrl);
@@ -427,7 +453,7 @@ export class VisitRecorder {
       }
       const next = mergeAiTurn(turns, content);
       if (next === turns) return false;
-      if (!active && content.kind === 'ai-submit') {
+      if (!active && !chat && content.kind === 'ai-submit') {
         const parent = visit.parentVisitId ? await db.visits.get(visit.parentVisitId) : undefined;
         const search = parent && this.isRecordable(parent.url) && new URL(parent.url).origin === entry.origin &&
           await db.queries.where('visitId').equals(parent.id).first();
@@ -460,8 +486,17 @@ export class VisitRecorder {
     const current = this.current.get(tabId);
     const visit = current && this.state.documentIdsByTab?.[tabId] === documentId && sameUrl(current.url, url) ? current : undefined;
     const { db } = this.options;
-    const entry = this.state.aiEntries?.[tabId];
-    const inMode = googleSearchSurface(url) === 'ai-mode';
+    const chat = chatSiteOf(url);
+    let entry = this.state.aiEntries?.[tabId];
+    if (chat && content.kind === 'screen' && !content.hasPassword && this.chatAllowed(url) &&
+        (entry?.chat !== chat || entry.documentId !== documentId)) {
+      // A page that was open before the opt-in is admitted now, from this moment only.
+      entry = (this.state.aiEntries ??= {})[tabId] = {
+        origin: new URL(url).origin, documentId, parentVisitId: null, screened: false, chat,
+        ...(isNewChatUrl(url) ? { fresh: true as const } : {}),
+      };
+    }
+    const inMode = googleSearchSurface(url) === 'ai-mode' || !!chat;
     const aiDocument = inMode && entry && entry.documentId === documentId && entry.origin === URL.parse(url)?.origin ? entry : undefined;
     if (content.kind === 'screen') {
       const pending = this.pending.get(tabId);
@@ -482,7 +517,7 @@ export class VisitRecorder {
         }
         return;
       }
-      if (!this.isRecordable(url)) return;
+      if (!this.pageAllowed(url)) return;
       if (aiDocument) {
         aiDocument.screened = true;
         const carry = aiDocument.carryReply;
@@ -499,7 +534,7 @@ export class VisitRecorder {
       return visit && { visitId: visit.id, extract: false };
     }
     if (content.kind === 'ai-submit' || content.kind === 'ai-result') {
-      if (!aiDocument?.screened || !this.isRecordable(url) || (current && !this.isRecordable(current.canonicalUrl))) return;
+      if (!aiDocument?.screened || !this.pageAllowed(url) || (current && !this.isRecordable(current.canonicalUrl))) return;
       return this.captureAiTurn(tabId, aiDocument, content);
     }
     if (!visit || !this.isRecordable(url) || !this.isRecordable(visit.canonicalUrl)) return;
@@ -595,6 +630,12 @@ export class VisitRecorder {
         const entry = this.state.aiEntries?.[event.tabId];
         if (entry && entry.documentId === event.documentId && googleSearchSurface(event.url) === 'ai-mode' &&
             entry.origin === URL.parse(event.url)?.origin) return;
+        // A new chat's first message moves to its own URL. That is the same conversation.
+        if (entry?.chat && entry.fresh && entry.documentId === event.documentId && chatSiteOf(event.url) === entry.chat &&
+            entry.origin === URL.parse(event.url)?.origin && !isNewChatUrl(event.url)) {
+          delete entry.fresh;
+          return;
+        }
         if (this.current.get(event.tabId)?.url === canonicalizeUrl(event.url) || this.pending.get(event.tabId)?.event.url === event.url) return;
         const transition = event.transitionQualifiers.includes('forward_back') ? 'back' : 'link';
         await this.beginVisit(event, transition, this.parentFor(event.tabId, transition));

@@ -17,6 +17,8 @@ export function isPageVisibilityMessage(value: unknown): value is PageVisibility
 }
 
 export const OPEN_AI_CITATION = 'trailmap.openAiCitation';
+/** Background to content script: capture rules for this chat site changed, so screen the document again. */
+export const RESCREEN_CHAT_MESSAGE = 'trailmap.rescreenChat';
 export const PAGE_CONTENT_MESSAGE = 'trailmap.pageContent';
 export const PAGE_TEXT_BYTE_LIMIT = 12_000;
 

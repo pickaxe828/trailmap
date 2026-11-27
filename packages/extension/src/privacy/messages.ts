@@ -1,3 +1,4 @@
+import { CHAT_SITE_IDS, type ChatSite } from '../capture/chat-sites';
 import { validExpeditionMinutes } from '../segmentation/config';
 import type { RecordingState } from './policy';
 import type { ExpeditionThreshold } from './settings';
@@ -13,6 +14,7 @@ export type RecordingRequest = { type: typeof RECORDING_MESSAGE } & (
   | { action: 'edit-skip-list'; site: string; skip: boolean }
   | { action: 'set-expedition-threshold'; threshold: ExpeditionThreshold; minutes: number }
   | { action: 'set-use-my-notes'; enabled: boolean }
+  | { action: 'set-chat-capture'; site: ChatSite; enabled: boolean }
 );
 
 export type RecordingStatus = {
@@ -32,6 +34,7 @@ export function isRecordingRequest(value: unknown): value is RecordingRequest {
     case 'set-expedition-threshold': return (request.threshold === 'expeditionInactivityMinutes' || request.threshold === 'topicSwitchMinutes') &&
       validExpeditionMinutes(request.minutes);
     case 'set-use-my-notes': return typeof request.enabled === 'boolean';
+    case 'set-chat-capture': return CHAT_SITE_IDS.includes(request.site as ChatSite) && typeof request.enabled === 'boolean';
     default: return false;
   }
 }
