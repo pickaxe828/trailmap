@@ -1,6 +1,6 @@
 import { Button } from '@astryxdesign/core/Button';
-import { Card } from '@astryxdesign/core/Card';
 import { CheckboxInput } from '@astryxdesign/core/CheckboxInput';
+import { ClickableCard } from '@astryxdesign/core/ClickableCard';
 import { Popover } from '@astryxdesign/core/Popover';
 import { VStack } from '@astryxdesign/core/VStack';
 import { useMemo, useState, type ReactNode } from 'react';
@@ -9,8 +9,8 @@ import type { OrganisationPlan } from '../../journal/organise';
 const dragType = 'application/x-trailmap-expedition';
 export type DropChoice = { label: string; plan: OrganisationPlan };
 
-export function OrganiseCard({ id, title, children, suggestions, selecting, checked, busy, toggle, canDrag, dropChoices, run }: {
-  id: string; title: string; children: ReactNode; suggestions?: ReactNode; selecting: boolean; checked: boolean;
+export function OrganiseCard({ id, title, href, children, suggestions, selecting, checked, busy, toggle, canDrag, dropChoices, run }: {
+  id: string; title: string; href: string; children: ReactNode; suggestions?: ReactNode; selecting: boolean; checked: boolean;
   busy: boolean; toggle: (id: string) => void; canDrag: boolean;
   dropChoices: (source: string) => DropChoice[]; run: (plan: OrganisationPlan) => Promise<boolean>;
 }) {
@@ -45,12 +45,12 @@ export function OrganiseCard({ id, title, children, suggestions, selecting, chec
           const from = event.dataTransfer.getData(dragType);
           if (!busy && from !== id && dropChoices(from).length) setSource(from);
         }}>
-        <Card padding={0} className="flex-1">
-          <VStack className="h-full">
-            <VStack className="flex-1">{children}</VStack>
-            {suggestions && <VStack padding={4} className="pt-0">{suggestions}</VStack>}
+        <ClickableCard label={title} href={href} height="100%" padding={4}>
+          <VStack height="100%" gap={4} justify="between">
+            {children}
+            {suggestions}
           </VStack>
-        </Card>
+        </ClickableCard>
       </VStack>
       {anchorRef && <Popover label="Organise dropped card" anchorRef={anchorRef} isOpen={choices.length > 0}
         onOpenChange={(open) => { if (!open) setSource(undefined); }} content={

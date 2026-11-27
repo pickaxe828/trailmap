@@ -12,6 +12,7 @@ import type { Expedition } from '@trailmap/shared';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { readDigestPanel } from '../../digest/read';
 import { useJournalData } from '../../journal/data';
+import { expeditionHref, threadHref } from '../../journal/links';
 import { readRecentChanges } from '../../journal/recent';
 import { planOrganisation, type OrganisationPlan } from '../../journal/organise';
 import { useJournalCorrection } from '../../journal/useJournalCorrection';
@@ -19,12 +20,12 @@ import { readJournalResearch } from '../../threads/read';
 import { TrailmapShell } from '../../ui/TrailmapShell';
 import { AskBox } from './AskBox';
 import { DigestSection } from './DigestSection';
-import { ExpeditionCard } from './ExpeditionCard';
+import { ExpeditionCardContent } from './ExpeditionCard';
 import { JournalSearch } from './JournalSearch';
 import { OrganiseCard, type DropChoice } from './OrganiseCard';
 import { RecentChanges } from './RecentChanges';
 import { SuggestionRows } from './SuggestionRows';
-import { ThreadCard } from './ThreadCards';
+import { ThreadCardContent } from './ThreadCards';
 
 function Cards({ children }: { children: ReactNode }) {
   const wide = useMediaQuery('(min-width: 64rem)');
@@ -94,11 +95,11 @@ export function App() {
   });
   const cardInteraction = { selecting, busy, toggle, run: apply };
   function expeditionCard(expedition: Expedition, suggestion?: Parameters<typeof SuggestionRows>[0]['group']) {
-    return <OrganiseCard key={expedition.id} id={expedition.id} title={expedition.title} {...cardInteraction}
+    return <OrganiseCard key={expedition.id} id={expedition.id} title={expedition.title} href={expeditionHref(expedition.id)} {...cardInteraction}
       checked={selection.includes(expedition.id)} canDrag={expedition.endedAt !== null}
       dropChoices={(source) => dropChoices(source, [expedition])}
       suggestions={<SuggestionRows expedition={expedition} group={suggestion} merges={merges?.get(expedition.id)} busy={busy} run={run} />}>
-      <ExpeditionCard expedition={expedition} noted={!!noted?.has(expedition.id)} />
+      <ExpeditionCardContent expedition={expedition} noted={!!noted?.has(expedition.id)} />
     </OrganiseCard>;
   }
 
@@ -135,10 +136,10 @@ export function App() {
               </VStack>
             )}
             <Cards>{items.map((item) => item.kind === 'expedition' ? expeditionCard(item.expedition, item.suggestion) : (
-              <OrganiseCard key={item.thread.id} id={item.thread.id} title={item.thread.title} {...cardInteraction}
+              <OrganiseCard key={item.thread.id} id={item.thread.id} title={item.thread.title} href={threadHref(item.thread.id)} {...cardInteraction}
                 checked={selection.includes(item.thread.id)} canDrag={false}
                 dropChoices={(source) => dropChoices(source, item.members, item.thread.id)}>
-                <ThreadCard thread={item.thread} count={item.members.length} />
+                <ThreadCardContent thread={item.thread} count={item.members.length} />
               </OrganiseCard>
             ))}</Cards>
             {other.length > 0 && (
