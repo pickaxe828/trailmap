@@ -149,7 +149,7 @@ test('a merge chip moves visits to the earliest expedition and Undo restores bot
   expect((await readCapture('visits')).map(({ expeditionId }) => expeditionId)).toEqual(['early', 'late']);
 });
 
-test('opening field notes marks them seen and a Markdown edit survives reload', async ({ openExtensionPage, readCapture }) => {
+test('opening field notes marks them seen and My notes survive reload beside them', async ({ openExtensionPage, readCapture }) => {
   const setup = await openExtensionPage('sidepanel.html');
   await seed(setup, { expeditions: [expedition('research:crdt', 'Tombstones in CRDTs', start, {
     drivingQuestion: 'How do replicated deletes work?', fieldNotes: '## Found\n\nDeletes use tombstones.', unseenNotes: 1,
@@ -159,15 +159,17 @@ test('opening field notes marks them seen and a Markdown edit survives reload', 
   await expect(journal.getByRole('heading', { name: 'Field notes' })).toBeVisible();
   await expect(journal.getByText('Deletes use tombstones.')).toBeVisible();
   await expect.poll(async () => (await readCapture('expeditions'))[0]?.unseenNotes).toBeUndefined();
-  await journal.getByRole('button', { name: 'Edit field notes' }).click();
-  await journal.getByLabel('Field notes Markdown').fill('## My findings\n\nKeep the tombstone until every replica has seen it.');
-  await journal.getByRole('button', { name: 'Save field notes' }).click();
+  await journal.getByRole('button', { name: 'Write my notes' }).click();
+  await journal.getByLabel('My notes Markdown').fill('## My findings\n\nKeep the tombstone until every replica has seen it.');
+  await journal.getByRole('button', { name: 'Save my notes' }).click();
   await expect(journal.getByRole('heading', { name: 'My findings' })).toBeVisible();
   await journal.reload();
   await expect(journal.getByText('Keep the tombstone until every replica has seen it.')).toBeVisible();
-  expect((await readCapture('expeditions'))[0]?.userEdited).toBe(true);
+  await expect(journal.getByText('Deletes use tombstones.')).toBeVisible(); // the generated notes are still there
+  const [stored] = await readCapture('expeditions');
+  expect(stored).toMatchObject({ myNotes: '## My findings\n\nKeep the tombstone until every replica has seen it.', fieldNotes: '## Found\n\nDeletes use tombstones.', userEdited: false });
   expect((await readCapture('corrections')).map(({ kind, targetIds }) => [kind, targetIds]))
-    .toEqual([['field-notes', ['research:crdt']]]);
+    .toEqual([['my-notes', ['research:crdt']]]);
 });
 
 test('an Expedition shows questions, skipped branches, and Page details with a reopen link', async ({ context, fixtureUrl, openExtensionPage }, info) => {

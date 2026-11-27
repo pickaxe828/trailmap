@@ -28,7 +28,8 @@ export async function enqueueJob<K extends JobKind>(db: TrailmapDb, spec: JobSpe
     const id = jobId(spec.kind, spec.key);
     const existing = await db.jobs.get(id);
     if (!existing) {
-      await db.jobs.add({ ...spec, id, createdAt: now, status: 'pending', availableAt: now, failures: 0 });
+      const { delayMs = 0, ...stored } = spec;
+      await db.jobs.add({ ...stored, id, createdAt: now, status: 'pending', availableAt: now + delayMs, failures: 0 });
     } else if (existing.status === 'pending' && spec.priority < existing.priority) {
       await db.jobs.update(id, { priority: spec.priority, payload: spec.payload });
     }

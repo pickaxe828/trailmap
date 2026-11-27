@@ -26,22 +26,19 @@ export async function repairExpedition(db: TrailmapDb, expeditionId: string, { d
       changes.title = query?.q.trim() || root.title.trim() || URL.parse(root.canonicalUrl)?.hostname || 'Untitled page';
     }
   }
-  // Model-written fields were derived from content that is gone. The user's own edits stay.
+  // Model-written fields were derived from content that is gone.
   if (derivedContentRemoved) {
-    if (!expedition.userEdited || expedition.notesSource) {
-      changes.fieldNotes = null;
-      changes.notesSource = undefined;
-      changes.unreadStops = undefined;
-    }
+    // My notes (expedition.myNotes) are the user's own words and stay.
+    changes.fieldNotes = null;
+    changes.notesSource = undefined;
+    changes.unreadStops = undefined;
     changes.drivingQuestion = null;
     changes.wrapUpSource = undefined;
     changes.wrappedUpAt = undefined;
     // Wrap-up output (merge suggestions) and notes never survive their source, so the badge can't count them either.
     if (expedition.mergeSuggestions) changes.mergeSuggestions = [];
-    if (changes.fieldNotes === null) {
-      changes.unseenNotes = undefined;
-      changes.notesWrittenAt = undefined;
-    }
+    changes.unseenNotes = undefined;
+    changes.notesWrittenAt = undefined;
   }
   if (members[0]!.startedAt !== expedition.startedAt) changes.startedAt = members[0]!.startedAt;
   if (Object.keys(changes).length) await db.expeditions.update(expeditionId, changes);

@@ -65,6 +65,11 @@ export function observeSearchCorpus(db: TrailmapDb) {
     }
     for (const expedition of expeditions) {
       noteTargets.set(expedition.id, { title: expedition.title, href: reviewPath('expedition', 'id', expedition.id) });
+      if (expedition.myNotes?.trim()) documents.push({
+        id: `my-notes:${expedition.id}`, kind: 'note', title: expedition.title,
+        href: reviewPath('expedition', 'id', expedition.id), detail: 'My notes',
+        body: expedition.myNotes, semanticText: semanticText(expedition.title, expedition.drivingQuestion, expedition.myNotes),
+      });
       if (!expedition.fieldNotes?.trim()) continue;
       documents.push({
         id: `field-notes:${expedition.id}`, kind: 'note', title: expedition.title,

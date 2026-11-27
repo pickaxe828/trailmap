@@ -91,7 +91,8 @@ test('forgetting a Page removes its Visits, Query, Highlights, Notes, jobs, audi
   expect((await db.pages.toArray()).map((p) => p.canonicalUrl).sort()).toEqual(['https://a.example/a', 'https://b.example/b']);
   expect((await db.highlights.toArray()).map((h) => h.id)).toEqual(['h2']);
   expect((await db.notes.toArray()).map((n) => n.id).sort()).toEqual(['n2']);
-  expect((await db.jobs.toArray()).map((j) => j.id).sort()).toEqual(['j2', 'j3']);
+  // The note on the forgotten stop was waiting to be read by a model; the surviving note is queued again on its own.
+  expect((await db.jobs.toArray()).map((j) => j.id).sort()).toEqual([JSON.stringify(['notes_enrichment', JSON.stringify(['e1', 1, 0, 1])]), 'j2', 'j3']);
   expect((await db.sentToModel.toArray()).map((row) => row.id)).not.toContain('m3'); // it quoted the forgotten Page
   expect(await db.queries.count()).toBe(0);
   // Edges that depended on the forgotten Visit lose it; an edge left without evidence goes away.
@@ -114,7 +115,7 @@ test('forgetting records that audit rows were removed without keeping their cont
   expect(tombstone.canonicalUrl).toBeUndefined();
   const forgotten = (await db.corrections.toArray()).find((entry) => entry.kind === 'forget-page')!;
   expect(forgotten.targetIds).toEqual([]);
-  expect(forgotten.before).toMatchObject({ visits: 2, pages: 1, highlights: 1, notes: 2, jobs: 1, auditRows: 2 });
+  expect(forgotten.before).toMatchObject({ visits: 2, pages: 1, highlights: 1, notes: 2, jobs: 2, auditRows: 2 });
   expect(forgotten.after).toBeNull();
   expect((await db.corrections.toArray()).some((e) => e.kind === 'star')).toBe(true); // unrelated entries stay
 });

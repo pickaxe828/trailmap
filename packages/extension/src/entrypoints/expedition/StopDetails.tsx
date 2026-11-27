@@ -73,6 +73,12 @@ export function StopDetails({ review, selected, onSelect, onMove, onClose }: {
       ) : (
         <>
           {visit?.aiConversation && <AiConversation visitId={visit.id} turns={page?.aiTurns ?? []} />}
+          {review.stopNotes.get(selected) && (
+            <VStack gap={1}>
+              <Heading level={3}>My note</Heading>
+              <Text as="p" className="whitespace-pre-line">{review.stopNotes.get(selected)}</Text>
+            </VStack>
+          )}
           {page?.summary ? <Text as="p">{page.summary}</Text> : !visit?.aiConversation && <Text type="supporting">No page summary yet.</Text>}
           {!!page?.takeaways.length && (
             <>

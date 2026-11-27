@@ -34,7 +34,7 @@ export function createCorrectionService({ db, corrections, recorder, privacy }: 
       case 'note': await corrections.note(request.nodeId, request.text); return true;
       case 'split': return (await corrections.split(request.visitId)) !== null;
       case 'rename': return corrections.rename(request.expeditionId, request.title);
-      case 'field-notes': return corrections.editFieldNotes(request.expeditionId, request.text);
+      case 'my-notes': return corrections.editMyNotes(request.expeditionId, request.text);
       case 'merge': return corrections.merge(request.intoId, request.fromId);
       case 'move': return corrections.move(request.visitId, request.toExpeditionId);
       case 'ignore-site': {

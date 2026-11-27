@@ -86,3 +86,20 @@ test('committed Page enrichment, note edits and deletions refresh the existing i
     await db.delete();
   }
 });
+
+test('My notes are searchable and point at their Expedition', async () => {
+  const db = openTrailmapDb(crypto.randomUUID());
+  const index = new SearchIndex({ async embed() { return []; } });
+  await db.expeditions.put({ ...expedition, myNotes: 'Quorum reads tolerate stale replicas' });
+  const next = Promise.withResolvers<void>();
+  const subscription = observeSearchCorpus(db).subscribe({
+    next: (documents) => { index.update(documents); next.resolve(); }, error: (error) => next.reject(error),
+  });
+  try {
+    await next.promise;
+    expect(index.keyword('quorum', 5)).toMatchObject([{ kind: 'note', href: '/expedition.html?id=e', detail: 'My notes' }]);
+  } finally {
+    subscription.unsubscribe();
+    await db.delete();
+  }
+});

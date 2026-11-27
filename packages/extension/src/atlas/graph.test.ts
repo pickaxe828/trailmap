@@ -38,3 +38,9 @@ test('replaying the Atlas reveals Concepts at firstSeen without adding lower-ran
   expect(shownAt(20)).toEqual(['Later', 'Early']);
   expect(shownAt(20, 'Peripheral')).toEqual(['Later', 'Early', 'Peripheral']);
 });
+
+test('concepts the user wrote about are learned nodes; the rest were only seen on pages', () => {
+  const graph = buildAtlasGraph([{ ...concept('Tombstone', 1), learned: true }, concept('Gossip', 2)], []);
+  expect(graph.getNodeAttribute('Tombstone', 'learned')).toBe(true);
+  expect(graph.getNodeAttribute('Gossip', 'learned')).toBe(false);
+});

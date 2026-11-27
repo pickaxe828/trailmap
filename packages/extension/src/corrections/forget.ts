@@ -1,6 +1,7 @@
 import { forgetConceptEvidence, forgetEdgeEvidence } from '../concepts/forget';
 import type { TrailmapDb } from '../db/db';
 import { enqueuePageEnrichment } from '../enrichment/enqueue';
+import { enqueueNotesEnrichment } from '../notes/enqueue';
 import { isDefaultDenied, siteKey } from '../privacy/policy';
 import { enqueueThreadMatch } from '../threads/match';
 import { refreshThread } from '../threads/model';
@@ -139,8 +140,9 @@ export async function forgetCascade(db: TrailmapDb, input: ForgetInput): Promise
     const jobs = await db.jobs.filter(({ kind, payload, status }) => 'canonicalUrl' in payload
       ? orphans.has(payload.canonicalUrl) || invalidated.has(payload.canonicalUrl) || gone.has(payload.visitId)
       : 'expeditionId' in payload && (forgottenExpeditions.includes(payload.expeditionId) ||
-        (affected.has(payload.expeditionId) && (kind === 'thread_match' ||
+        (affected.has(payload.expeditionId) && (kind === 'thread_match' || kind === 'notes_enrichment' ||
           (status === 'leased' && (kind === 'expedition_wrap_up' || kind === 'field_notes')))))).primaryKeys();
+    const notesJobs = new Set((await db.jobs.bulkGet(jobs)).flatMap((job) => job?.kind === 'notes_enrichment' && 'expeditionId' in job.payload ? [job.payload.expeditionId] : []));
     await db.jobs.bulkDelete(jobs);
     let replacedJobs = 0;
     for (const url of new Set([...candidates, ...invalidated])) {
@@ -151,7 +153,8 @@ export async function forgetCascade(db: TrailmapDb, input: ForgetInput): Promise
       if (engaged && page) await enqueuePageEnrichment(db, engaged, now(), page);
     }
 
-    const { removedConceptIds, changedConceptIds, removedJobs, evidenceVisits } = await forgetConceptEvidence(db, gone, [...urls, ...invalidated], now(), sourceRemoved);
+    const { removedConceptIds, changedConceptIds, removedJobs, evidenceVisits, learnedExpeditions } =
+      await forgetConceptEvidence(db, gone, [...urls, ...invalidated], now(), sourceRemoved, forgottenExpeditions);
     const nodeIds = new Set([...visitIds, ...queryIds, ...forgottenExpeditions, ...urls, ...removedConceptIds]);
     const notes = await db.notes.where('nodeId').anyOf([...nodeIds]).primaryKeys();
     await db.notes.bulkDelete(notes);
@@ -166,6 +169,10 @@ export async function forgetCascade(db: TrailmapDb, input: ForgetInput): Promise
       if (forgottenExpeditions.includes(id)) continue;
       await repairExpedition(db, id, { derivedContentRemoved: true });
       if (!await db.expeditions.get(id)) nodeIds.add(id);
+    }
+    // What was learned from a forgotten stop's note is gone; the notes that remain are asked about again.
+    for (const id of new Set([...learnedExpeditions, ...notesJobs])) {
+      if (!forgottenExpeditions.includes(id) && await db.expeditions.get(id)) await enqueueNotesEnrichment(db, id, now());
     }
     // A suggestion's reason was written from the other Expedition's content too.
     await db.expeditions.filter(({ mergeSuggestions }) =>

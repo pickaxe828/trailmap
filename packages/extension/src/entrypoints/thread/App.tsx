@@ -68,7 +68,7 @@ export function App() {
             <Card padding={4}><LivingNote thread={review.thread} /></Card>
           </VStack>
           <VStack className="min-w-0 lg:col-start-1 lg:row-start-1">
-            <SessionTimeline sessions={review.sessions} recurrences={review.recurrences}
+            <SessionTimeline sessions={review.sessions} recurrences={review.recurrences} noted={review.noted}
               onDetach={(id) => setAction({ kind: 'detach', id })} />
           </VStack>
         </VStack>

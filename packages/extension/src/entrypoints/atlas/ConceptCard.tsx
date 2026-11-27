@@ -38,6 +38,10 @@ export function ConceptCard({ concept, neighbours, onFocus, onClose }: {
           {evidence?.error && <Text role="alert">Could not load this concept’s evidence.</Text>}
           {evidence?.data && (
             <>
+              <Text type="supporting" data-learned={evidence.data.learned ? 'yes' : 'no'}>
+                {evidence.data.learned ? 'Learned: it comes from your own notes.'
+                  : 'Only seen on pages. Write about it in an expedition’s My notes to make it solid.'}
+              </Text>
               <VStack gap={1}>
                 <Heading level={3}>Evidence pages</Heading>
                 {evidence.data.pages.length ? (

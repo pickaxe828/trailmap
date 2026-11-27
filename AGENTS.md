@@ -61,6 +61,10 @@ Before you finish a ticket run all of: `bun run typecheck && bun run test && bun
 
 `packages/extension/src/wrapup/`: closing an Expedition queues `expedition_wrap_up` (title, driving question, learning/errand, merge suggestions), which queues `field_notes` for learning Expeditions. Model inputs are built in `trail.ts` (no Page text, privacy filtered); handlers in `handlers.ts` take a `request` seam for tests. `fieldNotesWritten` (`hooks.ts`) is the "notes written" hook for later tickets. Details: `trailmap-notes/notes-13.md`.
 
+## My notes
+
+`Expedition.myNotes` is the user's own Markdown, kept beside the generated `fieldNotes` (which never carry user edits). `packages/extension/src/notes/` builds the `notes_enrichment` input (`input.ts`, user text only, setting-aware), debounces and queues it (`enqueue.ts`) and runs it (`handler.ts`). Its concepts are `ConceptEvidence` rows with role `learned` (`concepts/learned.ts`), anchored at the Expedition or at the stop a note is attached to. Anything that sends or ranks notes must honour `usesMyNotes(settings)`. Details: `trailmap-notes/notes-25.md`.
+
 ## Extension identity
 
 The manifest `key` pins the extension ID, so it is the same on every machine and every build:

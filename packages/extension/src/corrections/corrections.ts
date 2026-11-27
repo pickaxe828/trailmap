@@ -2,6 +2,8 @@ import type { Visit } from '@trailmap/shared';
 import type { TrailmapDb } from '../db/db';
 import { forgetCascade, type ForgetResult } from './forget';
 import { repairExpedition } from './repair';
+import { enqueueNotesEnrichment } from '../notes/enqueue';
+import { enqueueThreadMatch } from '../threads/match';
 import { refreshEditedSessions } from '../threads/corrections';
 import { refreshThread } from '../threads/model';
 import { preserveLegacyNotesSources } from '../threads/provenance';
@@ -45,11 +47,15 @@ export function createCorrections({ db, now, newId }: CorrectionsOptions) {
     /** One Note per node: saving replaces it, empty text removes it. */
     async note(nodeId: string, text: string) {
       const trimmed = text.trim();
-      await db.transaction('rw', db.notes, db.corrections, async () => {
+      await db.transaction('rw', [db.notes, db.corrections, db.visits, db.queries, db.expeditions, db.jobs,
+        db.conceptEvidence, db.concepts, db.edges], async () => {
         const existing = await db.notes.where('nodeId').equals(nodeId).toArray();
         await db.notes.bulkDelete(existing.map(({ id }) => id));
         if (trimmed) await db.notes.add({ id: newId(), nodeId, text: trimmed, at: now() });
         await logEntry('note', [nodeId], { text: existing[0]?.text ?? null }, { text: trimmed || null });
+        // A note on a stop is also "my notes" input for its Expedition's concepts.
+        const stop = await db.visits.get(nodeId) ?? await db.queries.get(nodeId);
+        if (stop?.expeditionId) await enqueueNotesEnrichment(db, stop.expeditionId, now());
       });
     },
 
@@ -66,18 +72,25 @@ export function createCorrections({ db, now, newId }: CorrectionsOptions) {
       });
     },
 
-    async editFieldNotes(expeditionId: string, text: string): Promise<boolean> {
-      return db.transaction('rw', [db.expeditions, db.corrections, db.threads, db.jobs], async () => {
+    /**
+     * My notes (PLAN §3) sit beside the generated field notes and are never overwritten by them. Saving rebuilds what the
+     * thread matcher and living note know about this Expedition and, after a pause, asks the model for its concepts.
+     */
+    async editMyNotes(expeditionId: string, text: string): Promise<boolean> {
+      return db.transaction('rw', [db.expeditions, db.corrections, db.threads, db.jobs, db.visits, db.queries, db.notes,
+        db.conceptEvidence, db.concepts, db.edges], async () => {
         const expedition = await db.expeditions.get(expeditionId);
         if (!expedition) return false;
         const at = now();
-        await db.expeditions.update(expeditionId, { fieldNotes: text, userEdited: true, notesWrittenAt: at, unseenNotes: undefined });
+        const trimmed = text.trim();
+        await db.expeditions.update(expeditionId, { myNotes: trimmed || undefined, myNotesAt: trimmed || expedition.myNotes ? at : undefined,
+          threadSignature: undefined, threadSuggestion: undefined });
         await refreshEditedSessions(db, [expedition], at);
-        // Unlike a manual Note, generated field notes can quote many Visits. Avoid
-        // duplicating their content in the correction log when those Visits are forgotten.
-        await logEntry('field-notes', [expeditionId],
-          { userEdited: expedition.userEdited, notesWrittenAt: expedition.notesWrittenAt },
-          { userEdited: true, notesWrittenAt: at });
+        await enqueueNotesEnrichment(db, expeditionId, at);
+        const current = await db.expeditions.get(expeditionId);
+        if (current?.fieldNotes && !current.threadId) await enqueueThreadMatch(db, current, at);
+        // Counts only: the text itself would outlive a Forget of the pages it was written about.
+        await logEntry('my-notes', [expeditionId], { length: expedition.myNotes?.length ?? 0 }, { length: trimmed.length });
         return true;
       });
     },

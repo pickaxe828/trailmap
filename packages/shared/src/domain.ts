@@ -140,7 +140,9 @@ export const Expedition = z.object({
   endedAt: z.number().nullable(),
   imported: z.literal(true).optional(),
   fieldNotes: z.string().nullable(),
-  userEdited: z.boolean(),
+  userEdited: z.boolean(), // The user renamed this Expedition; its title is theirs.
+  myNotes: z.string().optional(), // The user's own Markdown, kept beside the generated fieldNotes. Never regenerated.
+  myNotesAt: z.number().optional(), // When My notes last changed.
   threadId: z.string().nullable(),
   threadSuggestion: SuggestionTarget.optional(),
   dismissedSuggestions: z.array(SuggestionTarget).optional(),
@@ -173,6 +175,13 @@ export const FieldNotesDraft = z.object({
   loose_ends: z.array(z.string()),
 });
 export type FieldNotesDraft = z.infer<typeof FieldNotesDraft>;
+
+/** PLAN §4.5a. Concepts the user wrote about. Each cites the note it came from (n0 = My notes, n1… = stop notes). */
+export const NotesEnrichment = z.object({
+  concepts: z.array(z.object({ name: z.string(), kind: ConceptKind, gloss: z.string(), note: z.string() })),
+  relations: z.array(RelationMention),
+});
+export type NotesEnrichment = z.infer<typeof NotesEnrichment>;
 
 /** PLAN §4.7. A revision of the note from the prior synthesis and one session. */
 export const LivingNoteDraft = z.object({ markdown: z.string() });

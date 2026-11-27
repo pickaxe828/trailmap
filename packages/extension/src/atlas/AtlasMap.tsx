@@ -39,7 +39,7 @@ export function AtlasMap({ graph, filter, onFocus }: {
           const view = currentFilter.current;
           const selected = id === view.focused;
           return { ...node, hidden: !isConceptShown(id, node.firstSeen, view),
-            color: colors.communities[node.community % colors.communities.length],
+            color: (node.learned ? colors.communities : colors.faded)[node.community % colors.communities.length],
             forceLabel: selected, zIndex: selected ? 1 : 0 };
         },
         edgeReducer: (id, edge) => {

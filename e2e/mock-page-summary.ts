@@ -36,6 +36,15 @@ const mock = startMockOAuth(async (request) => {
     if (!fieldNotes.includes('A tombstone records')) return new Response(null, { status: 400 });
     return stream(JSON.stringify({ markdown: livingNote ? 'Both sessions support the revised conclusion.' : 'The first session explains tombstones.' }));
   }
+  if (task === 'notes_enrichment') {
+    // Only the user's own notes arrive here, each with a ref.
+    const { notes } = JSON.parse(text) as { notes: { ref: string; text: string }[] };
+    return stream(JSON.stringify({
+      concepts: notes.filter((note) => /tombstone/i.test(note.text)).map((note) => ({
+        name: 'Tombstone', kind: 'concept', gloss: 'A marker that records a deletion.', note: note.ref })),
+      relations: [],
+    }));
+  }
   if (task === 'expedition_wrap_up' && failWrapUp) {
     return Response.json({ error: { code: 'subscription_sharing_usage_unavailable', message: 'private provider detail' } }, { status: 503 });
   }

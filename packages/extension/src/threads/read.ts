@@ -1,5 +1,6 @@
 import type { Expedition, Thread } from '@trailmap/shared';
 import type { TrailmapDb } from '../db/db';
+import { readNotedExpeditions } from '../journal/data';
 import { dismissed, mergeSuggestionsByExpedition } from '../journal/suggestions';
 import { buildExpeditionTrail } from '../trail/graph';
 import { isClosedLearning, readThreadMembers, sessionEnd, threadStatus, THREAD_WINDOW } from './model';
@@ -9,7 +10,7 @@ type ThreadCard = { kind: 'thread'; thread: Thread; members: Expedition[] };
 type ExpeditionCard = { kind: 'expedition'; expedition: Expedition; suggestion?: ThreadTarget };
 
 export function readJournalResearch(db: TrailmapDb, at = Date.now()) {
-  return db.transaction('r', [db.threads, db.expeditions], async () => {
+  return db.transaction('r', [db.threads, db.expeditions, db.notes, db.visits, db.queries], async () => {
     const [threads, expeditions] = await Promise.all([db.threads.toArray(), db.expeditions.orderBy('startedAt').reverse().toArray()]);
     const members = new Map<string, Expedition[]>();
     for (const session of expeditions) {
@@ -41,7 +42,7 @@ export function readJournalResearch(db: TrailmapDb, at = Date.now()) {
       }),
     ];
     const time = (item: ThreadCard | ExpeditionCard) => item.kind === 'thread' ? item.thread.lastActiveAt : sessionEnd(item.expedition);
-    return { items: items.sort((a, b) => time(b) - time(a)), targets: visible, merges: mergeSuggestionsByExpedition(expeditions),
+    return { items: items.sort((a, b) => time(b) - time(a)), noted: await readNotedExpeditions(db, expeditions), targets: visible, merges: mergeSuggestionsByExpedition(expeditions),
       other: expeditions.filter(({ kind }) => kind === 'errand') };
   });
 }
@@ -49,7 +50,7 @@ export function readJournalResearch(db: TrailmapDb, at = Date.now()) {
 export type Recurrence = { from: string; to: string; pages: string[]; concepts: string[] };
 
 export function readThread(db: TrailmapDb, id: string, at = Date.now()) {
-  return db.transaction('r', [db.threads, db.expeditions, db.visits, db.queries, db.conceptEvidence, db.concepts], async () => {
+  return db.transaction('r', [db.threads, db.expeditions, db.visits, db.queries, db.conceptEvidence, db.concepts, db.notes], async () => {
     const thread = await db.threads.get(id);
     if (!thread) return null;
     const members = await readThreadMembers(db, id);
@@ -86,7 +87,8 @@ export function readThread(db: TrailmapDb, id: string, at = Date.now()) {
       }
       sessions.push({ expedition, graph: buildExpeditionTrail(visits, queries) });
     }
-    return { thread: { ...thread, status: threadStatus(thread, at) }, sessions, recurrences: [...links.values()], otherThreads };
+    const noted = await readNotedExpeditions(db, members);
+    return { thread: { ...thread, status: threadStatus(thread, at) }, sessions, noted, recurrences: [...links.values()], otherThreads };
   });
 }
 

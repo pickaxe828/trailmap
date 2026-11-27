@@ -50,7 +50,8 @@ export function renderExpeditionNote(
     sourceUrls: [...new Set(sourceUrls)],
   });
   const title = headingTitle(expedition.title);
-  const sections = [title ? `# ${title}` : '# Expedition', displayFieldNotes(expedition),
+  const sections = [title ? `# ${title}` : '# Expedition',
+    expedition.myNotes?.trim() ? `## My notes\n\n${expedition.myNotes.trim()}` : '', displayFieldNotes(expedition),
     notes.length ? `## Notes\n\n${notes.join('\n\n')}` : '',
     concepts.length ? `## Concepts\n\n${concepts.map((concept) => `- ${wikilink(concept)}`).join('\n')}` : ''];
   return `${metadata}\n${sections.flatMap((section) => section?.trimEnd() || []).join('\n\n')}\n`;

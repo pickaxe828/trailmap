@@ -100,9 +100,9 @@ test.describe('with the installed companion and a mock model', () => {
     const [expedition] = await readCapture('expeditions');
     const originalPath = (await findNote('expedition'))!;
     const expeditionPage = await openExtensionPage(`expedition.html?id=${encodeURIComponent(expedition!.id)}`);
-    await expeditionPage.getByRole('button', { name: 'Edit field notes' }).click();
-    await expeditionPage.getByRole('textbox', { name: 'Field notes Markdown' }).fill('## Manual edit\n\nKeep this observation.');
-    await expeditionPage.getByRole('button', { name: 'Save field notes' }).click();
+    await expeditionPage.getByRole('button', { name: 'Write my notes' }).click();
+    await expeditionPage.getByRole('textbox', { name: 'My notes Markdown' }).fill('## Manual edit\n\nKeep this observation.');
+    await expeditionPage.getByRole('button', { name: 'Save my notes' }).click();
     await expect.poll(() => readFile(join(vault, originalPath), 'utf8')).toContain('Keep this observation.');
 
     await settings.getByRole('tab', { name: 'Exports' }).click();

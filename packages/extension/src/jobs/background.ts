@@ -7,7 +7,10 @@ import type { TrailmapDb } from '../db/db';
 import { getEmbedder } from '../embeddings/background';
 import { enrichPage } from '../enrichment/handler';
 import { onModelRoutesChanged, readModelRoutes } from '../llm/settings';
-import type { RecordingSettings } from '../privacy/policy';
+import { usesMyNotes, type RecordingSettings } from '../privacy/policy';
+import { RECORDING_SETTINGS_KEY } from '../privacy/settings';
+import { enqueueAllMyNotes } from '../notes/enqueue';
+import { enrichNotes } from '../notes/handler';
 import { updateLivingNote } from '../threads/living-note';
 import { threadNotesWritten } from '../threads/hooks';
 import { matchThread } from '../threads/match';
@@ -26,9 +29,10 @@ export function startJobs(db: TrailmapDb, ready: Promise<void>, getSettings: () 
     ...wrapUpHandlers(db, getSettings),
     concept_resolution: resolveConcepts(db, getEmbedder(), Date.now),
     merge_verdict: decideConceptMerges(db, getSettings, Date.now),
-    thread_match: matchThread(db, getEmbedder(), Date.now),
+    thread_match: matchThread(db, getEmbedder(), Date.now, getSettings),
     living_note: updateLivingNote(db, getSettings),
-  }, [db.pages, db.expeditions, db.visits, db.concepts, db.conceptEvidence, db.edges, db.threads, db.highlights, db.queries]);
+    notes_enrichment: enrichNotes(db, getSettings, getEmbedder()),
+  }, [db.pages, db.expeditions, db.visits, db.concepts, db.conceptEvidence, db.edges, db.threads, db.highlights, db.queries, db.notes]);
   const client = getCompanionClient();
   let pumping = false;
   let retryRequested = false;
@@ -70,6 +74,13 @@ export function startJobs(db: TrailmapDb, ready: Promise<void>, getSettings: () 
       respond({ queued });
     }).catch(() => respond({ queued: 0 }));
     return true;
+  });
+  // Switching "Use my notes" back on asks about notes written while it was off.
+  chrome.storage.onChanged.addListener((changes, area) => {
+    const change = changes[RECORDING_SETTINGS_KEY] as { oldValue?: RecordingSettings; newValue?: RecordingSettings } | undefined;
+    if (area === 'local' && change?.newValue && !usesMyNotes(change.oldValue ?? {}) && usesMyNotes(change.newValue)) {
+      void ready.then(() => enqueueAllMyNotes(db, Date.now())).catch(() => {});
+    }
   });
   chrome.alarms.onAlarm.addListener(({ name }) => { if (name === ALARM) kick(); });
   void chrome.alarms.create(ALARM, { periodInMinutes: 0.5 });

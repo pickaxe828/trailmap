@@ -42,11 +42,13 @@ export function readConceptEvidenceBatch(db: TrailmapDb, conceptIds: string[]): 
 /** Visibility uses current engagement: a Visit may become read after it was enriched. */
 export function readVisibleConcepts(db: TrailmapDb) {
   return db.transaction('r', db.concepts, db.conceptEvidence, db.visits, async () => {
+    // What the user wrote about is visible at once: it needs neither two Pages nor a read one.
+    const learned = new Set((await db.conceptEvidence.filter((row) => row.role === 'learned').toArray()).map((row) => row.conceptId));
     const explained = await db.conceptEvidence.filter((row) => row.role === 'explains').toArray();
     const visits = await db.visits.bulkGet([...new Set(explained.map((row) => row.visitId))]);
     const read = new Set(visits.flatMap((visit) => visit?.engagement === 'read' ? [visit.id] : []));
     const taught = new Set(explained.filter((row) => read.has(row.visitId)).map((row) => row.conceptId));
-    return db.concepts.filter((c) => c.exposure >= 2 || taught.has(c.id)).toArray();
+    return db.concepts.filter((c) => c.exposure >= 2 || taught.has(c.id) || learned.has(c.id)).toArray();
   });
 }
 
@@ -66,11 +68,12 @@ export function readVisibleConceptGraph(db: TrailmapDb) {
 export function readExpeditionTopConcepts(db: TrailmapDb, expeditionId: string, limit = 5) {
   return db.transaction('r', [db.visits, db.conceptEvidence, db.concepts], async () => {
     const visitIds = await db.visits.where('expeditionId').equals(expeditionId).primaryKeys();
-    const rows = await db.conceptEvidence.where('visitId').anyOf(visitIds).toArray();
+    const rows = [...await db.conceptEvidence.where('visitId').anyOf(visitIds).toArray(),
+      ...await db.conceptEvidence.where('expeditionId').equals(expeditionId).filter((row) => !visitIds.includes(row.visitId)).toArray()];
     const pagesByConcept = new Map<string, Set<string>>();
     for (const row of rows) {
       const pages = pagesByConcept.get(row.conceptId) ?? new Set<string>();
-      pages.add(row.canonicalUrl);
+      pages.add(row.role === 'learned' ? `notes:${row.id}` : row.canonicalUrl);
       pagesByConcept.set(row.conceptId, pages);
     }
     const concepts = (await db.concepts.bulkGet([...pagesByConcept.keys()])).filter((c) => c !== undefined);

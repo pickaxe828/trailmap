@@ -47,7 +47,7 @@ function RecurrenceLines({ recurrences }: { recurrences: Recurrence[] }) {
   );
 }
 
-export function SessionTimeline({ sessions, recurrences, onDetach }: Pick<ThreadReview, 'sessions' | 'recurrences'> & {
+export function SessionTimeline({ sessions, recurrences, noted, onDetach }: Pick<ThreadReview, 'sessions' | 'recurrences' | 'noted'> & {
   onDetach: (id: string) => void;
 }) {
   const titles = new Map(sessions.map(({ expedition }) => [expedition.id, expedition.title]));
@@ -63,8 +63,11 @@ export function SessionTimeline({ sessions, recurrences, onDetach }: Pick<Thread
           <VStack key={expedition.id} role="listitem" id={sessionAnchor(expedition.id)} gap={2} className="min-w-0">
             <HStack gap={2} justify="between" wrap="wrap" data-session-anchor={expedition.id}>
               <VStack gap={1}>
-                <Text type="supporting">{formatExpeditionDate(expedition.startedAt)}</Text>
-                <Heading level={3} maxLines={2} className="wrap-anywhere"><Link hasUnderline href={expeditionHref(expedition.id)}>{expedition.title}</Link></Heading>
+                <HStack gap={2} wrap="wrap" data-my-notes={noted.has(expedition.id) ? 'written' : 'none'}>
+                  <Text type="supporting">{formatExpeditionDate(expedition.startedAt)}</Text>
+                  {noted.has(expedition.id) ? <Text type="label" color="accent">My notes</Text> : <Text type="supporting">No notes yet</Text>}
+                </HStack>
+                <Heading level={3} maxLines={2} className="wrap-anywhere"><Link hasUnderline className={noted.has(expedition.id) ? undefined : 'text-secondary'} href={expeditionHref(expedition.id)}>{expedition.title}</Link></Heading>
               </VStack>
               <Button variant="destructive" size="sm" label="Detach session" onClick={() => onDetach(expedition.id)} />
             </HStack>

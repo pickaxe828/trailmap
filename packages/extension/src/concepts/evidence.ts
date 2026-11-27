@@ -2,7 +2,11 @@ import type { Concept, Page, Visit } from '@trailmap/shared';
 import type { TrailmapDb } from '../db/db';
 
 /** Retain the actual mention, not just the winning Concept's display text, so Forget can rebuild it. */
-export type ConceptEvidence = NonNullable<Page['conceptMentions']>[number] & {
+export type ConceptEvidence = Omit<NonNullable<Page['conceptMentions']>[number], 'role'> & {
+  /** `learned` comes from the user's own notes (PLAN §4.5a), not from a Page. */
+  role: NonNullable<Page['conceptMentions']>[number]['role'] | 'learned';
+  /** Set on `learned` rows. `visitId` is then the stop the note is attached to, or this id for the Expedition's My notes. */
+  expeditionId?: string;
   id: string;
   conceptId: string;
   visitId: string;
@@ -16,6 +20,8 @@ export type ConceptEvidence = NonNullable<Page['conceptMentions']>[number] & {
 
 export const conceptNameKey = (name: string) => name.normalize('NFKC').trim().replace(/\s+/g, ' ').toLowerCase();
 const stoplist = new Set(['computer science', 'software']);
+/** What an Expedition's My notes (and the notes on its stops) say, as a learned-evidence anchor and an Edge support id. */
+export const notesEdgeSupport = (expeditionId: string) => `notes:${expeditionId}`;
 export const isConceptName = (key: string) => !!key && !stoplist.has(key);
 
 export function summarizeConcept(id: string, evidence: ConceptEvidence[]): Concept | undefined {
@@ -30,7 +36,7 @@ export function summarizeConcept(id: string, evidence: ConceptEvidence[]): Conce
   }
   return {
     id, name: first.name, aliases: [...aliases.values()].slice(1), kind: first.kind, gloss: first.gloss,
-    embedding: first.embedding, firstSeen: first.startedAt, exposure: new Set(evidence.map((row) => row.canonicalUrl)).size,
+    embedding: first.embedding, firstSeen: first.startedAt, exposure: new Set(evidence.filter((row) => row.role !== 'learned').map((row) => row.canonicalUrl)).size,
   };
 }
 

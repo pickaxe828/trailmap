@@ -14,6 +14,7 @@ import { TrailGraphView } from '../../trail/TrailGraphView';
 import { TrailmapShell } from '../../ui/TrailmapShell';
 import { CorrectionDialog, type ExpeditionCorrection } from './CorrectionDialog';
 import { FieldNotesPane } from './FieldNotesPane';
+import { MyNotesPane } from './MyNotesPane';
 import { StopDetails } from './StopDetails';
 
 const VISIT_DRAG_TYPE = 'application/x-trailmap-visit';
@@ -34,7 +35,7 @@ export function App() {
   const classification = useJournalCorrection();
   const canMove = !!review?.alternatives.length;
   const graphActions = useMemo(() => review ? {
-    summaries: review.summaries, onSelect: setSelected, onDragVisit: canMove ? dragVisit : undefined,
+    summaries: review.summaries, noted: review.stopNotes, onSelect: setSelected, onDragVisit: canMove ? dragVisit : undefined,
   } : undefined, [review, canMove]);
   const move = (visit: Visit) => setAction({ kind: 'move', visit });
   function dropVisit(event: DragEvent) {
@@ -89,6 +90,7 @@ export function App() {
             )}
             {selected && <StopDetails review={review} selected={selected} onSelect={setSelected}
               onMove={canMove ? move : undefined} onClose={() => setSelected(undefined)} />}
+            <Card padding={4}><MyNotesPane key={`mine-${review.expedition.id}`} expedition={review.expedition} /></Card>
             <Card padding={4}><FieldNotesPane key={review.expedition.id} expedition={review.expedition} /></Card>
           </VStack>
           {action && <CorrectionDialog review={review} action={action} onClose={() => setAction(undefined)} />}

@@ -183,26 +183,27 @@ test('an in-flight wrap-up cannot commit after a same-day source is forgotten', 
   expect(await db.expeditions.get('expedition:v1')).toMatchObject({ title: 'crdt', drivingQuestion: null });
 });
 
-test('a title the user chose and notes the user edited are never overwritten', async () => {
-  await seed({ title: 'My own title', userEdited: true, fieldNotes: 'My notes' });
+test('a title the user chose is never overwritten, and generated notes never touch My notes', async () => {
+  await seed({ title: 'My own title', userEdited: true, myNotes: 'My notes', myNotesAt: 50 });
   await drain(queue({ expedition_wrap_up: wrapUp, field_notes: notes }));
-  expect(await db.expeditions.get('expedition:v1')).toMatchObject({
-    title: 'My own title', fieldNotes: 'My notes', userEdited: true, drivingQuestion: 'How do CRDTs represent deletes?',
-  });
-  expect((await db.expeditions.get('expedition:v1'))!.unseenNotes).toBeUndefined();
+  const stored = (await db.expeditions.get('expedition:v1'))!;
+  expect(stored).toMatchObject({ title: 'My own title', myNotes: 'My notes', myNotesAt: 50, userEdited: true, unseenNotes: 1,
+    drivingQuestion: 'How do CRDTs represent deletes?' });
+  expect(stored.fieldNotes).toContain('## Key ideas');
 });
 
-test('a field-notes edit wins even when regeneration is already in flight', async () => {
+test('regenerating notes replaces the generated field notes and keeps My notes, even when saved mid-flight', async () => {
   await seed({ fieldNotes: 'Previously generated notes' });
   const corrections = createCorrections({ db, now: () => now, newId: () => 'note-edit' });
   await drain(queueWith(async (_db, payload, guard) => {
     expect(await guard.allow()).toBe(true);
     if (payload.task === 'expedition_wrap_up') return { output: wrapUp };
-    // An empty edit is intentional, not the null marker for never-written notes.
-    await corrections.editFieldNotes('expedition:v1', '');
+    await corrections.editMyNotes('expedition:v1', 'What I took from it');
     return { output: notes };
   }));
-  expect(await db.expeditions.get('expedition:v1')).toMatchObject({ fieldNotes: '', userEdited: true });
+  const stored = (await db.expeditions.get('expedition:v1'))!;
+  expect(stored.myNotes).toBe('What I took from it');
+  expect(stored.fieldNotes).toContain('## Key ideas');
 });
 
 test('a renamed Expedition that has no notes yet still gets them', async () => {

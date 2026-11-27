@@ -6,20 +6,22 @@ import { VStack } from '@astryxdesign/core/VStack';
 import type { Expedition } from '@trailmap/shared';
 import { expeditionHref, formatExpeditionDate } from '../../journal/links';
 
-export function ExpeditionCard({ expedition }: { expedition: Expedition }) {
+/** Without notes of the user's own, a card is shown at lower emphasis (secondary text, still AA) with a hint. */
+export function ExpeditionCard({ expedition, noted }: { expedition: Expedition; noted: boolean }) {
   const { id, title, startedAt, endedAt, drivingQuestion, unseenNotes, imported, kind } = expedition;
   return (
     <ClickableCard label={title} href={expeditionHref(id)} padding={4} height="100%" variant="transparent">
-      <VStack gap={2}>
+      <VStack gap={2} data-my-notes={noted ? 'written' : 'none'}>
         <HStack gap={2} justify="between" wrap="wrap">
           <Text type="supporting">{formatExpeditionDate(startedAt)}</Text>
           {unseenNotes ? <Text type="label">New field notes</Text>
             : endedAt === null ? <Text type="label">In progress</Text>
             : imported && <Text type="label">Imported from history</Text>}
         </HStack>
-        <Heading level={3} maxLines={2}>{title}</Heading>
+        <Heading level={3} maxLines={2} className={noted ? undefined : 'text-secondary'}>{title}</Heading>
         {drivingQuestion && drivingQuestion !== title && <Text type="supporting" maxLines={2}>{drivingQuestion}</Text>}
-        {endedAt !== null && kind !== 'unclassified' && <Text type="label">{kind === 'learning' ? 'Learning' : 'Not learning'}</Text>}
+        {noted ? <Text type="label" color="accent">My notes</Text> : <Text type="supporting">No notes yet</Text>}
+        {endedAt !== null && kind !== 'unclassified' && <Text type="label" color={noted ? undefined : 'secondary'}>{kind === 'learning' ? 'Learning' : 'Not learning'}</Text>}
       </VStack>
     </ClickableCard>
   );

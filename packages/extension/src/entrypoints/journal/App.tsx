@@ -29,7 +29,7 @@ function Cards({ children }: { children: ReactNode }) {
 
 export function App() {
   const result = useJournalData(readJournalResearch);
-  const { items = [], other = [], targets = [], merges } = result?.data ?? {};
+  const { items = [], other = [], targets = [], merges, noted } = result?.data ?? {};
   const { run, busy, feedback } = useJournalCorrection();
   const [selecting, setSelecting] = useState(false);
   const [selection, setSelection] = useState<string[]>([]);
@@ -91,7 +91,7 @@ export function App() {
       checked={selection.includes(expedition.id)} canDrag={expedition.endedAt !== null}
       dropChoices={(source) => dropChoices(source, [expedition])}
       suggestions={<SuggestionRows expedition={expedition} group={suggestion} merges={merges?.get(expedition.id)} busy={busy} run={run} />}>
-      <ExpeditionCard expedition={expedition} />
+      <ExpeditionCard expedition={expedition} noted={!!noted?.has(expedition.id)} />
     </OrganiseCard>;
   }
 

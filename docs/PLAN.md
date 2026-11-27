@@ -122,11 +122,14 @@ The rule: **nothing requires your action.** Every button is a correction or an e
 | `Visit` | url, canonicalUrl, title, tabId, parentVisitId, transition (link / typed / search / new-tab / back), startedAt, activeMs, scrollDepth, engagement (`bounced` / `skimmed` / `read`), expeditionId |
 | `Page` | canonicalUrl, extracted text (capped), textHash, summary, takeaways[], embedding, pageKind, enrichedAt |
 | `Query` | engine, q, at, expeditionId (search queries become *question* nodes) |
-| `Expedition` | title, drivingQuestion, kind (`learning` / `errand` / `unclassified`), startedAt, endedAt, fieldNotes (Markdown), userEdited, threadId |
+| `Expedition` | title, drivingQuestion, kind (`learning` / `errand` / `unclassified`), startedAt, endedAt, fieldNotes (generated Markdown), myNotes (the user's own Markdown), userEdited (the user renamed it), threadId |
 | `Thread` | title, question, status (`active` / `dormant` / `done`), lastActiveAt, livingNote (Markdown), centroid embedding, conceptIds |
 | `Concept` | name, aliases[], kind (concept / person / tool / work / event / place), gloss, embedding, exposure score, firstSeen |
 | `Edge` | from, to, type, weight, evidence: visitIds[] |
-| `Highlight` / `Note` | text the user selected or copied, plus optional manual notes on any node |
+| `Highlight` / `Note` | text the user selected or copied, plus optional manual notes on any node. A note on a stop is also *my notes* input (§4.5a). |
+| `ConceptEvidence` | one row per mention: concept, role (`explains` / `mentions` / `uses` from a Page, or **`learned`** from the user's own notes), the Visit or Expedition it points at |
+
+**Two kinds of notes, never mixed.** `fieldNotes` are generated and keep updating. `myNotes` (**My notes**) are the user's words, are never overwritten, and are the strongest signal of what was *learned* rather than *seen*. Old edited field notes were migrated into `myNotes` (they are recognised by their `field-notes` correction-log entry).
 
 **Edge types, kept to a small fixed set:**
 - *Trail edges:* `navigated_from`, `searched`, `opened_in_new_tab`.
@@ -190,8 +193,17 @@ A recorded AI Mode conversation uses the same enrichment and concept pipeline. I
 - **Under-extract, the same lesson Anamnesis learned.** A concept becomes visible only when it has at least 2 evidence pages, or one `read` page where it was the thing being `explained`. Keep a stoplist of over-general concepts ("Computer science", "Software").
 - Every concept edge carries evidence visit IDs, so you can always click through to "where did I learn this?"
 
+### 4.5a Concepts from my notes
+What the user learned is not all that a page covered, so their own notes feed the semantic graph.
+- **Input:** `notes_enrichment` sends only the user's text: **My notes** (`n0`) and the notes attached to stops (`n1…`), each with a ref. No Page text, title or URL goes with it. Stops on skipped or private sites are left out.
+- **Output:** concepts (name, kind, gloss, the note they came from) and relations between them. Each concept is stored as `ConceptEvidence` with the new role **`learned`**, anchored at the Expedition (My notes) or at the stop the note belongs to, so Forget and the provenance rules apply. The resolver in §4.5 joins them to existing concepts (exact name or alias, then cosine above 0.9). Uncertain pairs do not get a merge verdict.
+- **Visibility:** a concept with `learned` evidence is visible at once. It needs neither two pages nor a read page. Errand Expeditions never reach the Atlas.
+- **Reruns:** saving My notes or a stop note queues one pass, debounced to one minute. A newer save replaces the waiting one. A pass replaces everything the Expedition's notes taught before, and clearing the notes removes it straight away.
+- **Setting:** *Use my notes to build concepts and threads* (Settings → Privacy) is on by default. When it is off, My notes are not sent to a model for any task: the job is dropped without a request, and thread matching and the living note leave them out. Every call that does go out is in the Sent-to-model log (task "My notes").
+- **Forget:** forgetting a stop removes what its note taught, and the remaining notes are asked about again. Forgetting an Expedition removes all of it, with the audit rows.
+
 ### 4.6 Synthesize field notes (when an expedition closes, or on demand)
-Automatic closure (§4.3) and **Wrap up** use the same durable job. After wrap-up, queue field notes for learning expeditions with eligible content. Jobs survive service-worker restarts; the end time used by thread matching is the expedition's last activity.
+Automatic closure (§4.3) and **Wrap up** use the same durable job. After wrap-up, queue field notes for learning expeditions with eligible content. Generated field notes are rewritten whenever the job reruns and are never edited by the user; the user's words go in **My notes** (§4.5a). Jobs survive service-worker restarts; the end time used by thread matching is the expedition's last activity.
 
 Input: the expedition's page summaries, takeaways and highlights, in trail order. Output is Markdown:
 - **Question:** what you set out to learn.
@@ -204,7 +216,7 @@ Input: the expedition's page summaries, takeaways and highlights, in trail order
 
 An expedition is one sitting. When you come back to a topic days later, that sitting is a new expedition, but it belongs to the same **thread**: the longer-running investigation.
 
-- **Matching, when an expedition closes.** Compare it with threads active in the last 60 days. Use an embedding of its title, question and top concepts, plus how many concepts it shares with each thread.
+- **Matching, when an expedition closes.** Compare it with threads active in the last 60 days. Use an embedding of its title, question, **My notes** (when the setting allows) and top concepts, in that order, so the user's own words weigh more than anything generated, plus how many concepts it shares with each thread.
   - **Strong match:** attach it automatically.
   - **Possible match:** show a compact **Part of *CRDTs*?** chip on the expedition's Journal card, with **Add** and **Dismiss**. Matching skips dismissed expedition–target pairs, even for strong matches.
   - **No match:** the expedition stays on its own. It becomes a thread only when a second session joins, so one-off lookups don't clutter the Journal.
@@ -213,7 +225,7 @@ An expedition is one sitting. When you come back to a topic days later, that sit
   - last time's summary and loose ends;
   - for pages you already read in that thread, a "read on Nov 21" badge and their old summary.
 - **Living note.** Each thread has one note that grows with every session. It covers what you know so far, how your understanding changed, and which questions are still open.
-  - It is updated incrementally: the current note plus the new session's field notes. It is never rebuilt from every page, which keeps it cheap.
+  - It is updated incrementally: the current note plus the new session's My notes (sent separately, and led with) and field notes (supporting detail). It is never rebuilt from every page, which keeps it cheap.
   - It syncs to Obsidian as the thread's main note and links to each session's note.
 - **On the graph:**
   - The **thread page** lays its sessions out on a timeline, each with its own trail. Lines connect sessions where you revisited a page or a concept came up again.
@@ -228,13 +240,14 @@ An expedition is one sitting. When you come back to a topic days later, that sit
    - Each node is a card with favicon, title and a one-line summary. Opacity shows engagement.
    - Search queries appear as question nodes.
    - Bounced pages collapse into "+4 skipped". Unread branches are dashed.
-   - The field notes sit in a pane on the right and can be edited. The header exposes **Mark as learning** or **Mark as not learning**, with Undo.
+   - **My notes** (editable) and the generated, read-only **Field notes** sit in panes on the right. A stop with a note of its own carries a note marker (never a dashed outline: dashes mean skipped pages). The header exposes **Mark as learning** or **Mark as not learning**, with Undo.
 3. **Atlas** (full tab): the concept graph across all time.
    - Force layout. Colour shows the community (Louvain clusters); size shows exposure.
+   - Concepts you wrote about (`learned`) are drawn solid; concepts only seen on pages are faded.
    - Clicking a concept opens a card with its gloss, the pages that taught it, the expeditions it appeared in, and its neighbours.
    - A time slider replays the graph growing, which is a satisfying "look how much I've learned" moment.
    - **Never show the whole hairball by default.** Show the top N concepts and cull labels.
-4. **Journal:** thread and expedition cards, newest first, plus a weekly digest. A thread card opens the **thread page**: sessions on a timeline, plus the living note (§4.7).
+4. **Journal:** thread and expedition cards, newest first. An expedition without notes of your own is shown at lower emphasis (secondary text, still AA) with a "No notes yet" hint; one with My notes or a stop note is at full contrast. The thread page's sessions follow the same rule. Plus a weekly digest. A thread card opens the **thread page**: sessions on a timeline, plus the living note (§4.7).
    - **Select** (or Shift/⌘-click a card) shows checkboxes. An action bar shows the count, Start thread, Add to thread, Merge into one expedition, Mark as learning/not learning, and Cancel (also Esc). Closed expeditions merge into the earliest selected expedition; selecting a thread for merge includes its sessions.
    - Dropping an expedition onto another card opens a small menu for the eligible thread and merge actions. Every drop action is also available through keyboard-operable selection. There are no repeated per-card attach links.
    - Suggestions sit on the cards: thread suggestions have Add/Dismiss; **Same topic as …?** appears on both expedition cards with Merge/Dismiss. Dismissing either side persists across reloads and later wrap-ups. The Journal offers Undo after applying an organising action.
@@ -409,6 +422,7 @@ Before the stream opens, the response may carry a `detail` field. Use the HTTP s
 - **Model audit:** the companion waits for the extension to durably record the provider, model, instructions, input and source identifiers before every inference dispatch, including fallbacks and repairs. This is permission to send, not proof of delivery. Each completed attempt updates that same row with `finishedAt`, its success, failure or cancellation, and any error code. The log shows what was **Sent** and **Returned**: validated JSON, or the model text when validation failed (up to 32 KiB of UTF-8). Legacy rows may have no outcome. Lost connections can interrupt attempts.
 - **Model diagnostics:** Settings shows pending, failing and failed model job counts by kind, with the latest stable error code, failure attempts and retry time. Retry now reschedules failed or backed-off jobs without bypassing sign-in requirements. Three consecutive failures with the same code within ten minutes trigger a side panel and Journal banner that clears on the next successful model job.
 - **Audit export:** Settings downloads the selected number of newest rows as `trailmap-model-log-<date>.jsonl`, with optional matching job diagnostics. By default, it substitutes UTF-8 byte lengths and SHA-256 hashes for instructions, input and output, but retains canonical URLs and identifiers. Unchecking the redaction option exports the stored text. The Blob download needs no permission, and saved files cannot be recalled.
+- **My notes:** the user's own notes are sent to a model only to build concepts, match threads and write living notes, and only while *Use my notes to build concepts and threads* is on (§4.5a). With it off they never leave the machine.
 - **Forget controls:** forget a page, an expedition or a site. This is a hard delete and also removes the evidence it contributed to concepts and the associated audit rows, including their outputs.
 - **Permissions needed:** `<all_urls>` host access, `webNavigation`, `tabs`, `history`, `idle`, `storage`, `unlimitedStorage`, `sidePanel`, `offscreen`, `alarms`, and `nativeMessaging` (to talk to the companion).
   - For personal use, load it unpacked; no store review is needed.

@@ -21,6 +21,8 @@ import { TRAIL_CARD, useTrailLayout } from './useTrailLayout';
 
 type ReviewActions = {
   summaries: ReadonlyMap<string, string | null>;
+  /** Trail node ids that have a note of the user's own. */
+  noted?: ReadonlyMap<string, string>;
   onSelect: (id: string) => void;
   onDragVisit?: (event: DragEvent, visit: Visit) => void;
 };
@@ -32,6 +34,17 @@ const SKIPPED_EDGE_DASH = '6 4';
 const FAVICON_BITMAP_PX = 32;
 
 const interactive = 'pointer-events-auto block size-full rounded-lg text-start hover:outline focus-visible:outline outline-accent';
+
+/** A stop with a note of the user's own. A marker, not a dashed outline: dashes already mean skipped pages. */
+function NoteMarker() {
+  return (
+    <HStack as="span" gap={1} align="center" className="shrink-0 text-accent" role="img" aria-label="Has my note">
+      <svg viewBox="0 0 16 16" aria-hidden="true" className="size-4 fill-current">
+        <path d="M3 1.5h10A1.5 1.5 0 0 1 14.5 3v7a1.5 1.5 0 0 1-1.5 1.5H7.4L4 14.5v-3A1.5 1.5 0 0 1 1.5 10V3A1.5 1.5 0 0 1 3 1.5Zm2 3.75v1.2h6v-1.2H5Zm0 2.4v1.2h4v-1.2H5Z" />
+      </svg>
+    </HStack>
+  );
+}
 
 const TrailCard = memo(function TrailCard({ data: { stop, review } }: NodeProps<CardNode>) {
   const visit = stop.kind === 'skipped' ? null : stop.visit;
@@ -49,7 +62,8 @@ const TrailCard = memo(function TrailCard({ data: { stop, review } }: NodeProps<
         {stop.kind === 'question' ? <Icon icon="search" size="sm" /> : favicon && (
           <img src={favicon} alt="" draggable={false} className="size-4 shrink-0" />
         )}
-        <Text type="label" maxLines={2} className="min-w-0" hasTruncateTooltip={false}>{title}</Text>
+        <Text type="label" maxLines={2} className="min-w-0 grow" hasTruncateTooltip={false}>{title}</Text>
+        {review?.noted?.has(stop.id) && <NoteMarker />}
       </HStack>
       <HStack as="span" gap={2} justify="between" align="center">
         <Text type="supporting" maxLines={1} hasTruncateTooltip={false}>{caption}</Text>
