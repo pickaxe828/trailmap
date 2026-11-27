@@ -110,6 +110,65 @@ test('uninstall with --user-data-dir removes only that profile manifest', () => 
   expect(existsSync(manifestIn(support('Chromium')))).toBe(true);
 });
 
+test('the default installs both manifest formats and shares Mozilla between Firefox and Zen on macOS', () => {
+  mkdirs(support('Google', 'Chrome'), support('zen'), support('Firefox'));
+  const paths = installManifests({ env: mac(), binaryPath: BIN, extensionId: EXT });
+  const gecko = manifestIn(support('Mozilla'));
+  expect(paths).toEqual([manifestIn(support('Google', 'Chrome')), gecko]);
+  expect(JSON.parse(readFileSync(gecko, 'utf8'))).toEqual({
+    name: 'com.trailmap.companion', description: 'Trailmap companion', path: BIN,
+    type: 'stdio', allowed_extensions: ['trailmap@pickaxe828'],
+  });
+  expect(existsSync(manifestIn(support('zen')))).toBe(false);
+  expect(uninstallManifests({ env: mac() })).toEqual(paths);
+});
+
+test('Firefox-family application bundles are detected without a profile, including LibreWolf’s own folder', () => {
+  mkdirs(join(home, 'Applications', 'LibreWolf.app'), join(home, 'Applications', 'Floorp.app'));
+  const paths = installManifests({ env: mac(), binaryPath: BIN, extensionId: EXT, browser: 'firefox' });
+  expect(paths).toEqual([manifestIn(support('Mozilla')), manifestIn(support('LibreWolf'))]);
+});
+
+test.each(['firefox', 'zen', 'floorp', 'librewolf'] as const)('detects the %s Linux profile and uses the Gecko path(s)', (browser) => {
+  const xdg = join(home, 'xdg');
+  mkdirs(browser === 'firefox' ? join(xdg, 'mozilla', 'firefox') : join(xdg, browser));
+  const expected = [join(home, '.mozilla', 'native-messaging-hosts', 'com.trailmap.companion.json')];
+  if (browser === 'librewolf') expected.push(join(home, '.librewolf', 'native-messaging-hosts', 'com.trailmap.companion.json'));
+  const env = linux({ configHome: xdg });
+  expect(installManifests({ env, binaryPath: BIN, extensionId: EXT, browser: 'firefox' })).toEqual(expected);
+  expect(uninstallManifests({ env, browser: 'firefox' })).toEqual(expected);
+});
+
+test.each(['chromium', 'firefox', 'all'] as const)('--browser %s scopes install and uninstall with both directory overrides', (browser) => {
+  mkdirs(support('Google', 'Chrome'), support('zen'));
+  const userDataDir = join(home, 'custom-chrome');
+  const mozillaDir = join(home, 'custom-mozilla');
+  const options = { env: mac(), browser, userDataDir, mozillaDir };
+  const expected = [
+    ...(browser === 'firefox' ? [] : [manifestIn(userDataDir)]),
+    ...(browser === 'chromium' ? [] : [manifestIn(mozillaDir)]),
+  ];
+  expect(installManifests({ ...options, binaryPath: BIN, extensionId: EXT })).toEqual(expected);
+  expect(existsSync(manifestIn(support('Mozilla')))).toBe(false);
+  expect(existsSync(manifestIn(support('Google', 'Chrome')))).toBe(false);
+  expect(uninstallManifests(options)).toEqual(expected);
+});
+
+test('uninstall --browser firefox leaves installed Chromium manifests alone', () => {
+  mkdirs(support('Google', 'Chrome'), support('zen'));
+  installManifests({ env: mac(), binaryPath: BIN, extensionId: EXT });
+  expect(uninstallManifests({ env: mac(), browser: 'firefox' })).toEqual([manifestIn(support('Mozilla'))]);
+  expect(existsSync(manifestIn(support('Google', 'Chrome')))).toBe(true);
+});
+
+test('uninstall cleans up Gecko manifests after the last detected browser is removed', () => {
+  const env = linux();
+  const path = join(home, '.librewolf', 'native-messaging-hosts', 'com.trailmap.companion.json');
+  mkdirs(join(home, '.librewolf', 'native-messaging-hosts'));
+  writeFileSync(path, '{}');
+  expect(uninstallManifests({ env, browser: 'firefox' })).toEqual([path]);
+});
+
 test('unsupported platforms are refused rather than guessed', () => {
   expect(() => installManifests({ env: { home, platform: 'win32' as never }, binaryPath: BIN, extensionId: EXT })).toThrow(/macOS and Linux/);
 });

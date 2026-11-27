@@ -10,14 +10,19 @@
     "test": "bun run --filter '*' test",
     "build": "bun run build:extension",
     "build:extension": "bun run --cwd packages/extension build",
+    "build:firefox": "bun run --cwd packages/extension build --browser firefox --mv3",
+    "lint:firefox": "web-ext lint --source-dir packages/extension/.output/firefox-mv3",
+    "sign:firefox": "WEB_EXT_API_KEY=\"${AMO_JWT_ISSUER:?Set AMO_JWT_ISSUER}\" WEB_EXT_API_SECRET=\"${AMO_JWT_SECRET:?Set AMO_JWT_SECRET}\" web-ext sign --channel unlisted --source-dir packages/extension/.output/firefox-mv3 --artifacts-dir packages/extension/.output/firefox-signed",
     "build:companion": "bun run --cwd packages/companion build",
     "dev": "bun run --cwd packages/extension dev",
     "e2e": "bunx playwright test --config e2e/playwright.config.ts",
+    "e2e:firefox": "bun e2e/firefox-smoke.ts",
     "astryx": "cd packages/extension && bunx astryx"
   },
   "devDependencies": {
     "@playwright/test": "1.64.1",
     "@types/bun": "1.4.4",
-    "typescript": "7.0.2"
+    "typescript": "7.0.2",
+    "web-ext": "10.8.0"
   }
 }

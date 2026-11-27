@@ -19,6 +19,7 @@ export type Engagement = z.infer<typeof Engagement>;
 
 export const Visit = z.object({
   captureDocumentId: z.string().optional(), // Groups same-document visits for late password screening.
+  favicon: z.string().optional(), // Bounded local raster icon captured on browsers without a favicon cache API.
   id: z.string(),
   url: z.string(),
   canonicalUrl: z.string(),

@@ -13,6 +13,7 @@ import '@xyflow/react/dist/base.css';
 import type { Visit } from '@trailmap/shared';
 import { memo, useMemo, type DragEvent } from 'react';
 import { expeditionHref } from '../journal/links';
+import { trailFavicon } from '../platform/browser';
 import { webUrl } from '../ui/web-url';
 import { formatActiveTime } from './format';
 import type { TrailGraph, TrailGraphEdge, TrailGraphNode } from './graph';
@@ -30,19 +31,12 @@ const EDGE_STROKE_WIDTH = 1.5;
 const SKIPPED_EDGE_DASH = '6 4';
 const FAVICON_BITMAP_PX = 32;
 
-/** Chrome's local favicon cache; it doesn't contact the site or a third party. */
-function faviconUrl(pageUrl: string): string {
-  const url = new URL(chrome.runtime.getURL('/_favicon/'));
-  url.searchParams.set('pageUrl', pageUrl);
-  url.searchParams.set('size', String(FAVICON_BITMAP_PX));
-  return url.href;
-}
-
 const interactive = 'pointer-events-auto block size-full rounded-lg text-start hover:outline focus-visible:outline outline-accent';
 
 const TrailCard = memo(function TrailCard({ data: { stop, review } }: NodeProps<CardNode>) {
   const visit = stop.kind === 'skipped' ? null : stop.visit;
   const url = visit && webUrl(visit.url);
+  const favicon = url && trailFavicon(url.href, FAVICON_BITMAP_PX, visit?.favicon);
   const title = stop.kind === 'question' ? stop.query.q : stop.kind === 'skipped' ? `+${stop.visits.length} skipped`
     : stop.visit.title || url?.hostname || 'Untitled Visit';
   const summary = visit && review?.summaries.get(visit.canonicalUrl);
@@ -52,8 +46,8 @@ const TrailCard = memo(function TrailCard({ data: { stop, review } }: NodeProps<
   const content = (
     <VStack as="span" height="100%" padding={3} gap={1} vAlign="center">
       <HStack as="span" gap={2} align="center">
-        {stop.kind === 'question' ? <Icon icon="search" size="sm" /> : url && (
-          <img src={faviconUrl(url.href)} alt="" draggable={false} className="size-4 shrink-0" />
+        {stop.kind === 'question' ? <Icon icon="search" size="sm" /> : favicon && (
+          <img src={favicon} alt="" draggable={false} className="size-4 shrink-0" />
         )}
         <Text type="label" maxLines={2} className="min-w-0" hasTruncateTooltip={false}>{title}</Text>
       </HStack>
