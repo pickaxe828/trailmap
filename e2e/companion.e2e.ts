@@ -46,6 +46,7 @@ test.describe('without the companion', () => {
     await page.screenshot({ path: process.env.PROOF_DIR
       ? join(process.env.PROOF_DIR, 'companion-missing.png') : info.outputPath('companion-missing.png') });
     const setup = context.waitForEvent('page');
+    await expect(page.getByRole('link', { name: 'Fix connection' })).toHaveAttribute('data-variant', 'secondary');
     await page.getByRole('link', { name: 'Fix connection' }).click();
     const instructions = await setup;
     await expect(instructions.getByRole('heading', { name: 'Set up the companion' })).toBeVisible();

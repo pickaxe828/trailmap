@@ -159,6 +159,7 @@ test('an ineligible ChatGPT account is offered other providers until an eligible
   await panel.screenshot({ path: process.env.PROOF_DIR
     ? join(process.env.PROOF_DIR, 'not-eligible.png') : info.outputPath('not-eligible.png') });
   const providerTab = context.waitForEvent('page');
+  await expect(panel.getByRole('link', { name: 'Choose another provider' })).toHaveAttribute('data-variant', 'secondary');
   await panel.getByRole('link', { name: 'Choose another provider' }).click();
   const settings = await providerTab;
   await expect(settings).toHaveURL(/\/settings\.html#model-providers$/);

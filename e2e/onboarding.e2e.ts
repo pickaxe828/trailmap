@@ -28,21 +28,43 @@ test('onboarding detects the companion live and offers optional setup', async ({
   installCompanion, openExtensionPage,
 }, info) => {
   const onboarding = await openExtensionPage('onboarding.html');
-  await onboarding.getByRole('button', { name: 'Next: AI notes' }).click();
+  const nextAiNotes = onboarding.getByRole('button', { name: 'Next: AI notes' });
+  await expect(nextAiNotes).toHaveAttribute('data-variant', 'primary');
+  await nextAiNotes.click();
   await expect(onboarding.getByRole('heading', { name: 'Turn on AI notes' })).toBeVisible();
   await expect(onboarding.getByText('trailmap-companion install', { exact: true })).toBeVisible();
+  const skip = onboarding.getByRole('button', { name: 'Skip AI setup' });
+  await expect(skip).toHaveAttribute('data-variant', 'primary');
   installCompanion();
   await expect(onboarding.getByText('Companion connected', { exact: true })).toBeVisible({ timeout: 25_000 });
   await expect(onboarding.getByText('trailmap-companion install', { exact: true })).toHaveCount(0);
-  await onboarding.getByRole('button', { name: 'Next: Model providers' }).click();
+  await expect(skip).toHaveAttribute('data-variant', 'secondary');
+  const nextProviders = onboarding.getByRole('button', { name: 'Next: Model providers' });
+  await expect(nextProviders).toHaveAttribute('data-variant', 'primary');
+  await nextProviders.click();
   await expect(onboarding.getByRole('heading', { name: 'Model providers' })).toBeVisible();
-  await onboarding.getByRole('button', { name: 'Next: Optional extras' }).click();
+  const nextExtras = onboarding.getByRole('button', { name: 'Next: Optional extras' });
+  await expect(nextExtras).toHaveAttribute('data-variant', 'primary');
+  await nextExtras.click();
   await expect(onboarding.getByRole('heading', { name: 'Obsidian sync' })).toBeVisible();
   await expect(onboarding.getByRole('button', { name: 'Import history' })).toBeEnabled();
-  await onboarding.screenshot({ path: process.env.PROOF_DIR
-    ? join(process.env.PROOF_DIR, 'optional-extras.png') : info.outputPath('optional-extras.png') });
-  await onboarding.getByRole('link', { name: 'Finish setup' }).click();
+  const back = onboarding.getByRole('button', { name: 'Back', exact: true });
+  await expect(back).toHaveAttribute('data-variant', 'secondary');
+  await back.click();
+  await expect(onboarding.getByRole('heading', { name: 'Model providers' })).toBeVisible();
+  await nextExtras.click();
+  await expect(onboarding.getByRole('link', { name: 'Open Settings' })).toHaveAttribute('href', '/settings.html');
+  const finish = onboarding.getByRole('button', { name: 'Finish setup' });
+  await expect(finish).toHaveAttribute('data-variant', 'primary');
+  await onboarding.setViewportSize({ width: 1280, height: 900 });
+  for (const colorScheme of ['light', 'dark'] as const) {
+    await onboarding.emulateMedia({ colorScheme });
+    const file = `optional-extras-${colorScheme}.png`;
+    await onboarding.screenshot({ path: process.env.PROOF_DIR ? join(process.env.PROOF_DIR, file) : info.outputPath(file) });
+  }
+  await finish.press('Space');
   await expect(onboarding).toHaveURL(/\/journal\.html$/);
+  await expect(onboarding.getByRole('heading', { name: 'Journal', exact: true })).toBeVisible();
 });
 
 test('Settings can remove a skip added on the onboarding privacy screen', async ({
