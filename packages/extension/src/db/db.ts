@@ -13,6 +13,7 @@ import type {
   Visit,
 } from '@trailmap/shared';
 import { canonicalizeUrl } from '../capture/canonical';
+import type { ConceptDismissal } from '../concepts/dismiss';
 import type { ConceptEvidence } from '../concepts/evidence';
 import type { RequestErrorCode } from '../companion/client';
 import { conceptResolutionJob } from '../concepts/enqueue';
@@ -34,6 +35,7 @@ export type TrailmapDb = Dexie & {
   threads: EntityTable<Thread, 'id'>;
   concepts: EntityTable<Concept, 'id'>;
   conceptEvidence: EntityTable<ConceptEvidence, 'id'>;
+  dismissedConcepts: EntityTable<ConceptDismissal, 'conceptId'>;
   edges: EntityTable<Edge, 'id'>;
   highlights: EntityTable<Highlight, 'id'>;
   notes: EntityTable<Note, 'id'>;
@@ -217,7 +219,7 @@ export function openTrailmapDb(name: string = DB_NAME): TrailmapDb {
         payload: { expeditionId: id, endedAt, revision: 1 } }, endedAt);
     }
   });
-  db.version(11).stores({}).upgrade(async () => {
+  db.version(11).stores({ dismissedConcepts: 'conceptId, at' }).upgrade(async () => {
     // Before salience, an explained concept was the page's subject and anything else was a passing mention.
     const salience = (role: string) => role === 'explains' ? 'supporting' : 'passing';
     await db.pages.filter((page) => !!page.conceptMentions?.length).modify((page) => {

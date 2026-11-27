@@ -56,17 +56,18 @@ async function enriched(id: string, concepts: NonNullable<Page['conceptMentions'
   return visit;
 }
 
-test('exact names resolve together, but only distinct evidence Pages make a skimmed Concept visible', async () => {
+test('exact names resolve together, but only a Page the user studied makes a Concept visible', async () => {
   await enriched('a', [mention('Tombstone'), mention('Software')]);
   await enriched('b', [mention(' TOMBSTONE '), mention('Software')], { pageId: 'a' });
-  expect(await readVisibleConcepts(db)).toEqual([]);
-  await enriched('c', [mention('tombstone'), mention('Software')]);
+  await enriched('c', [mention('tombstone', 'explains'), mention('Software')], { engagement: 'skimmed' });
+  expect(await readVisibleConcepts(db)).toEqual([]); // two passing mentions and a skimmed page
+  await enriched('d', [mention('tombstone', 'explains'), mention('Software')], { engagement: 'read' });
   const visible = await readVisibleConcepts(db);
   expect(visible).toHaveLength(1);
-  expect(visible[0]).toMatchObject({ name: 'Tombstone', exposure: 2, firstSeen: 1_000 });
+  expect(visible[0]).toMatchObject({ name: 'Tombstone', firstSeen: 1_000 });
   const evidence = await readConceptEvidence(db, visible[0]!.id);
   expect(evidence.map(({ page, visits }) => [page.canonicalUrl, visits.map(({ visit }) => visit.id)]))
-    .toEqual([['https://learn.example/a', ['a', 'b']], ['https://learn.example/c', ['c']]]);
+    .toEqual([['https://learn.example/a', ['a', 'b']], ['https://learn.example/c', ['c']], ['https://learn.example/d', ['d']]]);
 });
 
 test('a close cosine creates an alias, an exact alias overrides cosine, and distant concepts stay distinct', async () => {

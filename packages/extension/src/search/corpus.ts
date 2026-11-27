@@ -11,7 +11,7 @@ const reviewPath = (page: 'atlas' | 'expedition' | 'thread', key: 'id' | 'concep
 
 /** Project the local sources, rather than persisting a second copy of captured or generated text. */
 export function observeSearchCorpus(db: TrailmapDb) {
-  return liveQuery(() => db.transaction('r', [db.visits, db.pages, db.queries, db.expeditions, db.threads, db.concepts, db.conceptEvidence, db.edges, db.notes], async () => {
+  return liveQuery(() => db.transaction('r', [db.visits, db.pages, db.queries, db.expeditions, db.threads, db.concepts, db.conceptEvidence, db.edges, db.notes, db.highlights, db.dismissedConcepts], async () => {
     const [visits, pages, queries, expeditions, threads, { concepts }, notes] = await Promise.all([
       db.visits.toArray(), db.pages.toArray(), db.queries.toArray(), db.expeditions.toArray(), db.threads.toArray(), readAtlas(db), db.notes.toArray(),
     ]);
