@@ -75,23 +75,54 @@ test('the live trail marks the current page, and split, rename, star and forget 
   expect((await readCapture('pages')).some(({ canonicalUrl }) => canonicalUrl === articleUrl)).toBe(false);
 });
 
+test.describe('while a Visit waits for its title', () => {
+  test.use({ controlledCaptureClock: true });
+
+  test('a Visit’s Actions menu survives assignment to an open Expedition', async ({
+    context, fixtureUrl, openExtensionPage,
+  }) => {
+    const url = fixtureUrl('learn.test', '/trail/start.html');
+    // Keep the Visit unassigned until we give it a title; the capture clock holds the title deadline.
+    await context.route(url, (route) => route.fulfill({ contentType: 'text/html', body: '<p>Trail start</p>' }));
+    const panel = await openExtensionPage('sidepanel.html');
+    const research = await context.newPage();
+    await research.goto(url);
+    await research.bringToFront();
+    const today = panel.getByRole('tree', { name: 'Today' });
+    await expect(today.getByText('You are here')).toBeVisible();
+    await today.getByRole('button', { name: 'Actions for learn.test' }).click();
+    const ignore = panel.getByRole('menuitem', { name: 'Ignore learn.test' });
+    await expect(ignore).toBeVisible();
+
+    await research.evaluate(() => { document.title = 'Trail start'; });
+    await expect(panel.getByRole('heading', { name: 'Trail start', exact: true })).toBeVisible();
+    await expect(ignore).toBeVisible();
+    await panel.keyboard.press('Escape');
+    await expect(panel.getByRole('tree', { name: 'Trail start' })
+      .getByRole('button', { name: 'Actions for Trail start' })).toBeVisible();
+    await expect(today).toHaveCount(0);
+  });
+});
+
 test('ignoring a site uses the recording skip list, purges history and stops new capture', async ({
-  context, fixtureUrl, openExtensionPage, readCapture, serviceWorker,
+  context, fixtureUrl, openExtensionPage, readCapture,
 }) => {
   const first = fixtureUrl('learn.test', '/trail/start.html');
   const panel = await openExtensionPage('sidepanel.html');
   const page = await context.newPage();
   await page.goto(first);
   await page.bringToFront();
-  const row = panel.locator('.astryx-tree-list-item', { hasText: 'Trail start' });
+  const expedition = panel.getByRole('tree', { name: 'Trail start' });
+  const row = expedition.locator('.astryx-tree-list-item', { hasText: 'Trail start' });
   await expect(row.getByText('You are here')).toBeVisible();
 
   await row.getByRole('button', { name: /Actions for/ }).click();
   await panel.getByRole('menuitem', { name: 'Ignore learn.test' }).click();
-  const worker = await serviceWorker();
-  await expect.poll(() => worker.evaluate(async () =>
-    ((await chrome.storage.local.get('trailmap.recordingSettings'))['trailmap.recordingSettings'] as { skippedHosts: string[] }).skippedHosts))
-    .toEqual(['learn.test']);
+  await expect.poll(() => panel.evaluate(async () => {
+    const key = 'trailmap.recordingSettings';
+    const settings = (await chrome.storage.local.get(key))[key] as { skippedHosts: string[] } | undefined;
+    return settings?.skippedHosts;
+  }), { timeout: 0 }).toEqual(['learn.test']);
   await expect(row).not.toBeVisible();
 
   await page.goto(fixtureUrl('learn.test', '/trail/article.html'));

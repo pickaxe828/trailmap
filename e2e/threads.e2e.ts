@@ -39,14 +39,15 @@ test('two related sittings become one Journal thread with both trails and an inc
 
   const wrapUp = (expeditionId: string) => panel.evaluate((id) =>
     chrome.runtime.sendMessage({ type: 'trailmap.wrapUp', expeditionId: id }), expeditionId);
-  await wrapUp('session-0');
-  await expect.poll(async () => (await readCapture('expeditions')).find(({ id }) => id === 'session-0')?.fieldNotes).toContain('A tombstone');
+  expect(await wrapUp('session-0')).toBe(true);
+  await expect.poll(async () => (await readCapture('expeditions')).find(({ id }) => id === 'session-0')?.fieldNotes,
+    { timeout: 0, message: 'the first Expedition has persisted field notes' }).toContain('A tombstone');
   const journal = await openExtensionPage('journal.html');
   await expect(journal.getByRole('link', { name: 'CRDT replication basics' })).toBeVisible();
   await expect(journal.getByText('2 sessions')).toHaveCount(0);
 
   await seed(panel, { expeditions: [expeditions[1]!], visits: [visits[1]!], conceptEvidence: [conceptEvidence[1]!] });
-  await wrapUp('session-1');
+  expect(await wrapUp('session-1')).toBe(true);
   await expect(journal.getByText('2 sessions')).toBeVisible({ timeout: 30_000 });
   await expect(journal.getByRole('link', { name: 'CRDT replication deletes' })).toHaveCount(0);
   const proof = (name: string) => process.env.PROOF_DIR ? join(process.env.PROOF_DIR, name) : info.outputPath(name);

@@ -86,12 +86,15 @@ modelTest('the first typed AI Mode question and same-page follow-up share one en
   await aiModeScreened();
   await ask(google, FIRST);
   const conversation = async () => (await readCapture('pages')).find(({ aiTurns }) => aiTurns);
-  await expect.poll(conversation).toMatchObject({ aiTurns: [{ question: FIRST, answer: expect.stringContaining('Air scatters'), citations: [CITATION] }] });
+  // Persisted turns signal that capture completed; the test deadline is the only time bound.
+  await expect.poll(conversation, { timeout: 0, message: 'first AI Mode turn is captured with its citation' })
+    .toMatchObject({ aiTurns: [{ question: FIRST, answer: expect.stringContaining('Air scatters'), citations: [CITATION] }] });
   await ask(google, NEXT);
-  await expect.poll(conversation).toMatchObject({ summary: 'The AI conversation explains Rayleigh scattering.', aiTurns: [
-    { question: FIRST, answer: expect.stringContaining('Air scatters'), citations: [CITATION] },
-    { question: NEXT, answer: expect.stringContaining('Rayleigh scattering explains'), citations: [] },
-  ] });
+  await expect.poll(conversation, { timeout: 0, message: 'the AI Mode follow-up is captured and enriched' })
+    .toMatchObject({ summary: 'The AI conversation explains Rayleigh scattering.', aiTurns: [
+      { question: FIRST, answer: expect.stringContaining('Air scatters'), citations: [CITATION] },
+      { question: NEXT, answer: expect.stringContaining('Rayleigh scattering explains'), citations: [] },
+    ] });
   const visits = await readCapture('visits');
   const ai = visits.filter(({ aiConversation }) => aiConversation);
   expect(ai).toHaveLength(1);
@@ -134,7 +137,10 @@ modelTest('the first typed AI Mode question and same-page follow-up share one en
   await expect.poll(async () => (await readCapture('sentToModel')).filter(({ visitIds }) => visitIds?.includes(visit!.id)).length).toBeGreaterThan(0);
 
   await panel.getByRole('button', { name: 'Actions for Google AI Mode · AI-generated' }).click();
-  await panel.getByRole('menuitem', { name: 'Forget AI conversation' }).click();
+  // Playwright can scroll the panel during a pointer click and move this anchored menu out from under it.
+  const forget = panel.getByRole('menuitem', { name: 'Forget AI conversation' });
+  await expect(forget).toBeVisible();
+  await forget.press('Enter');
   await panel.getByRole('alertdialog').getByRole('button', { name: 'Forget AI conversation', exact: true }).click();
   await expect.poll(conversation).toBeUndefined();
   expect(await readCapture('queries')).toEqual([]);
