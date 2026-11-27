@@ -18,7 +18,7 @@ import { TrailmapShell } from '../../ui/TrailmapShell';
 import { ExpeditionCard } from './ExpeditionCard';
 import { JournalSearch } from './JournalSearch';
 import { OrganiseCard, type DropChoice } from './OrganiseCard';
-import { SuggestionChips } from './SuggestionChips';
+import { SuggestionRows } from './SuggestionRows';
 import { ThreadCard } from './ThreadCards';
 
 function Cards({ children }: { children: ReactNode }) {
@@ -86,11 +86,11 @@ export function App() {
     return plan ? [{ label: title, onClick: () => void apply(plan) }] : [];
   });
   const cardInteraction = { selecting, busy, toggle, run: apply };
-  function expeditionCard(expedition: Expedition, suggestion?: Parameters<typeof SuggestionChips>[0]['group']) {
+  function expeditionCard(expedition: Expedition, suggestion?: Parameters<typeof SuggestionRows>[0]['group']) {
     return <OrganiseCard key={expedition.id} id={expedition.id} title={expedition.title} {...cardInteraction}
       checked={selection.includes(expedition.id)} canDrag={expedition.endedAt !== null}
       dropChoices={(source) => dropChoices(source, [expedition])}
-      chips={<SuggestionChips expedition={expedition} group={suggestion} merges={merges?.get(expedition.id)} busy={busy} run={run} />}>
+      suggestions={<SuggestionRows expedition={expedition} group={suggestion} merges={merges?.get(expedition.id)} busy={busy} run={run} />}>
       <ExpeditionCard expedition={expedition} />
     </OrganiseCard>;
   }
