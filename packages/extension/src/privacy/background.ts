@@ -50,8 +50,9 @@ export function createRecordingPrivacy(unseenNotes: () => number, purge: (host?:
     JSON.stringify([paused, skippedHosts, chatCapture ?? {}, redditThreads === true]);
 
   /**
-   * Chat tabs stop reading their composer, and Reddit tabs stop (or start) being captured, as soon as the capture rules change.
-   * The content script drops its admission and asks the recorder again.
+   * Chat tabs stop reading their composer, and Reddit tabs stop being captured, as soon as the capture rules change.
+   * The content script drops its admission and asks the recorder again. (A Reddit thread that loaded before the opt-in has
+   * no Visit and is not read until it is loaded again, like a site taken off the skip list.)
    */
   async function rescreenChatTabs() {
     const tabs = await chrome.tabs.query({ url: [...Object.values(CHAT_SITES).map(({ host }) => `https://${host}/*`), ...REDDIT_TAB_PATTERNS] });

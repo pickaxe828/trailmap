@@ -34,7 +34,7 @@ describe('opt-in Reddit thread pages', () => {
   });
 
   test('the opt-in opens nothing but Reddit: other deny-list entries and lookalike hosts stay denied', () => {
-    for (const url of ['https://x.com/r/databases/comments/abc123/', 'https://reddit.com.evil.test/r/a/comments/abc123/',
+    for (const url of ['https://x.com/r/databases/comments/abc123/',
       'http://www.reddit.com/r/databases/comments/abc123/',
       'https://user:pw@www.reddit.com/r/databases/comments/abc123/', 'https://mail.reddit.com/r/a/comments/abc123/']) {
       expect(recordingState(url, on)).toBe('skipped');

@@ -75,13 +75,21 @@ test('a feed stays skipped even after the opt-in', async ({ context, fixtureUrl,
   expect(JSON.stringify(await readCapture('pages'))).not.toContain('secret feed marker');
 });
 
-test('a thread already open when the user opts in is captured from then on', async ({ context, readCapture, openExtensionPage }) => {
+test('a thread open when the user opts in is not read from before the opt-in; it is captured once it is loaded again', async ({
+  context, fixtureUrl, readCapture, openExtensionPage,
+}) => {
   await routeForums(context);
   const thread = await context.newPage();
   await thread.goto(NEW);
   const settings = await openExtensionPage('settings.html');
-  expect(await readCapture('visits')).toEqual([]);
   await setOptIn(settings, true);
+  // The thread was skipped when it loaded, so it has no Visit and nothing on it is read now (same as un-skipping a site).
+  // A normal page's capture is the barrier.
+  const allowed = fixtureUrl('learn.test', '/content/article.html');
+  await (await context.newPage()).goto(allowed);
+  await expect.poll(async () => (await readCapture('visits')).map(({ url }) => url)).toEqual([allowed]);
+  await thread.bringToFront();
+  await thread.reload();
   await expect.poll(() => pageText(readCapture, NEW)).toContain('Size-tiered favours writes');
 });
 
