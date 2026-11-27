@@ -103,3 +103,22 @@ test('My notes are searchable and point at their Expedition', async () => {
     await db.delete();
   }
 });
+
+test('an Expedition with no notes is found by its symbol, its name and its question', async () => {
+  const db = openTrailmapDb(crypto.randomUUID());
+  const index = new SearchIndex({ async embed() { return []; } });
+  await db.expeditions.add({ ...expedition, id: 'ipa', title: 'ˤ: the pharyngealization mark in IPA', drivingQuestion: 'What does the mark mean?', fieldNotes: null });
+  const next = Promise.withResolvers<void>();
+  const subscription = observeSearchCorpus(db).subscribe({
+    next: (documents) => { index.update(documents); next.resolve(); }, error: (error) => next.reject(error),
+  });
+  try {
+    await next.promise;
+    for (const query of ['pharyngealization', 'ˤ']) {
+      expect(index.keyword(query, 5)).toMatchObject([{ href: '/expedition.html?id=ipa', title: 'ˤ: the pharyngealization mark in IPA' }]);
+    }
+  } finally {
+    subscription.unsubscribe();
+    await db.delete();
+  }
+});

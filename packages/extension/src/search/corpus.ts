@@ -70,7 +70,15 @@ export function observeSearchCorpus(db: TrailmapDb) {
         href: reviewPath('expedition', 'id', expedition.id), detail: 'My notes',
         body: expedition.myNotes, semanticText: semanticText(expedition.title, expedition.drivingQuestion, expedition.myNotes),
       });
-      if (!expedition.fieldNotes?.trim()) continue;
+      if (!expedition.fieldNotes?.trim()) {
+        // Without notes, the Expedition itself must still be findable by its title (a symbol and its name) and question.
+        if (!expedition.myNotes?.trim()) documents.push({
+          id: `expedition:${expedition.id}`, kind: 'note', title: expedition.title,
+          href: reviewPath('expedition', 'id', expedition.id), detail: 'Expedition',
+          body: expedition.drivingQuestion ?? '', semanticText: semanticText(expedition.title, expedition.drivingQuestion),
+        });
+        continue;
+      }
       documents.push({
         id: `field-notes:${expedition.id}`, kind: 'note', title: expedition.title,
         href: reviewPath('expedition', 'id', expedition.id), detail: 'Field notes',
