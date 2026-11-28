@@ -1,15 +1,15 @@
 # YouTube fixtures
 
-Reconstructions of a watch page, served by the E2E tests through `context.route` on `www.youtube.com`
-(the capture rules key on the real host). Nothing leaves the machine.
+These watch pages are reconstructions, not verified against live YouTube. E2E serves them at
+`www.youtube.com` through `context.route` and records requests other than document navigation and
+the fixture player script. Nothing leaves the machine.
 
-**Not verified against the live site.** The shapes follow what is publicly known: an inline
-`ytInitialPlayerResponse` with `videoDetails` and
-`captions.playerCaptionsTracklistRenderer.captionTracks[]` (`baseUrl`, `languageCode`, `kind: "asr"` for
-automatic captions), and `json3` caption data (`events[].segs[].utf8`). All selectors live in
-`packages/extension/src/capture/youtube.ts`; update that module and these files together.
+- `watch.html`: captioned video `aaaaaaaaaaa`. Its inline `ytInitialPlayerResponse.videoDetails`
+  supplies the title and description. Caption URLs are present to catch accidental requests.
+- `watch-no-captions.html`: video `bbbbbbbbbbb`, without captions. Also serves as the one allowed
+  watch HTML fetch after a same-document navigation leaves the original inline response stale.
+- `player.js`: `fixturePlay()` starts a canvas-stream video without a media file.
 
-- `watch.html`: video `aaaaaaaaaaa`, English manual, English automatic and German tracks.
-- `watch-no-captions.html`: video `bbbbbbbbbbb`, no `captions` at all.
-- `timedtext-*.json`: the caption data each track's `baseUrl` returns.
-- `player.js`: a canvas-stream `<video>` with `fixturePlay()` / `fixturePause()`.
+`packages/extension/src/capture/youtube.ts` validates the response against the current video ID.
+Transcripts are deferred: reliable access would need an official captions API or a specialised
+extractor, and long transcripts would need chunking or summarisation to fit the model context.

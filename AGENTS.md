@@ -85,9 +85,11 @@ Before you finish a ticket run all of: `bun run typecheck && bun run test && bun
 
 `packages/extension/src/threads/`: `description.ts` builds the text embedded for an Expedition (title, question, My notes, concepts, field-notes summary); `match.ts` holds `THREAD_BANDS`, `scoreMatch` and the `thread_match` handler, which waits for concept resolution and re-embeds a stored `threadSignature` whose `descriptionHash` changed; `runs.ts` is the diagnostics log (`threadMatchRuns`, ids and numbers only, part of the Forget cascade). Band thresholds are calibrated against recorded MiniLM vectors in `threads/fixtures/`: after changing `buildDescription` or the fixtures run `bun scripts/record-thread-fixtures.ts` (needs the network once) in `packages/extension`; `fixtures.test.ts` fails until you do. Details: `trailmap-notes/notes-28.md`.
 
-## YouTube transcripts
+## YouTube
 
-`packages/extension/src/capture/youtube.ts` holds every YouTube selector, JSON path and URL rule (none verified against the live site; fixtures in `e2e/site/youtube/`). On a `youtube.com/watch` page the content script (after the recorder admitted the Visit) takes the Page text from the inline `ytInitialPlayerResponse` caption track, fetched once same-origin with no cookies, or the title and description without captions, or nothing when the shape is not exactly as expected; it never runs Readability on a watch page. After a single-page navigation the inline data is stale, so the watch URL's own HTML is fetched once instead. Engagement for a watch Visit is `Visit.watchMs` (video playing while the tab is visible, `watch-video.ts`) scored by `scoreVideoEngagement`, never scroll depth. Enrichment input carries `contentKind: 'video'`. Details: `trailmap-notes/notes-38.md`.
+`packages/extension/src/capture/youtube.ts` reads only the title and description from a matching inline `ytInitialPlayerResponse`, after the recorder admits the watch Visit. A normal load makes no capture request. After a same-document video change, if no matching inline response exists, the content script fetches the new watch URL's HTML once, same-origin and without cookies. Unknown shapes yield no Page text; watch pages never use Readability. Engagement is `Visit.watchMs` (video playing while the tab is visible, `watch-video.ts`), scored by `scoreVideoEngagement`, not scroll depth. Enrichment still uses `contentKind: 'video'`.
+
+Transcripts are deferred: reliable retrieval needs an official captions API or a specialised extractor, and long transcripts need chunking or summarisation to fit the model context. Fixture shapes are unverified against live YouTube (`e2e/site/youtube/README.md`); the SPA decision is in `trailmap-notes/notes-50.md`.
 
 ## PDFs
 

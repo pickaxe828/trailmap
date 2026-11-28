@@ -31,9 +31,9 @@ function send(content: PageContent): Promise<PageContentReply | undefined> {
 /** Google results and chat assistants are metadata-only: only an opted-in typed turn is ever read from them. */
 const metadataOnly = () => !!googleSearchSurface(location.href) || !!chatSiteOf(location.href);
 
-/** A same-origin GET that sends no cookies. It runs only after the recorder admitted this document. */
-async function fetchSameOriginText(url: string): Promise<string> {
-  const response = await fetch(url, { credentials: 'omit' });
+/** Read the current watch page after a same-document video change, without cookies or cross-origin redirects. */
+async function fetchWatchHtml(url: string): Promise<string> {
+  const response = await fetch(url, { mode: 'same-origin', credentials: 'omit' });
   if (!response.ok) throw new Error('request failed');
   return response.text();
 }
@@ -105,6 +105,7 @@ export default defineContentScript({
     let passwordDetected = false;
     let generation = 0;
     let url = location.href.split('#', 1)[0]!;
+    const initialVideoId = youtubeWatchId(url);
     let lastSelection = '';
     let maxDepth = 0;
     let reportedDepth = 0;
@@ -163,13 +164,11 @@ export default defineContentScript({
 
       // The DOM may have changed while the service worker looked up the Page.
       const latestHash = hashText(document.documentElement.outerHTML);
-      // A video page has no article to read: its Page text is the transcript, or nothing. Readability would
-      // return the recommendations and comments.
       const pageUrl = location.href;
-      // A forum thread is read by its own extractor, which keeps the post and the first comments without user names.
-      // An unknown layout gives nothing, never a Readability guess.
-      const article = youtubeWatchId(pageUrl)
-        ? await extractVideoText({ document, url: pageUrl, languages: navigator.languages, fetchText: fetchSameOriginText })
+      const videoId = youtubeWatchId(pageUrl);
+      // Specialised extractors fail closed. Readability would pick up recommendations or unrelated comments.
+      const article = videoId
+        ? await extractVideoText({ document, url: pageUrl, fetchWatchHtml: videoId !== initialVideoId ? fetchWatchHtml : undefined })
         : forumSiteOf(pageUrl) ? extractForumThread(document, pageUrl) : extractPageText(document);
       if (generation !== started || !isPublic() || location.href !== pageUrl) return;
       if (article) {

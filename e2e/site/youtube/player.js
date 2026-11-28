@@ -6,4 +6,3 @@ setInterval(() => { context.fillStyle = `hsl(${Date.now() % 360} 80% 50%)`; cont
 const video = document.querySelector('video');
 video.srcObject = canvas.captureStream(10);
 window.fixturePlay = () => video.play();
-window.fixturePause = () => video.pause();

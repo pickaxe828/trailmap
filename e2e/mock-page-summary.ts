@@ -109,12 +109,12 @@ const mock = startMockOAuth(async (request) => {
     relations: [{ from: 'Rayleigh scattering', to: 'Wavelength', type: 'related_to' }],
   }));
   if (task === 'page_enrichment' && JSON.parse(text).contentKind === 'video') {
-    // Only the transcript may arrive here, never the rest of the watch page.
-    if (!text.includes('Compaction merges SSTables') || text.includes('Unrelated recommended video')) return new Response(null, { status: 400 });
+    // Only the title and description may arrive here, never the captions or recommendations.
+    if (JSON.parse(text).text !== 'Log-structured merge trees explained A walkthrough of memtables, SSTables and compaction.') return new Response(null, { status: 400 });
     return stream(JSON.stringify({
-      summary: 'The video explains how a log-structured merge tree buffers and compacts writes.',
-      takeaways: ['A memtable buffers writes before they are flushed.', 'Compaction merges SSTables so reads touch fewer files.'],
-      answers_question: 'How does an LSM tree store writes?', page_kind: 'video',
+      summary: 'The video description promises a walkthrough of log-structured merge tree components.',
+      takeaways: ['The video covers memtables and SSTables.', 'Compaction is also covered.'],
+      answers_question: 'What does the video cover?', page_kind: 'video',
       concepts: [{ name: 'SSTable', kind: 'concept', gloss: 'An immutable sorted file of key-value pairs.', role: 'explains', salience: 'central' }],
       relations: [],
     }));

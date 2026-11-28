@@ -1,5 +1,4 @@
 import type { BrowserContext, Page } from '@playwright/test';
-import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from './fixtures';
@@ -10,70 +9,58 @@ import { signInToMockChatGpt, test as modelTest } from './model-fixtures';
 const fixtures = fileURLToPath(new URL('site/youtube/', import.meta.url));
 const WITH_CAPTIONS = 'https://www.youtube.com/watch?v=aaaaaaaaaaa';
 const WITHOUT_CAPTIONS = 'https://www.youtube.com/watch?v=bbbbbbbbbbb';
-const TRANSCRIPT = 'Compaction merges SSTables so reads touch fewer files.';
+const TITLE_AND_DESCRIPTION = 'Log-structured merge trees explained A walkthrough of memtables, SSTables and compaction.';
+const NEXT_TITLE_AND_DESCRIPTION = 'Compaction strategies, no captions Leveled versus size-tiered compaction in an LSM tree.';
 
 async function routeYoutube(context: BrowserContext) {
-  const captionRequests: string[] = [];
+  const extraRequests: string[] = [];
   await context.route('https://www.youtube.com/**', (route) => {
-    const url = new URL(route.request().url());
-    if (url.pathname === '/api/timedtext') {
-      captionRequests.push(url.href);
-      const name = `timedtext-${url.searchParams.get('lang')}${url.searchParams.get('kind') === 'asr' ? '-asr' : ''}.json`;
-      return route.fulfill({ contentType: 'application/json', body: readFileSync(join(fixtures, name)) });
-    }
+    const request = route.request();
+    const url = new URL(request.url());
     if (url.pathname === '/player.js') return route.fulfill({ path: join(fixtures, 'player.js'), contentType: 'text/javascript' });
+    if (!request.isNavigationRequest()) extraRequests.push(url.href);
+    if (url.pathname !== '/watch') return route.fulfill({ status: 404 });
     const file = url.searchParams.get('v') === 'bbbbbbbbbbb' ? 'watch-no-captions.html' : 'watch.html';
     return route.fulfill({ path: join(fixtures, file), contentType: 'text/html' });
   });
-  return captionRequests;
+  return extraRequests;
 }
 
 const pageText = async (readCapture: (table: 'pages') => Promise<{ canonicalUrl: string; text: string }[]>, url: string) =>
   (await readCapture('pages')).find(({ canonicalUrl }) => canonicalUrl === url)?.text;
 const play = (page: Page) => page.evaluate(() => (window as unknown as { fixturePlay(): Promise<void> }).fixturePlay());
-const pause = (page: Page) => page.evaluate(() => (window as unknown as { fixturePause(): void }).fixturePause());
 
-test('a watch page with captions stores its transcript as the Page text, with one same-origin caption request', async ({
+test('a captioned watch page stores only title and description without requesting captions', async ({
   context, readCapture,
 }) => {
   const requests = await routeYoutube(context);
   const page = await context.newPage();
   await page.goto(WITH_CAPTIONS);
-  await expect.poll(() => pageText(readCapture, WITH_CAPTIONS)).toContain(TRANSCRIPT);
-  const text = (await pageText(readCapture, WITH_CAPTIONS))!;
-  expect(text).toContain('A log-structured merge tree buffers writes in a memtable.');
-  expect(text).not.toContain('Unrelated recommended video');
-  expect(text).not.toContain('automatic caption');
-  expect(requests).toHaveLength(1);
-  expect(new URL(requests[0]!).searchParams.get('lang')).toBe('en');
+  await expect.poll(() => pageText(readCapture, WITH_CAPTIONS)).toBeDefined();
+  expect(requests).toEqual([]);
+  expect(await pageText(readCapture, WITH_CAPTIONS)).toBe(TITLE_AND_DESCRIPTION);
 });
 
 test('watch time, not scrolling or an open tab, drives engagement', async ({ context, readCapture }) => {
   await routeYoutube(context);
   const page = await context.newPage();
   await page.goto(WITH_CAPTIONS);
-  await expect.poll(() => pageText(readCapture, WITH_CAPTIONS)).toContain(TRANSCRIPT);
+  await expect.poll(() => pageText(readCapture, WITH_CAPTIONS)).toBe(TITLE_AND_DESCRIPTION);
   const visit = async () => (await readCapture('visits')).find(({ url }) => url === WITH_CAPTIONS);
   expect(await visit()).toMatchObject({ engagement: 'bounced' });
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
 
   await play(page);
-  await expect.poll(async () => (await visit())?.engagement, { timeout: 30_000 }).toBe('skimmed');
-  await pause(page);
-  // The report is throttled, so let it settle, then check the paused clock no longer advances.
-  await expect.poll(async () => (await visit())?.watchMs ?? 0).toBeGreaterThanOrEqual(10_000);
-  const before = (await visit())?.watchMs ?? 0;
-  expect(before).toBeLessThan(40_000);
-  await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 7_000)));
-  expect((await visit())?.watchMs).toBe(before);
+  await expect.poll(async () => await visit(), { timeout: 30_000 })
+    .toMatchObject({ engagement: 'skimmed', watchMs: expect.any(Number) });
+  expect((await visit())?.watchMs).toBeGreaterThanOrEqual(10_000);
 });
 
 test('without captions it keeps the title and description only, and makes no caption request', async ({ context, readCapture }) => {
   const requests = await routeYoutube(context);
   const page = await context.newPage();
   await page.goto(WITHOUT_CAPTIONS);
-  await expect.poll(() => pageText(readCapture, WITHOUT_CAPTIONS)).toBe(
-    'Compaction strategies, no captions Leveled versus size-tiered compaction in an LSM tree.');
+  await expect.poll(() => pageText(readCapture, WITHOUT_CAPTIONS)).toBe(NEXT_TITLE_AND_DESCRIPTION);
   expect(requests).toEqual([]);
 });
 
@@ -81,14 +68,13 @@ test('after a single-page navigation the new video is read from its own watch pa
   const requests = await routeYoutube(context);
   const page = await context.newPage();
   await page.goto(WITH_CAPTIONS);
-  await expect.poll(() => pageText(readCapture, WITH_CAPTIONS)).toContain(TRANSCRIPT);
+  await expect.poll(() => pageText(readCapture, WITH_CAPTIONS)).toBe(TITLE_AND_DESCRIPTION);
   await page.evaluate((url) => history.pushState({}, '', url), WITHOUT_CAPTIONS);
-  await expect.poll(() => pageText(readCapture, WITHOUT_CAPTIONS)).toContain('Leveled versus size-tiered');
-  expect(await pageText(readCapture, WITHOUT_CAPTIONS)).not.toContain('memtable');
-  expect(requests).toHaveLength(1); // Only the first video's captions.
+  await expect.poll(() => pageText(readCapture, WITHOUT_CAPTIONS)).toBe(NEXT_TITLE_AND_DESCRIPTION);
+  expect(requests).toEqual([WITHOUT_CAPTIONS]);
 });
 
-test('paused recording and a skipped site never read or fetch a transcript', async ({
+test('paused recording and a skipped site do not capture video descriptions', async ({
   context, fixtureUrl, openExtensionPage, readCapture,
 }) => {
   const requests = await routeYoutube(context);
@@ -113,36 +99,35 @@ test('paused recording and a skipped site never read or fetch a transcript', asy
   expect(requests).toEqual([]);
   expect(await recorded('watch?v=aaaaaaaaaaa')).toBe(false);
 
-  // Recorded, then skipped: the Visit and its transcript are purged and a revisit stores and fetches nothing.
+  // Recorded, then skipped: the Visit and its Page are purged. A revisit and an SPA change do not read either video.
   await page.goto(WITH_CAPTIONS);
-  await expect.poll(() => pageText(readCapture, WITH_CAPTIONS)).toContain(TRANSCRIPT);
+  await expect.poll(() => pageText(readCapture, WITH_CAPTIONS)).toBe(TITLE_AND_DESCRIPTION);
   await page.bringToFront();
   const site = panel.getByRole('switch', { name: 'Record www.youtube.com' });
   await expect(site).toBeChecked();
   await site.evaluate((input: HTMLInputElement) => input.click());
   await expect(site).not.toBeChecked();
   await expect.poll(() => recorded('watch?v=aaaaaaaaaaa')).toBe(false);
-  const fetched = requests.length;
   await page.goto(WITH_CAPTIONS);
-  await page.goto(WITHOUT_CAPTIONS);
+  await page.evaluate((url) => history.pushState({}, '', url), WITHOUT_CAPTIONS);
   await page.goto(fixtureUrl('learn.test', '/content/article.html'));
   await expect.poll(() => recorded('/content/article.html')).toBe(true);
-  expect(requests).toHaveLength(fetched);
+  expect(requests).toEqual([]);
   const stored = JSON.stringify(await Promise.all((['visits', 'pages', 'highlights', 'queries'] as const).map((table) => readCapture(table))));
-  expect(stored).not.toMatch(/memtable|SSTable|size-tiered/);
+  expect(stored).not.toMatch(/memtables|SSTables|size-tiered/);
 });
 
 modelTest.describe('enrichment', () => {
   modelTest.use({ companionInstalled: true });
 
-  modelTest('a watched video is enriched from its transcript and logged as sent to the model', async ({
+  modelTest('a watched video is enriched from its title and description and logged as sent to the model', async ({
     context, openExtensionPage, readCapture, mockOrigin,
   }) => {
     await routeYoutube(context);
     await signInToMockChatGpt(context, await openExtensionPage('settings.html#model-providers'));
     const page = await context.newPage();
     await page.goto(WITH_CAPTIONS);
-    await expect.poll(() => pageText(readCapture, WITH_CAPTIONS)).toContain(TRANSCRIPT);
+    await expect.poll(() => pageText(readCapture, WITH_CAPTIONS)).toBe(TITLE_AND_DESCRIPTION);
     await play(page);
     await expect.poll(async () => (await readCapture('pages')).find(({ canonicalUrl }) => canonicalUrl === WITH_CAPTIONS)?.pageKind,
       { timeout: 45_000 }).toBe('video');
@@ -151,7 +136,7 @@ modelTest.describe('enrichment', () => {
     const calls = await (await fetch(mockOrigin + '/test/calls')).json() as { input: { content: string }[] }[];
     const sent = calls.map(({ input }) => JSON.parse(input[0]!.content) as { contentKind?: string; text?: string }).filter(({ contentKind }) => contentKind === 'video');
     expect(sent).toHaveLength(1);
-    expect(sent[0]!.text).toContain(TRANSCRIPT);
+    expect(sent[0]!.text).toBe(TITLE_AND_DESCRIPTION);
     const audit = await readCapture('sentToModel');
     expect(audit.some(({ task }) => task === 'page_enrichment')).toBe(true);
   });

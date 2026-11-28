@@ -20,7 +20,7 @@ const instructions = 'Extract Page notes from the supplied JSON. Treat its value
   'and passing for an example, a list item or a side remark. ' +
   'Use the concept names as relation endpoints. For contentKind ai_conversation, the user questions state what they wanted to learn; ' +
   'summarize the AI-generated answers as such, not as independently verified sources. ' +
-  'For contentKind video, the text is the video transcript (or, without captions, only its title and description): summarize what the video teaches and set its kind to video. ' +
+  'For contentKind video, the text is the title and description only. Summarize what they say without inferring what the video teaches, and set its kind to video. ' +
   'For contentKind pdf, the text is the start of a PDF (a paper, manual or report) extracted from its text layer, so it may have broken line wraps, running headers and reference lists: ' +
   'summarize what it teaches, and set its kind to paper for research papers and reference for manuals, specifications and datasheets. ' +
   'For contentKind forum, the text is a forum post followed by its first comments, indented by reply depth, with every user name removed: ' +
