@@ -45,8 +45,15 @@ export function startSearch(db: TrailmapDb) {
     if (disposition === 'currentTab') await chrome.tabs.update({ url });
     else await chrome.tabs.create({ url, active: disposition === 'newForegroundTab' });
   });
-  chrome.omnibox.setDefaultSuggestion({ description: 'Search Trailmap: <match>%s</match>' });
+  chrome.omnibox.setDefaultSuggestion({ description: 'Search Trailmap: <match>%s</match> (start with ? to ask a question)' });
   chrome.omnibox.onInputChanged.addListener((text, suggest) => { void omnibox.changed(text, suggest).catch(() => {}); });
   chrome.omnibox.onInputCancelled.addListener(omnibox.cancel);
   chrome.omnibox.onInputEntered.addListener((text, disposition) => { void omnibox.entered(text, disposition).catch(() => {}); });
+  return {
+    /** Ids in ranked order, for Ask. Only a ranking: Ask reads what it sends from the database. */
+    async rank(question: string, limit: number, budgetMs: number) {
+      await prepare();
+      return (await index.search(question.slice(0, MAX_SEARCH_QUERY), limit, budgetMs)).map(({ id }) => id);
+    },
+  };
 }

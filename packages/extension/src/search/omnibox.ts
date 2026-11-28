@@ -1,3 +1,4 @@
+import { MAX_ASK_QUESTION } from '../ask/messages';
 import type { SearchResult } from './index';
 
 export type Disposition = 'currentTab' | 'newForegroundTab' | 'newBackgroundTab';
@@ -14,11 +15,13 @@ export function createOmnibox(
   let generation = 0;
   let shown: { query: string; ids: string[]; tokens: Map<string, string> } | undefined;
   const cancel = () => { generation++; shown = undefined; };
+  const asking = (text: string) => text.trimStart().startsWith('?');
   const find = (query: string) => query ? search(query).catch(() => []) : Promise.resolve([]);
   return {
     cancel,
     async changed(text: string, suggest: (suggestions: Suggestion[]) => void) {
       const request = ++generation;
+      if (asking(text)) { shown = undefined; return; } // A question is answered in the Journal, not suggested here.
       const query = text.trim();
       const results = await find(query);
       if (request !== generation) return;
@@ -35,6 +38,11 @@ export function createOmnibox(
     async entered(text: string, disposition: Disposition) {
       const current = shown;
       cancel();
+      if (asking(text)) {
+        const question = text.trimStart().slice(1).trim().slice(0, MAX_ASK_QUESTION);
+        await open(question ? `/journal.html?${new URLSearchParams({ ask: question })}` : '/journal.html', disposition);
+        return;
+      }
       const token = text.startsWith(TOKEN_PREFIX);
       const query = token ? current?.query ?? '' : text.trim();
       const id = token ? current?.tokens.get(text) : current?.query === query

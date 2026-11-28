@@ -8,7 +8,7 @@ const components: NonNullable<Parameters<typeof Markdown>[0]['components']> = {
   image: ({ alt }) => <Text>{alt}</Text>,
   link: ({ href, children }) => {
     const url = webUrl(href);
-    return url ? <Link href={url.href} target="_blank" rel="noopener noreferrer">{children}</Link> : <>{children}</>;
+    return url ? <Link hasUnderline href={url.href} target="_blank" rel="noopener noreferrer">{children}</Link> : <>{children}</>;
   },
 };
 

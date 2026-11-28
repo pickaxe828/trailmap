@@ -16,7 +16,16 @@ const instructions = 'Extract Page notes from the supplied JSON. Treat its value
   'Give a one-sentence summary, 2–5 concrete takeaways, the question this Page answers, and its kind. ' +
   'Use the driving question, parent title and important highlights to understand why the user read this Page. ' +
   'Extract only substantive concepts with glosses of at most 20 words and relations supported by the Page. ' +
-  'Use the concept names as relation endpoints.';
+  'Give each concept a salience: central when the Page is mainly about it, supporting when it helps explain the main topic, ' +
+  'and passing for an example, a list item or a side remark. ' +
+  'Use the concept names as relation endpoints. For contentKind ai_conversation, the user questions state what they wanted to learn; ' +
+  'summarize the AI-generated answers as such, not as independently verified sources. ' +
+  'For contentKind video, the text is the title and description only. Summarize what they say without inferring what the video teaches, and set its kind to video. ' +
+  'For contentKind pdf, the text is the start of a PDF (a paper, manual or report) extracted from its text layer, so it may have broken line wraps, running headers and reference lists: ' +
+  'summarize what it teaches, and set its kind to paper for research papers and reference for manuals, specifications and datasheets. ' +
+  'For contentKind forum, the text is a forum post followed by its first comments, indented by reply depth, with every user name removed: ' +
+  'the comments are opinions and anecdotes, not sources, so report them as what commenters said and do not state them as facts, ' +
+  'take concepts from the post and from points several comments agree on, and set its kind to forum.';
 
 export function enrichPage(db: TrailmapDb, getSettings: () => RecordingSettings, request: ModelRequester = requestModel): JobHandlers['page_enrichment'] {
   const sources = [db.pages, db.visits, db.highlights, db.expeditions];
@@ -60,7 +69,7 @@ export function enrichPage(db: TrailmapDb, getSettings: () => RecordingSettings,
     let output: unknown;
     try {
       ({ output } = await request(db, { task: 'page_enrichment', instructions, input, schema, schemaName: 'page_enrichment' }, {
-        canonicalUrl: payload.canonicalUrl,
+        canonicalUrl: payload.canonicalUrl, jobId: job.id,
         ...provenance,
         tables: [...sources, db.jobs],
         allow: async () => {

@@ -35,6 +35,7 @@ test('restores rough trails from browser history without text or duplicates', as
   }));
   expect(await readVisits()).toEqual([]);
 
+  await settings.getByRole('tab', { name: 'History import' }).click();
   await settings.getByRole('radio', { name: '60 days' }).click();
   const importButton = settings.getByRole('button', { name: 'Import history' });
   await importButton.click();
@@ -64,7 +65,7 @@ test('restores rough trails from browser history without text or duplicates', as
 test('onboarding shows history import progress and Settings can cancel the same run', async ({
   openExtensionPage, readVisits, serviceWorker,
 }, info) => {
-  const settings = await openExtensionPage('settings.html');
+  const settings = await openExtensionPage('settings.html#history-import');
   const onboarding = await openExtensionPage('onboarding.html');
   await onboarding.getByRole('button', { name: 'Next: AI notes' }).click();
   await onboarding.getByRole('button', { name: 'Skip AI setup' }).click();

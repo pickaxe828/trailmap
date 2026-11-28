@@ -16,7 +16,7 @@ beforeEach(() => { db = openTrailmapDb(crypto.randomUUID()); now = 1_000; vector
 afterEach(() => db.delete());
 
 const mention = (name: string, role: 'explains' | 'mentions' | 'uses' = 'mentions', gloss = name) =>
-  ({ name, role, gloss, kind: 'concept' as const });
+  ({ name, role, gloss, kind: 'concept' as const, salience: (role === 'explains' ? 'supporting' : 'passing') as 'supporting' | 'passing' });
 let vectors: Record<string, number[]>;
 const defaultVectors = {
   'Deferred deletion\nDeferred deletion': [0.96, 0.28],
@@ -30,6 +30,8 @@ const queue = (model?: Parameters<typeof decideConceptMerges>[3]) => new JobQueu
   field_notes: async () => { throw new Error('Unexpected field notes'); },
   thread_match: async () => { throw new Error('Unexpected Thread matching'); },
   living_note: async () => { throw new Error('Unexpected living note'); },
+  weekly_digest: async () => { throw new Error('Unexpected weekly digest'); },
+  notes_enrichment: async () => { throw new Error('Unexpected notes enrichment'); },
   concept_resolution: resolveConcepts(db, embedder, () => now),
   merge_verdict: decideConceptMerges(db, () => ({ paused: false, skippedHosts: [] }), () => now, model),
 }, [db.visits, db.pages, db.concepts, db.conceptEvidence, db.edges]);
@@ -55,17 +57,18 @@ async function enriched(id: string, concepts: NonNullable<Page['conceptMentions'
   return visit;
 }
 
-test('exact names resolve together, but only distinct evidence Pages make a skimmed Concept visible', async () => {
+test('exact names resolve together, but only a Page the user studied makes a Concept visible', async () => {
   await enriched('a', [mention('Tombstone'), mention('Software')]);
   await enriched('b', [mention(' TOMBSTONE '), mention('Software')], { pageId: 'a' });
-  expect(await readVisibleConcepts(db)).toEqual([]);
-  await enriched('c', [mention('tombstone'), mention('Software')]);
+  await enriched('c', [mention('tombstone', 'explains'), mention('Software')], { engagement: 'skimmed' });
+  expect(await readVisibleConcepts(db)).toEqual([]); // two passing mentions and a skimmed page
+  await enriched('d', [mention('tombstone', 'explains'), mention('Software')], { engagement: 'read' });
   const visible = await readVisibleConcepts(db);
   expect(visible).toHaveLength(1);
-  expect(visible[0]).toMatchObject({ name: 'Tombstone', exposure: 2, firstSeen: 1_000 });
+  expect(visible[0]).toMatchObject({ name: 'Tombstone', firstSeen: 1_000 });
   const evidence = await readConceptEvidence(db, visible[0]!.id);
   expect(evidence.map(({ page, visits }) => [page.canonicalUrl, visits.map(({ visit }) => visit.id)]))
-    .toEqual([['https://learn.example/a', ['a', 'b']], ['https://learn.example/c', ['c']]]);
+    .toEqual([['https://learn.example/a', ['a', 'b']], ['https://learn.example/c', ['c']], ['https://learn.example/d', ['d']]]);
 });
 
 test('a close cosine creates an alias, an exact alias overrides cosine, and distant concepts stay distinct', async () => {

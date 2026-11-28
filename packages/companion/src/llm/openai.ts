@@ -1,8 +1,10 @@
 import { z } from 'zod';
-import { LlmModel, type ModelDispatch } from '@trailmap/shared';
+import { LLM_PROVIDER_NAMES, LlmModel, llmTaskGroup, type ModelDispatch } from '@trailmap/shared';
 import { ChatGptAuthError, getChatGptAuth } from '../auth/auth';
 import type { CompanionContext } from '../handle';
-import { LlmFailure, outputValidator, type LlmProvider } from './provider';
+import { resolveChatGptDefault } from './chatgpt-default';
+import { runDispatch } from './http';
+import { invalidOutput, LlmFailure, outputValidator, type LlmProvider } from './provider';
 import { readSse } from './sse';
 
 const IDLE_MS = 60_000;
@@ -50,7 +52,7 @@ function apiFailure(error: z.infer<typeof ProviderError> | null | undefined, req
 async function checkStatus(response: Response, requestId?: string) {
   if (response.ok) return;
   const body = FailureBody.safeParse(await response.json().catch(() => null));
-  throw apiFailure(body.data?.error, requestId, response.status);
+  throw apiFailure(body.data?.error, requestId, response.status).diagnose('http_status', response.status);
 }
 
 function unavailable(requestId?: string) {
@@ -62,20 +64,21 @@ function unavailable(requestId?: string) {
 export function openAiProvider(ctx: CompanionContext): LlmProvider {
   const base = (ctx.env.TRAILMAP_OPENAI_BASE_URL ?? 'https://api.openai.com/v1').replace(/\/$/, '');
 
-  async function call<T>(
-    path: '/models' | '/responses', signal: AbortSignal,
-    consume: (response: Response, touch: () => void, requestId?: string) => Promise<T>, body?: object,
-    authorize?: () => Promise<boolean | undefined>,
-  ): Promise<T> {
-    let token: string;
+  async function accessToken() {
     try {
-      token = await getChatGptAuth(ctx).getAccessToken();
+      return await getChatGptAuth(ctx).getAccessToken();
     } catch (error) {
       if (!(error instanceof ChatGptAuthError)) throw error;
-      if (error.code === 'auth_required') throw new LlmFailure('not_signed_in', 'Sign in with ChatGPT to use your plan.');
+      if (error.code === 'auth_required') throw new LlmFailure('not_signed_in', 'Sign in with ChatGPT to use your plan.').diagnose('not_signed_in', error.status);
       if (error.code === 'plan_usage_disabled') throw new LlmFailure('plan_usage_not_granted', 'Enable ChatGPT plan usage to continue.');
-      throw unavailable();
+      throw unavailable().diagnose('auth_unavailable', error.status);
     }
+  }
+
+  async function call<T>(
+    path: '/models' | '/responses', signal: AbortSignal, token: string,
+    consume: (response: Response, touch: () => void, requestId?: string) => Promise<T>, body?: object,
+  ): Promise<T> {
     const idle = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
     const touch = () => {
@@ -83,12 +86,10 @@ export function openAiProvider(ctx: CompanionContext): LlmProvider {
       timer = setTimeout(() => idle.abort(), IDLE_MS);
     };
     let requestId: string | undefined;
+    let status: number | undefined;
     touch();
     try {
       signal.throwIfAborted();
-      if (authorize && !await authorize()) {
-        throw new LlmFailure('dispatch_cancelled', 'Trailmap did not authorize this model call.');
-      }
       const response = await fetch(base + path, {
         method: body ? 'POST' : 'GET', redirect: 'error', signal: AbortSignal.any([signal, idle.signal]),
         headers: {
@@ -97,37 +98,44 @@ export function openAiProvider(ctx: CompanionContext): LlmProvider {
         },
         body: body ? JSON.stringify(body) : undefined,
       });
+      status = response.status;
       touch();
       const header = response.headers.get('x-request-id');
       if (header && /^[\w-]{1,128}$/.test(header)) requestId = header;
       await checkStatus(response, requestId);
       return await consume(response, touch, requestId);
     } catch (error) {
-      if (error instanceof LlmFailure) throw error;
-      throw unavailable(requestId);
+      if (error instanceof LlmFailure) {
+        error.status ??= status;
+        throw error;
+      }
+      const reason = signal.aborted || idle.signal.aborted ? 'deadline' : status === undefined ? 'network_error' : 'stream_read_error';
+      throw unavailable(requestId).diagnose(reason, status);
     } finally {
       clearTimeout(timer!);
       idle.abort();
     }
   }
 
-  const models = (signal: AbortSignal) => call('/models', signal, async (response, _touch, requestId) => {
-    const catalog = z.object({ models: z.array(z.unknown()) }).safeParse(await response.json());
-    if (!catalog.success) throw unavailable(requestId);
-    return catalog.data.models.flatMap((entry) => {
+  const models = async (signal: AbortSignal) => call('/models', signal, await accessToken(), async (response, _touch, requestId) => {
+    const catalog = z.object({ models: z.array(z.unknown()) }).safeParse(await response.json().catch(() => undefined));
+    if (!catalog.success) throw unavailable(requestId).diagnose('catalog_unavailable');
+    const listedModels = catalog.data.models.flatMap((entry) => {
       const listed = z.object({ visibility: z.literal('list'), slug: z.string(), display_name: z.string() }).safeParse(entry);
       if (!listed.success) return [];
       const model = LlmModel.safeParse({ slug: listed.data.slug, displayName: listed.data.display_name });
       return model.success ? [model.data] : [];
     });
+    return { listedModels, status: response.status };
   });
 
   return {
     async complete(request) {
       const validate = outputValidator(request.schema);
       const signal = AbortSignal.timeout(DEADLINE_MS);
-      const model = request.model ?? (await models(signal))[0]?.slug;
-      if (!model) throw rejected('No ChatGPT plan models are available for this account.');
+      const catalog = request.model ? undefined : await models(signal);
+      const model = request.model ?? resolveChatGptDefault(catalog?.listedModels ?? [], llmTaskGroup(request.task))?.slug;
+      if (!model) throw rejected('No ChatGPT plan models are available for this account.').diagnose('catalog_unavailable', catalog?.status);
       const body = {
         model,
         instructions: request.instructions,
@@ -136,40 +144,44 @@ export function openAiProvider(ctx: CompanionContext): LlmProvider {
         stream: true,
       };
       const { $schema: _dialect, ...schema } = request.schema;
-      const infer = (payload: Omit<typeof body, 'input'> & { input: ModelDispatch['input']; text?: object }) => {
-        const { auditId } = request;
-        return call('/responses', signal, readResponse, payload, auditId ? async () => ctx.authorizeDispatch?.(auditId, {
-          provider: 'ChatGPT plan', model, instructions: payload.instructions, input: payload.input,
-        }) : undefined);
+      const infer = async (payload: Omit<typeof body, 'input'> & { input: ModelDispatch['input']; text?: object }) => {
+        const token = await accessToken();
+        return runDispatch(ctx, request.auditId, {
+          provider: LLM_PROVIDER_NAMES.chatgpt, model, instructions: payload.instructions, input: payload.input,
+        }, () => call('/responses', signal, token, async (response, touch, requestId) => {
+          const text = await readResponse(response, touch, requestId);
+          const output = validate(text);
+          if (output === undefined) throw invalidOutput('ChatGPT', text);
+          return output;
+        }, payload));
       };
-      let output;
       try {
-        output = validate(await infer({
-          ...body, text: { format: { type: 'json_schema', name: request.schemaName, strict: true, schema } },
-        }));
+        return await infer({ ...body, text: { format: { type: 'json_schema', name: request.schemaName, strict: true, schema } } });
       } catch (error) {
         if (!(error instanceof TextFormatUnsupported)) throw error;
-        const instructions = `${request.instructions}\n\nReturn only JSON matching this schema, with no Markdown:\n${JSON.stringify(schema)}`;
-        const first = await infer({ ...body, instructions });
-        output = validate(first);
-        if (output === undefined) {
-          output = validate(await infer({
-            ...body,
-            instructions: `${instructions}\nThe previous answer did not match the schema. Repair it using the original input.`,
-            input: [...body.input, { role: 'assistant', content: first.slice(0, 12_000) }],
-          }));
-        }
       }
-      if (output === undefined) throw new LlmFailure('invalid_output', 'ChatGPT did not return JSON that matches the requested schema.');
-      return output;
+      const instructions = `${request.instructions}\n\nReturn only JSON matching this schema, with no Markdown:\n${JSON.stringify(schema)}`;
+      try {
+        return await infer({ ...body, instructions });
+      } catch (error) {
+        if (!(error instanceof LlmFailure) || error.code !== 'invalid_output' || error.rawOutput === undefined) throw error;
+        return infer({
+          ...body,
+          instructions: `${instructions}\nThe previous answer did not match the schema. Repair it using the original input.`,
+          input: [...body.input, { role: 'assistant', content: error.rawOutput.slice(0, 12_000) }],
+        });
+      }
     },
-    models: () => models(AbortSignal.timeout(IDLE_MS)),
+    models: async () => (await models(AbortSignal.timeout(IDLE_MS))).listedModels,
   };
 }
 
 async function readResponse(response: Response, touch: () => void, requestId?: string): Promise<string> {
-  if (!response.body || response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase() !== 'text/event-stream') {
-    throw unavailable(requestId);
+  // We always ask for `text/event-stream`. ChatGPT's safety-buffered responses (`x-codex-safety-buffering-enabled`)
+  // arrive as a valid SSE body with no Content-Type at all, so only a *declared* non-stream type is rejected.
+  const declared = response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase();
+  if (!response.body || (declared !== undefined && declared !== 'text/event-stream')) {
+    throw unavailable(requestId).diagnose('non_stream_response');
   }
   let text = '';
   let refused = false;
@@ -193,10 +205,10 @@ async function readResponse(response: Response, touch: () => void, requestId?: s
       case 'response.incomplete':
         throw new LlmFailure('invalid_output', 'ChatGPT did not finish the output.', { requestId });
       case 'response.failed':
-        throw apiFailure(data.response?.error, requestId);
+        throw apiFailure(data.response?.error, requestId).diagnose('stream_error');
       case 'error':
-        throw apiFailure(data, requestId);
+        throw apiFailure(data, requestId).diagnose('stream_error');
     }
   }
-  throw unavailable(requestId);
+  throw unavailable(requestId).diagnose('stream_ended_early');
 }

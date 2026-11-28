@@ -1,5 +1,6 @@
 import { ConceptRelationType, type Concept, type Edge } from '@trailmap/shared';
 import { UndirectedGraph } from 'graphology';
+import type { EvidenceStrength } from '../concepts/strength';
 import louvain from 'graphology-communities-louvain';
 
 export type ConceptNode = {
@@ -9,6 +10,8 @@ export type ConceptNode = {
   x: number;
   y: number;
   community: number;
+  /** Learned and studied concepts are drawn solid. A concept only seen on pages is drawn faded. */
+  strength: EvidenceStrength;
 };
 export type ConceptLink = { weight: number };
 export type AtlasGraph = UndirectedGraph<ConceptNode, ConceptLink>;
@@ -19,14 +22,14 @@ function seededRandom() {
 }
 
 /** Build the visual graph from an already-visible Concept projection. */
-export function buildAtlasGraph(concepts: readonly Concept[], edges: readonly Edge[]): AtlasGraph {
+export function buildAtlasGraph(concepts: readonly (Concept & { strength?: EvidenceStrength })[], edges: readonly Edge[]): AtlasGraph {
   const ranked = [...concepts].sort((a, b) => b.exposure - a.exposure || a.firstSeen - b.firstSeen || a.id.localeCompare(b.id));
   const graph: AtlasGraph = new UndirectedGraph({ allowSelfLoops: false });
   const rng = seededRandom();
-  for (const { id, name, firstSeen, exposure } of ranked) {
+  for (const { id, name, firstSeen, exposure, strength } of ranked) {
     graph.addNode(id, {
       label: name, firstSeen, size: Math.min(24, 4 + 3 * Math.log2(1 + exposure)),
-      x: rng(), y: rng(), community: 0,
+      x: rng(), y: rng(), community: 0, strength: strength ?? 'seen',
     });
   }
   for (const { from, to, type, weight } of edges) {
@@ -55,7 +58,11 @@ export function topConceptIds(graph: AtlasGraph, limit = 80, scope?: ReadonlySet
   return new Set((scope ? ids.filter((id) => scope.has(id)) : ids).slice(0, Math.max(0, limit)));
 }
 
-export type AtlasFilter = { top: ReadonlySet<string>; cutoff: number; focused?: string; scope?: ReadonlySet<string> };
+/** With this few nodes on the map every label is drawn; past it the renderer culls only labels that would collide. */
+export const ALL_LABELS_MAX = 8;
+export const shouldLabelAll = (shown: number) => shown > 0 && shown <= ALL_LABELS_MAX;
+
+export type AtlasFilter = { top: ReadonlySet<string>; cutoff: number; focused?: string; scope?: ReadonlySet<string>; labelAll?: boolean };
 
 export function isConceptInScope(id: string, firstSeen: number, { cutoff, scope }: Pick<AtlasFilter, 'cutoff' | 'scope'>) {
   return firstSeen <= cutoff && (!scope || scope.has(id));

@@ -1,5 +1,7 @@
 import type { Embedder } from './embedder';
 
+export const LOCAL_EMBEDDINGS_UNAVAILABLE = 'trailmap.localEmbeddingsUnavailable';
+
 export const EMBED_MESSAGE = 'trailmap.embed';
 export const OFFSCREEN_PATH = 'offscreen.html';
 export const EMBEDDING_DIMENSIONS = 384;

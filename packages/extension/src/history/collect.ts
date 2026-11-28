@@ -1,7 +1,8 @@
 import type { Query, Visit } from '@trailmap/shared';
 import { canonicalizeUrl } from '../capture/canonical';
+import { chatSiteOf } from '../capture/chat-sites';
 import { toVisitTransition } from '../capture/recorder';
-import { parseSearchQuery } from '../capture/search';
+import { googleSearchSurface, parseSearchQuery } from '../capture/search';
 
 export type HistoryApi = {
   search(query: chrome.history.HistoryQuery): Promise<Pick<chrome.history.HistoryItem, 'url' | 'title'>[]>;
@@ -35,7 +36,7 @@ export async function collectHistory(history: HistoryApi, { start, end, shouldRe
       return;
     }
     for (const { url, title } of results) {
-      if (url && !pages.has(url) && shouldRecord(url) && shouldRecord(canonicalizeUrl(url))) pages.set(url, title ?? '');
+      if (url && !pages.has(url) && !chatSiteOf(url) && shouldRecord(url) && shouldRecord(canonicalizeUrl(url))) pages.set(url, title ?? '');
     }
   }
   await search(start, end);
@@ -43,7 +44,7 @@ export async function collectHistory(history: HistoryApi, { start, end, shouldRe
   const stops = new Map<string, HistoryStop & { referrer: string }>();
   for (const [url, title] of pages) {
     signal.throwIfAborted();
-    if (!shouldRecord(url)) continue;
+    if (!shouldRecord(url) || chatSiteOf(url) || googleSearchSurface(url) === 'ai-mode') continue;
     const canonicalUrl = canonicalizeUrl(url);
     const visits = await history.getVisits({ url });
     signal.throwIfAborted();

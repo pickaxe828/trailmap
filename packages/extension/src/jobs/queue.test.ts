@@ -96,6 +96,57 @@ test('ineligibility stops the queue until the user successfully signs in again',
   expect(await resumed.runNext()).toBe(true);
 });
 
+test('job diagnostics preserve the stable failure and attempt count, never the error text', async () => {
+  await enqueue('unavailable');
+  const queue = worker(async () => { throw new CompanionRequestError('usage_unavailable', 'private provider text'); });
+  await queue.runNext();
+  expect((await db.jobs.toArray())[0]?.lastError).toEqual({ code: 'usage_unavailable', at: now, attempts: 1 });
+  now += 5_000;
+  await queue.runNext();
+  expect((await db.jobs.toArray())[0]?.lastError).toEqual({ code: 'usage_unavailable', at: now, attempts: 2 });
+});
+
+test('three consecutive failures in a rolling ten-minute window raise attention until a model job succeeds', async () => {
+  const fail = async (id: string, code: 'invalid_output' | 'provider_rejected' = 'invalid_output') => {
+    await enqueue(id);
+    await worker(async () => { throw new CompanionRequestError(code, 'private'); }).runNext();
+  };
+  const attention = async () => (await db.modelHealth.get('jobs'))?.attention?.code;
+  await fail('first');
+  await fail('second');
+  await fail('break', 'provider_rejected');
+  await fail('third');
+  expect(await attention()).toBeUndefined();
+  now += 10 * 60_000 + 1;
+  await fail('fourth');
+  await fail('fifth');
+  expect(await attention()).toBeUndefined();
+  await fail('sixth');
+  expect(await attention()).toBe('invalid_output');
+  now += 10 * 60_000 + 1;
+  expect(await attention()).toBe('invalid_output');
+  await enqueue('recovery');
+  await worker(async () => {}).runNext();
+  expect(await attention()).toBeUndefined();
+});
+
+test('Retry now makes backed-off and failed model jobs due without disturbing a held account', async () => {
+  await enqueue('backed off');
+  await worker(async () => { throw new CompanionRequestError('usage_unavailable', 'temporary'); }).runNext();
+  await enqueue('failed');
+  await worker(async () => { throw new CompanionRequestError('invalid_output', 'terminal'); }).runNext();
+  const ran: string[] = [];
+  const queue = worker(async (id) => { ran.push(id); });
+  expect(await queue.runNext()).toBe(false);
+  await queue.retryNow('page_enrichment', { provider: 'chatgpt' });
+  while (await queue.runNext()) { /* drain */ }
+  expect(ran.toSorted()).toEqual(['backed off', 'failed']);
+  await enqueue('held');
+  await worker(async () => { throw new CompanionRequestError('not_signed_in', 'sign in'); }).runNext();
+  expect(await queue.retryNow('page_enrichment', { provider: 'chatgpt' })).toBe(0);
+  expect(await queue.runNext()).toBe(false);
+});
+
 test('a temporary error uses the retry hint and lets the next ready job run', async () => {
   await enqueue('unavailable');
   await enqueue('skimmed', JOB_PRIORITY.skimmedPage);

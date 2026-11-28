@@ -10,7 +10,7 @@ export async function sha256(text: string): Promise<string> {
 }
 
 /** Titles can change; note paths and incoming wikilinks should not. */
-export async function notePath(kind: 'expedition' | 'concept' | 'thread', id: string): Promise<string> {
+export async function notePath(kind: 'expedition' | 'concept' | 'thread' | 'digest', id: string): Promise<string> {
   return `trailmap-${kind}-${await sha256(id)}.md`;
 }
 
@@ -50,8 +50,33 @@ export function renderExpeditionNote(
     sourceUrls: [...new Set(sourceUrls)],
   });
   const title = headingTitle(expedition.title);
-  const sections = [title ? `# ${title}` : '# Expedition', displayFieldNotes(expedition),
+  const sections = [title ? `# ${title}` : '# Expedition',
+    expedition.myNotes?.trim() ? `## My notes\n\n${expedition.myNotes.trim()}` : '', displayFieldNotes(expedition),
     notes.length ? `## Notes\n\n${notes.join('\n\n')}` : '',
     concepts.length ? `## Concepts\n\n${concepts.map((concept) => `- ${wikilink(concept)}`).join('\n')}` : ''];
+  return `${metadata}\n${sections.flatMap((section) => section?.trimEnd() || []).join('\n\n')}\n`;
+}
+
+export type DigestNoteInput = {
+  title: string; kind: 'week' | 'recent'; from: number; to: number; summary: string;
+  expeditions: (NoteLink & { why: string })[]; threads: (NoteLink & { why: string })[];
+  /** A concept has a note of its own only when the user learned or studied it. */
+  concepts: { name: string; note?: NoteLink; strength: string }[];
+  looseEnds: { text: string; expedition: NoteLink; href?: string }[];
+  pickingUp: NoteLink[];
+};
+
+/** A weekly digest as an Obsidian note: the model's summary, then wikilinks to the notes it is about. */
+export function renderDigestNote(digest: DigestNoteInput): string {
+  const metadata = frontmatter({ title: digest.title, aliases: [digest.title], kind: 'digest', period: digest.kind,
+    from: new Date(digest.from).toISOString(), to: new Date(digest.to).toISOString() });
+  const why = (text: string) => text ? ` — ${text.replace(/\s+/g, ' ').trim()}` : '';
+  const list = (heading: string, lines: string[]) => lines.length ? `## ${heading}\n\n${lines.map((line) => `- ${line}`).join('\n')}` : '';
+  const sections = [`# ${headingTitle(digest.title)}`, digest.summary.trim(),
+    list('Expeditions', digest.expeditions.map((e) => `${wikilink(e)}${why(e.why)}`)),
+    list('Threads', digest.threads.map((t) => `${wikilink(t)}${why(t.why)}`)),
+    list('New concepts', digest.concepts.map((c) => `${c.note ? wikilink(c.note) : c.name} (${c.strength})`)),
+    list('Open loose ends', digest.looseEnds.map((end) => `${end.text.replace(/\s+/g, ' ').trim()} — ${wikilink(end.expedition)}${end.href ? ` ([tab](${end.href.replace(/[()\s]/g, encodeURIComponent)}))` : ''}`)),
+    list('Picking up', digest.pickingUp.map(wikilink))];
   return `${metadata}\n${sections.flatMap((section) => section?.trimEnd() || []).join('\n\n')}\n`;
 }

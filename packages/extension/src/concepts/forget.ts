@@ -1,17 +1,19 @@
 import type { TrailmapDb } from '../db/db';
-import { refreshConcept } from './evidence';
+import { notesEdgeSupport, refreshConcept } from './evidence';
 import { edgeSupport, withEdgeSupport } from './edges';
 import { enqueueMergeVerdicts } from './verdicts';
 
 /** Runs inside Forget's transaction, so an in-flight verdict cannot put forgotten evidence back. */
 export async function forgetConceptEvidence(db: TrailmapDb, gone: Set<string>, orphanUrls: string[], now: number,
-  sourceRemoved: (source: import('@trailmap/shared').ModelSources | undefined) => boolean) {
+  sourceRemoved: (source: import('@trailmap/shared').ModelSources | undefined) => boolean, forgottenExpeditions: string[] = []) {
   const ids = [...gone];
   const rows = new Map((await Promise.all([
     db.conceptEvidence.where('visitId').anyOf(ids).toArray(),
     db.conceptEvidence.where('sourceVisitId').anyOf(ids).toArray(),
     db.conceptEvidence.where('canonicalUrl').anyOf(orphanUrls).toArray(),
     db.conceptEvidence.filter(({ enrichmentSources }) => sourceRemoved(enrichmentSources)).toArray(),
+    // What the user's notes taught goes with the Expedition (or with the stop the note was attached to).
+    db.conceptEvidence.where('expeditionId').anyOf(forgottenExpeditions).toArray(),
   ])).flat().map((row) => [row.id, row]));
   await db.conceptEvidence.bulkDelete([...rows.keys()]);
   const removedConceptIds: string[] = [];
@@ -31,9 +33,12 @@ export async function forgetConceptEvidence(db: TrailmapDb, gone: Set<string>, o
       }
     }
   }
+  // Relations between learned Concepts are supported by the whole set of notes; a lost stop note rebuilds them.
+  const learned = [...rows.values()].filter((row) => row.role === 'learned' && row.expeditionId);
+  const learnedExpeditions = new Set(learned.map((row) => row.expeditionId!));
   return {
-    removedConceptIds, changedConceptIds, removedJobs,
-    evidenceVisits: new Set([...gone, ...[...rows.values()].map((row) => row.visitId)]),
+    removedConceptIds, changedConceptIds, removedJobs, learnedExpeditions,
+    evidenceVisits: new Set([...gone, ...[...rows.values()].map((row) => row.visitId), ...[...learnedExpeditions].map(notesEdgeSupport)]),
   };
 }
 

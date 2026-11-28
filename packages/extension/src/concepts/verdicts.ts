@@ -72,7 +72,7 @@ export function decideConceptMerges(db: TrailmapDb, getSettings: () => Recording
     let output: unknown;
     try {
       ({ output } = await model(db, { task: 'merge_verdict', instructions, input, schema, schemaName }, {
-        visitIds, canonicalUrls, tables: [...sources, db.jobs], allow: async () => {
+        visitIds, canonicalUrls, jobId: job.id, tables: [...sources, db.jobs], allow: async () => {
           const lease = (await db.jobs.get(job.id))?.lease;
           return !!lease && lease.token === job.lease?.token && lease.until > now() && (await prepare(job.payload))?.input === input;
         },

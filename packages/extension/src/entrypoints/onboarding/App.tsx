@@ -10,6 +10,8 @@ import { useCompanionStatus } from '../../companion/useCompanionStatus';
 import { ProviderSettings } from '../../llm/ProviderSettings';
 import { PrivacySettings } from '../../privacy/PrivacySettings';
 import { HistoryImportSettings } from '../../ui/HistoryImportSettings';
+import { JOURNAL_PATH } from '../../ui/TrailmapNavigation';
+import { TrailmapShell } from '../../ui/TrailmapShell';
 import { VaultSettings } from '../../vault/VaultSettings';
 
 const steps = ['privacy', 'companion', 'providers', 'extras'] as const;
@@ -21,17 +23,16 @@ export function App() {
   const [step, setStep] = useState<Step>('privacy');
   const progress = useRef<HTMLElement>(null);
   const stepIndex = steps.indexOf(step);
+  const previousStep = useRef(step);
   useEffect(() => {
-    progress.current?.focus();
+    if (previousStep.current !== step) progress.current?.focus();
+    previousStep.current = step;
   }, [step]);
 
   return (
-    <VStack as="main" gap={4} padding={8} maxWidth="44rem" className="mx-auto">
-      <VStack gap={1}>
-        <Heading level={1}>Welcome to Trailmap</Heading>
-        <Text as="p">Trailmap turns your browsing into trails, field notes, and a concept map.</Text>
-        <Text as="p">Recording starts straight away.</Text>
-      </VStack>
+    <TrailmapShell title="Welcome to Trailmap" description="Trailmap turns your browsing into trails, field notes, and a concept map."
+      actions={<Link hasUnderline isStandalone href="/settings.html">Open Settings</Link>}>
+      <Text as="p">Recording starts straight away.</Text>
       <VStack gap={1} tabIndex={-1} ref={progress} aria-label={`Step ${stepIndex + 1} of ${steps.length}`}>
         <Text type="label">Step {stepIndex + 1} of {steps.length}</Text>
       </VStack>
@@ -50,17 +51,20 @@ export function App() {
           <HistoryImportSettings headingLevel={3} />
         </VStack>
       )}
-      <HStack gap={2} align="center" wrap="wrap">
-        {stepIndex > 0 && <Button label="Back" variant="ghost" onClick={() => setStep(steps[stepIndex - 1]!)} />}
-        {step === 'privacy' && <Button label="Next: AI notes" onClick={() => setStep('companion')} />}
-        {step === 'companion' && companion.state === 'connected' && (
-          <Button label="Next: Model providers" onClick={() => setStep('providers')} />
+      <HStack as="footer" gap={2} align="center" wrap="wrap">
+        {stepIndex > 0 && <Button label="Back" variant="secondary" size="sm" onClick={() => setStep(steps[stepIndex - 1]!)} />}
+        {step === 'privacy' && <Button label="Next: AI notes" variant="primary" size="sm" onClick={() => setStep('companion')} />}
+        {step === 'companion' && (
+          <>
+            <Button label="Skip AI setup" variant={companion.state === 'connected' ? 'secondary' : 'primary'} size="sm"
+              onClick={() => setStep('extras')} />
+            {companion.state === 'connected' && <Button label="Next: Model providers" variant="primary" size="sm"
+              onClick={() => setStep('providers')} />}
+          </>
         )}
-        {step === 'companion' && <Button label="Skip AI setup" variant="secondary" onClick={() => setStep('extras')} />}
-        {step === 'providers' && <Button label="Next: Optional extras" onClick={() => setStep('extras')} />}
-        {step === 'extras' && <Button label="Finish setup" href="/journal.html" />}
-        <Link href="/settings.html">Open Settings</Link>
+        {step === 'providers' && <Button label="Next: Optional extras" variant="primary" size="sm" onClick={() => setStep('extras')} />}
+        {step === 'extras' && <Button label="Finish setup" variant="primary" size="sm" onClick={() => window.location.assign(JOURNAL_PATH)} />}
       </HStack>
-    </VStack>
+    </TrailmapShell>
   );
 }

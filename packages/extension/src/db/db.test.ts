@@ -58,7 +58,7 @@ describe('database', () => {
     await previous.table('pages').add({
       canonicalUrl: visit.canonicalUrl, text: 'Page text', textHash: 'hash', summary: 'Summary', takeaways: [],
       embedding: null, pageKind: 'article', enrichedAt: 2000, enrichmentVisitId: visit.id,
-      conceptMentions: [{ name: 'CRDT', gloss: 'A replicated data type', role: 'explains', kind: 'concept' }],
+      conceptMentions: [{ name: 'CRDT', gloss: 'A replicated data type', role: 'explains', kind: 'concept', salience: 'supporting' }],
     } satisfies Page);
     previous.close();
     expect(await db.jobs.toArray()).toMatchObject([
@@ -77,9 +77,60 @@ describe('database', () => {
     expect((await db.notes.get('note'))?.text).toBe('Keep this');
   });
 
+  test('upgrade moves user-edited field notes into My notes and queues regenerated field notes', async () => {
+    const previous = new Dexie(dbName);
+    previous.version(9).stores({ expeditions: 'id, startedAt, endedAt, threadId, kind, unseenNotes', corrections: 'id, at, *targetIds',
+      jobs: 'id, status, [status+priority+createdAt]' });
+    const base = { kind: 'learning', startedAt: 1, endedAt: 9, drivingQuestion: null, threadId: null, wrappedUpAt: 5 };
+    await previous.table('expeditions').bulkAdd([
+      { ...base, id: 'edited', title: 'Edited', fieldNotes: 'My own words', userEdited: true },
+      { ...base, id: 'renamed', title: 'Renamed', fieldNotes: 'Generated', userEdited: true },
+      { ...base, id: 'plain', title: 'Plain', fieldNotes: 'Generated too', userEdited: false },
+    ]);
+    await previous.table('corrections').add({ id: 'c1', at: 2, kind: 'field-notes', targetIds: ['edited'], before: null, after: null });
+    previous.close();
+    expect(await db.expeditions.get('edited')).toMatchObject({ myNotes: 'My own words', fieldNotes: null, userEdited: true });
+    expect(await db.expeditions.get('renamed')).toMatchObject({ fieldNotes: 'Generated', userEdited: true });
+    expect((await db.expeditions.get('renamed'))?.myNotes).toBeUndefined();
+    expect((await db.expeditions.get('plain'))?.myNotes).toBeUndefined();
+    expect(await db.jobs.toArray()).toMatchObject([{ kind: 'field_notes', status: 'pending', payload: { expeditionId: 'edited', endedAt: 9, revision: 1 } }]);
+  });
+
+  test('upgrade gives existing concept mentions and evidence a salience without losing data', async () => {
+    const previous = new Dexie(dbName);
+    previous.version(10).stores({ pages: 'canonicalUrl, textHash, enrichedAt', conceptEvidence: 'id, conceptId, visitId, sourceVisitId, canonicalUrl, expeditionId' });
+    const mention = (role: string, name: string) => ({ name, gloss: 'g', kind: 'concept', role });
+    await previous.table('pages').add({ canonicalUrl: 'https://learn.test/a', text: '', textHash: 'h', summary: null, takeaways: [],
+      embedding: null, pageKind: 'article', enrichedAt: 1, conceptMentions: [mention('explains', 'CRDT'), mention('mentions', 'Taa'), mention('uses', 'Git')] });
+    await previous.table('conceptEvidence').bulkAdd([
+      { ...mention('explains', 'CRDT'), id: 'e1', conceptId: 'c1', visitId: 'v', canonicalUrl: 'u', startedAt: 1, embedding: null },
+      { ...mention('mentions', 'Taa'), id: 'e2', conceptId: 'c2', visitId: 'v', canonicalUrl: 'u', startedAt: 1, embedding: null },
+      { ...mention('learned', 'Tombstone'), id: 'e3', conceptId: 'c3', visitId: 'x', expeditionId: 'x', canonicalUrl: '', startedAt: 1, embedding: null },
+    ]);
+    previous.close();
+    expect((await db.pages.get('https://learn.test/a'))?.conceptMentions?.map((m) => [m.name, m.salience]))
+      .toEqual([['CRDT', 'supporting'], ['Taa', 'passing'], ['Git', 'passing']]);
+    expect((await db.conceptEvidence.toArray()).map((row) => [row.id, row.name, row.salience]))
+      .toEqual([['e1', 'CRDT', 'supporting'], ['e2', 'Taa', 'passing'], ['e3', 'Tombstone', 'central']]);
+  });
+
+  test('upgrade seeds AI Mode totals from saved, settled Google turns only', async () => {
+    const previous = new Dexie(dbName);
+    previous.version(14).stores({ pages: 'canonicalUrl, textHash, enrichedAt' });
+    const success = { id: '1', question: 'First?', answer: 'Yes.', citations: [] };
+    const pending = { id: '2', question: 'Second?', answer: null, citations: [] };
+    const failure = { ...pending, id: '3', extractionFailed: true };
+    await previous.table('pages').bulkAdd([
+      { canonicalUrl: 'https://www.google.com/search?udm=50#trailmap-ai-1', aiTurns: [success, pending, failure] },
+      { canonicalUrl: 'https://chatgpt.com/.trailmap-chat/2', aiTurns: [success, failure] },
+    ]);
+    previous.close();
+    expect(await db.aiModeStats.toArray()).toEqual([{ id: 'google-ai-mode', successes: 1, failures: 1 }]);
+  });
+
   test('has tables for domain entities, durable jobs, model dispatches and the correction log', () => {
     expect(db.tables.map((t) => t.name).sort()).toEqual([
-      'conceptEvidence', 'concepts', 'corrections', 'edges', 'expeditions', 'highlights', 'jobs', 'notes', 'pages', 'queries', 'queueHolds', 'sentToModel', 'threads', 'visits',
+      'aiModeStats', 'conceptEvidence', 'conceptStars', 'concepts', 'corrections', 'digests', 'dismissedConcepts', 'edges', 'expeditions', 'highlights', 'jobs', 'modelHealth', 'notes', 'pages', 'queries', 'queueHolds', 'reviewCards', 'reviewLogs', 'sentToModel', 'threadMatchRuns', 'threads', 'visits',
     ]);
   });
 });

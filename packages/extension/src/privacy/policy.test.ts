@@ -1,5 +1,6 @@
-import { expect, test } from 'bun:test';
-import { maySendToModel, recordingState, siteKey } from './policy';
+import { describe, expect, test } from 'bun:test';
+import { CHAT_SITES, chatConversationSite, chatConversationUrl, chatSiteOf, sameChatConversation } from '../capture/chat-sites';
+import { chatCaptureAllowed, maySendToModel, recordingState, siteKey } from './policy';
 
 const settings = { paused: false, skippedHosts: ['study.test'] };
 
@@ -63,4 +64,63 @@ test('only sends text belonging to an engaged Visit that is still allowed', () =
   expect(maySendToModel(visit, { ...page, sourceUrl: undefined }, settings)).toBe(false);
   expect(maySendToModel({ ...visit, privacyBlocked: true }, page, settings)).toBe(false);
   expect(maySendToModel(visit, page, { ...settings, paused: true })).toBe(false);
+});
+
+describe('opt-in conversation capture from Gemini, ChatGPT and Claude', () => {
+  const on = { paused: false, skippedHosts: [], chatCapture: { chatgpt: true } };
+  const off = { paused: false, skippedHosts: [] };
+  const conversation = (site: 'chatgpt' | 'claude' | 'gemini') => chatConversationUrl(site, 'v1');
+
+  test('is off by default: no chat page and no conversation is recordable', () => {
+    for (const site of ['chatgpt', 'claude', 'gemini'] as const) {
+      expect(recordingState(conversation(site), off)).toBe('skipped');
+      expect(chatCaptureAllowed(`https://${CHAT_SITES[site].host}/`, off)).toBe(false);
+      expect(chatCaptureAllowed(`https://${CHAT_SITES[site].host}/`, { ...off, chatCapture: { [site]: false } })).toBe(false);
+    }
+  });
+
+  test('is per site and never makes the real chat page itself recordable', () => {
+    expect(chatCaptureAllowed('https://chatgpt.com/c/abc', on)).toBe(true);
+    expect(chatCaptureAllowed('https://claude.ai/new', on)).toBe(false);
+    expect(chatCaptureAllowed('https://gemini.google.com/app', on)).toBe(false);
+    expect(recordingState('https://chatgpt.com/c/abc', on)).toBe('skipped');
+    expect(recordingState(conversation('chatgpt'), on)).toBe('recording');
+    expect(recordingState(conversation('claude'), on)).toBe('skipped');
+    expect(recordingState('https://chatgpt.com/.trailmap-chat/v1', { ...on, chatCapture: {} })).toBe('skipped');
+  });
+
+  test('pause, the skip list, look-alike hosts and non-HTTPS pages still win', () => {
+    expect(recordingState(conversation('chatgpt'), { ...on, paused: true })).toBe('paused');
+    expect(chatCaptureAllowed('https://chatgpt.com/', { ...on, paused: true })).toBe(false);
+    expect(recordingState(conversation('chatgpt'), { ...on, skippedHosts: ['chatgpt.com'] })).toBe('skipped');
+    expect(chatCaptureAllowed('https://chatgpt.com/', { ...on, skippedHosts: ['chatgpt.com'] })).toBe(false);
+    expect(chatCaptureAllowed('https://chatgpt.com.evil.test/', on)).toBe(false);
+    expect(chatCaptureAllowed('https://docs.chatgpt.com/', on)).toBe(false);
+    expect(chatCaptureAllowed('http://chatgpt.com/', on)).toBe(false);
+    expect(chatCaptureAllowed('https://user:pw@chatgpt.com/', on)).toBe(false);
+  });
+
+  test('a conversation reaches a model only while its site stays opted in', () => {
+    const url = conversation('chatgpt');
+    const visit = { url, canonicalUrl: url, engagement: 'skimmed' as const, aiConversation: true as const };
+    const page = { canonicalUrl: url, sourceUrl: url, text: 'User question: why?', aiTurns: [{ id: 't', question: 'why?', answer: 'Because.', citations: [] }] };
+    expect(maySendToModel(visit, page, on)).toBe(true);
+    expect(maySendToModel(visit, page, off)).toBe(false);
+    expect(maySendToModel(visit, page, { ...on, paused: true })).toBe(false);
+    expect(maySendToModel(visit, page, { ...on, skippedHosts: ['chatgpt.com'] })).toBe(false);
+  });
+
+  test('conversation URLs identify only the site they belong to', () => {
+    expect(chatSiteOf('https://chatgpt.com/c/1')).toBe('chatgpt');
+    expect(chatSiteOf('https://gemini.google.com/app/1')).toBe('gemini');
+    expect(chatSiteOf('https://claude.ai/chat/1')).toBe('claude');
+    expect(chatSiteOf('https://www.google.com/')).toBeUndefined();
+    expect(chatConversationSite('https://chatgpt.com/.trailmap-chat/x')).toBe('chatgpt');
+    expect(chatConversationSite('https://chatgpt.com/c/1')).toBeUndefined();
+    expect(sameChatConversation('https://chatgpt.com/', 'https://chatgpt.com/c/1')).toBe(true);
+    expect(sameChatConversation('https://chatgpt.com/c/1', 'https://chatgpt.com/c/2')).toBe(false);
+    expect(sameChatConversation('https://claude.ai/new', 'https://claude.ai/chat/1')).toBe(true);
+    expect(sameChatConversation('https://gemini.google.com/app', 'https://gemini.google.com/app/1')).toBe(true);
+    expect(sameChatConversation('https://chatgpt.com/', 'https://claude.ai/chat/1')).toBe(false);
+  });
 });

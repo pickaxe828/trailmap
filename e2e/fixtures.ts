@@ -11,23 +11,37 @@
  */
 import { chromium, test as base, expect, type BrowserContext, type Page, type Worker } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import type { ConceptEvidence } from '../packages/extension/src/concepts/evidence';
 import type { SentToModel } from '../packages/extension/src/db/db';
+import type { Job, ModelHealth } from '../packages/extension/src/jobs/types';
+import type { ReviewCard, ReviewLog } from '../packages/extension/src/review/types';
 import type { Concept, Edge, Expedition, Highlight, Note, Page as CapturedPage, Query, Thread, Visit } from '../packages/shared/src/domain';
 import { COMPANION_BIN, EXTENSION_DIR, FIXTURE_PORT } from './constants';
 
 type CaptureTables = {
   visits: Visit; pages: CapturedPage; queries: Query; highlights: Highlight; expeditions: Expedition; notes: Note;
-  concepts: Concept; edges: Edge; threads: Thread; conceptEvidence: ConceptEvidence; sentToModel: SentToModel;
+  concepts: Concept; edges: Edge; threads: Thread; conceptEvidence: ConceptEvidence; sentToModel: SentToModel; jobs: Job;
+  modelHealth: ModelHealth; reviewCards: ReviewCard; reviewLogs: ReviewLog;
   corrections: { id: string; at: number; kind: string; targetIds: string[]; before: unknown; after: unknown };
 };
 
 /** Seed before opening the view under test; raw IndexedDB writes don't notify Dexie live queries. */
 export async function seedCapture(page: Page, rows: { [K in keyof CaptureTables]?: CaptureTables[K][] }) {
+  // Opening a database that doesn't exist yet would create it empty, with no stores to write to.
+  // Readiness signal: the extension has created every store we are about to write.
+  await expect.poll(() => page.evaluate(async (tables) => {
+    if (!(await indexedDB.databases()).some((d) => d.name === 'trailmap')) return false;
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open('trailmap');
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    try { return tables.every((table) => db.objectStoreNames.contains(table)); } finally { db.close(); }
+  }, Object.keys(rows)), { timeout: 0 }).toBe(true);
   await page.evaluate(async (rows) => {
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
       const request = indexedDB.open('trailmap');
@@ -39,10 +53,27 @@ export async function seedCapture(page: Page, rows: { [K in keyof CaptureTables]
         const tx = db.transaction(Object.keys(rows), 'readwrite');
         tx.oncomplete = () => resolve();
         tx.onabort = () => reject(tx.error);
-        for (const [table, records] of Object.entries(rows)) for (const row of records) tx.objectStore(table).put(row);
+        for (const [table, records] of Object.entries(rows)) for (const row of records ?? []) tx.objectStore(table).put(row);
       });
     } finally { db.close(); }
-  }, rows);
+  }, rows as Record<string, unknown[] | undefined>);
+}
+
+/**
+ * Waits until the recorder has screened a Google AI Mode document, so a typed question will be captured instead of
+ * silently dropped. It reads through the install tab like `readCapture`: opening another tab would steal focus from the
+ * page under test, and `pressSequentially` then hangs on a background tab.
+ */
+async function waitForAiModeScreened(context: BrowserContext, extensionId: string) {
+  const readerUrl = `chrome-extension://${extensionId}/onboarding.html`;
+  await expect.poll(async () => {
+    const reader = context.pages().find((p) => p.url() === readerUrl);
+    return !!reader && await reader.evaluate(async () => {
+      const key = 'trailmap.recorderState';
+      const state = (await chrome.storage.session.get(key))[key] as { aiEntries?: Record<string, { screened?: boolean }> } | undefined;
+      return Object.values(state?.aiEntries ?? {}).some((entry) => entry.screened === true);
+    });
+  }, { timeout: 0 }).toBe(true);
 }
 
 type Fixtures = {
@@ -61,7 +92,7 @@ type Fixtures = {
    * Always includes `TRAILMAP_COMPANION_DATA_DIR` and `TRAILMAP_SECRET_STORE=file` (the real Keychain is never touched).
    */
   companionEnv: Record<string, string>;
-  /** Runs the real `trailmap-companion install --user-data-dir <userDataDir>`. Call it any time, even while the browser runs. */
+  /** Runs the real `trailmap-companion install --browser chromium --user-data-dir <userDataDir>`. Call it any time, even while the browser runs. */
   installCompanion: () => void;
   context: BrowserContext;
   extensionId: string;
@@ -71,6 +102,8 @@ type Fixtures = {
   fixtureUrl: (host: string, path?: string) => string;
   /** The extension's current service worker (waits for one to start if it was stopped). */
   serviceWorker: () => Promise<Worker>;
+  /** Waits until a Google AI Mode document has been screened, so the next typed question is captured (notes-35.md). */
+  aiModeScreened: () => Promise<void>;
   /** Every recorded Visit, oldest first, read straight from the extension's IndexedDB. */
   readVisits: () => Promise<Visit[]>;
 };
@@ -94,8 +127,9 @@ export const test = base.extend<Fixtures & Options, WorkerFixtures>({
     const dir = mkdtempSync(join(tmpdir(), 'trailmap-e2e-extension-'));
     try {
       cpSync(EXTENSION_DIR, dir, { recursive: true });
+      const worker = readdirSync(join(dir, 'assets')).find((name) => /^pdf\.worker\.min-.+\.mjs$/.test(name));
       execFileSync('bun', ['build', fileURLToPath(new URL('./fake-embedder.ts', import.meta.url)),
-        '--outfile', join(dir, 'fake-embedder.js')], { stdio: 'pipe' });
+        '--outfile', join(dir, 'fake-embedder.js'), '--define', `PDF_WORKER_URL=${JSON.stringify(`/assets/${worker}`)}`, '--define', 'import.meta.env.FIREFOX=false'], { stdio: 'pipe' });
       writeFileSync(join(dir, 'offscreen.html'), '<script type="module" src="./fake-embedder.js"></script>');
       await use(dir);
     } finally {
@@ -130,7 +164,7 @@ export const test = base.extend<Fixtures & Options, WorkerFixtures>({
 
   installCompanion: async ({ userDataDir }, use) => {
     await use(() => {
-      execFileSync(COMPANION_BIN, ['install', '--user-data-dir', userDataDir], { stdio: 'pipe' });
+      execFileSync(COMPANION_BIN, ['install', '--browser', 'chromium', '--user-data-dir', userDataDir], { stdio: 'pipe' });
     });
   },
 
@@ -168,8 +202,10 @@ export const test = base.extend<Fixtures & Options, WorkerFixtures>({
     // The background opens the onboarding tab from its `onInstalled` handler, which only runs after
     // the service worker's top level has registered every listener. Tests that navigate straight
     // away would otherwise race the registration and miss their first events.
+    // No private time limit: how long a cold Chromium takes under load is not ours to guess, so the
+    // test's own timeout is the only bound and a hang names this wait.
     await expect
-      .poll(() => context.pages().some((p) => p.url().endsWith('/onboarding.html')), { timeout: 15_000 })
+      .poll(() => context.pages().some((p) => p.url().endsWith('/onboarding.html')), { timeout: 0 })
       .toBe(true);
     await use(context);
     await context.close();
@@ -201,7 +237,7 @@ export const test = base.extend<Fixtures & Options, WorkerFixtures>({
     await use(async <T extends keyof CaptureTables>(table: T) => {
       let reader = context.pages().find((p) => p.url() === readerUrl);
       if (!reader) {
-        await expect.poll(() => context.pages().some((p) => p.url() === readerUrl), { timeout: 10_000 }).toBe(true);
+        await expect.poll(() => context.pages().some((p) => p.url() === readerUrl), { timeout: 0 }).toBe(true);
         reader = context.pages().find((p) => p.url() === readerUrl)!;
       }
       return reader.evaluate(async (table) => {
@@ -224,6 +260,8 @@ export const test = base.extend<Fixtures & Options, WorkerFixtures>({
   },
 
   readVisits: async ({ readCapture }, use) => use(() => readCapture('visits')),
+
+  aiModeScreened: async ({ context, extensionId }, use) => use(() => waitForAiModeScreened(context, extensionId)),
 
   fixtureUrl: async ({}, use) => {
     await use((host, path = '/') => `http://${host}:${FIXTURE_PORT}${path}`);

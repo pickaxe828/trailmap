@@ -3,7 +3,7 @@
  * stdout carries only frames (anything else would corrupt the stream), so all
  * diagnostics go through `ctx.log`, never `console.log`.
  */
-import { chunkMessage, type CompanionEvent, type CompanionResponse } from '@trailmap/shared';
+import { chunkMessage, type CompanionEvent, type CompanionResponse, type ModelAttemptResult } from '@trailmap/shared';
 import { disposeChatGptAuth } from './auth/auth';
 import { FrameDecoder, FrameTooLargeError, encodeFrame } from './framing';
 import { COMPANION_VERSION, handleFrame, type CompanionContext } from './handle';
@@ -29,7 +29,12 @@ export async function runHost(
       const timeout = setTimeout(() => resolve(false), 5_000);
       try {
         send({ type: 'event', name: 'llm.dispatch', auditId, id: dispatchId, ...dispatch });
-        return await promise;
+        const finish = (result: ModelAttemptResult) => {
+          context.emit?.({ type: 'event', name: 'llm.dispatchFinished', auditId, id: dispatchId, result });
+        };
+        if (await promise) return finish;
+        finish({ outcome: 'cancelled', errorCode: 'dispatch_cancelled' });
+        return false;
       } finally {
         clearTimeout(timeout);
         dispatches.delete(dispatchId);

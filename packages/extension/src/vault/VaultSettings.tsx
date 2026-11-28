@@ -69,7 +69,7 @@ export function VaultSettings({ companion, headingLevel = 3 }: { companion: Comp
         {navigator.platform.startsWith('Mac') && (
           <Button label="Choose folder…" isDisabled={!connected || busy} onClick={() => void select()} />
         )}
-        {folder && <Button variant="ghost" label="Stop syncing" isDisabled={!connected || busy} onClick={() => void select(null)} />}
+        {folder && <Button size="sm" label="Stop syncing" isDisabled={!connected || busy} onClick={() => void select(null)} />}
       </HStack>
       {error && <Text role="alert">{error}</Text>}
     </VStack>

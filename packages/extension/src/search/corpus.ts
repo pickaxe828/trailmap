@@ -11,7 +11,7 @@ const reviewPath = (page: 'atlas' | 'expedition' | 'thread', key: 'id' | 'concep
 
 /** Project the local sources, rather than persisting a second copy of captured or generated text. */
 export function observeSearchCorpus(db: TrailmapDb) {
-  return liveQuery(() => db.transaction('r', [db.visits, db.pages, db.queries, db.expeditions, db.threads, db.concepts, db.conceptEvidence, db.edges, db.notes], async () => {
+  return liveQuery(() => db.transaction('r', [db.visits, db.pages, db.queries, db.expeditions, db.threads, db.concepts, db.conceptEvidence, db.edges, db.notes, db.highlights, db.dismissedConcepts], async () => {
     const [visits, pages, queries, expeditions, threads, { concepts }, notes] = await Promise.all([
       db.visits.toArray(), db.pages.toArray(), db.queries.toArray(), db.expeditions.toArray(), db.threads.toArray(), readAtlas(db), db.notes.toArray(),
     ]);
@@ -65,7 +65,20 @@ export function observeSearchCorpus(db: TrailmapDb) {
     }
     for (const expedition of expeditions) {
       noteTargets.set(expedition.id, { title: expedition.title, href: reviewPath('expedition', 'id', expedition.id) });
-      if (!expedition.fieldNotes?.trim()) continue;
+      if (expedition.myNotes?.trim()) documents.push({
+        id: `my-notes:${expedition.id}`, kind: 'note', title: expedition.title,
+        href: reviewPath('expedition', 'id', expedition.id), detail: 'My notes',
+        body: expedition.myNotes, semanticText: semanticText(expedition.title, expedition.drivingQuestion, expedition.myNotes),
+      });
+      if (!expedition.fieldNotes?.trim()) {
+        // Without notes, the Expedition itself must still be findable by its title (a symbol and its name) and question.
+        if (!expedition.myNotes?.trim()) documents.push({
+          id: `expedition:${expedition.id}`, kind: 'note', title: expedition.title,
+          href: reviewPath('expedition', 'id', expedition.id), detail: 'Expedition',
+          body: expedition.drivingQuestion ?? '', semanticText: semanticText(expedition.title, expedition.drivingQuestion),
+        });
+        continue;
+      }
       documents.push({
         id: `field-notes:${expedition.id}`, kind: 'note', title: expedition.title,
         href: reviewPath('expedition', 'id', expedition.id), detail: 'Field notes',

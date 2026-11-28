@@ -51,13 +51,17 @@ function frame(type: string, fields = {}) {
 }
 
 function stream(...frames: string[]) {
+  return streamWith({ 'content-type': 'text/event-stream' }, ...frames);
+}
+
+function streamWith(headers: Record<string, string>, ...frames: string[]) {
   const bytes = new TextEncoder().encode(': keepalive\r\n\r\n' + frames.join(''));
   // Every byte arrives separately so UTF-8, CRLF and SSE frames all cross chunk boundaries.
   let i = 0;
   return new Response(new ReadableStream({ pull(controller) {
     if (i === bytes.length) controller.close();
     else controller.enqueue(bytes.subarray(i, ++i));
-  } }), { headers: { 'content-type': 'text/event-stream' } });
+  } }), { headers });
 }
 
 const completed = frame('response.completed', { response: { status: 'completed' } });
@@ -76,6 +80,57 @@ test('returns validated Page JSON from a split UTF-8 stream using a freshly rota
     model: 'mock-model', instructions: 'Summarize this Page.', input: [{ role: 'user', content: 'A stored Page about café design.' }],
     store: false, stream: true, text: { format: { type: 'json_schema', name: 'page_summary', strict: true, schema } },
   }]]);
+});
+
+test('accepts an event stream that ChatGPT sends without a Content-Type header', async () => {
+  // Observed 2026-11-27 with `x-codex-safety-buffering-enabled: true`: a valid SSE body, status 200, no Content-Type.
+  await signIn();
+  respond = () => streamWith({ 'x-codex-safety-buffering-enabled': 'true' },
+    frame('response.created'), delta('{"summary":"A café"}'), completed);
+  expect(await complete()).toEqual({ type: 'llm.complete', id: 'task', output: { summary: 'A café' } });
+});
+
+test('still treats a declared non-stream body as temporarily unavailable', async () => {
+  await signIn();
+  respond = () => new Response('{"summary":"not a stream"}', { headers: { 'content-type': 'application/json' } });
+  expect(await complete()).toMatchObject({ type: 'error', code: 'usage_unavailable', retryAfterMs: 5_000 });
+});
+
+test('completion logs fixed reason labels and status without recording provider detail, prompt or bearer', async () => {
+  await signIn();
+  const lines: string[] = [];
+  ctx.log = (line) => lines.push(line);
+  const cases = [
+    ['non_stream_response', 200, () => Response.json({ detail: 'private text mock-access-0' })],
+    ['stream_ended_early', 200, () => stream(delta('private text mock-access-0'))],
+    ['http_status', 503, () => Response.json({ detail: 'private text mock-access-0' }, { status: 503 })],
+    ['catalog_unavailable', 200, () => Response.json({ detail: 'private text mock-access-0' })],
+  ] as const;
+  for (const [reason, status, response] of cases) {
+    respond = response;
+    expect(await complete({ model: reason === 'catalog_unavailable' ? undefined : 'mock-model', input: 'private text' }))
+      .toMatchObject({ code: 'usage_unavailable' });
+    expect(lines.pop()).toBe(`llm.complete failed provider=chatgpt code=usage_unavailable reason=${reason} status=${status}`);
+  }
+  expect(lines).toEqual([]);
+});
+
+test('reports the result of each audited fallback and repair, including capped invalid text', async () => {
+  await signIn();
+  const attempts: unknown[] = [];
+  ctx.authorizeDispatch = async () => (result: unknown) => { attempts.push(result); };
+  const replies = [
+    () => Response.json({ error: { code: 'subscription_sharing_unsupported_capability', param: 'text' } }, { status: 400 }),
+    () => stream(delta('é'.repeat(16_385)), completed),
+    () => stream(delta('{"summary":"Repaired Page"}'), completed),
+  ];
+  respond = () => replies.shift()!();
+  expect(await complete({ auditId: crypto.randomUUID() })).toMatchObject({ output: { summary: 'Repaired Page' } });
+  expect(attempts).toEqual([
+    { outcome: 'failed', errorCode: 'provider_rejected' },
+    { outcome: 'failed', errorCode: 'invalid_output', output: 'é'.repeat(16_384) },
+    { outcome: 'succeeded', output: { summary: 'Repaired Page' } },
+  ]);
 });
 
 test('does not send audited source text when dispatch permission is withheld', async () => {
@@ -135,9 +190,42 @@ test('lists displayable models from every connected provider and retains ChatGPT
       { provider: 'anthropic', slug: 'claude-sonnet-5-5', displayName: 'Claude Sonnet' },
       { provider: 'ollama', slug: 'gemma:latest', displayName: 'gemma:latest' },
     ],
-    providers: [{ provider: 'chatgpt' }, { provider: 'anthropic' }, { provider: 'ollama' }],
+    providers: [
+      { provider: 'chatgpt', defaultModels: { extraction: 'visible', notes: 'visible' } },
+      { provider: 'anthropic' }, { provider: 'ollama' },
+    ],
   });
   expect(await complete({ model: undefined })).toMatchObject({ type: 'llm.complete', output: { summary: 'A Page' } });
+});
+
+test('dispatches and audits the ChatGPT tier default when no model is chosen for a task', async () => {
+  await signIn();
+  const catalog = [
+    'gpt-6.2-sol', 'gpt-6.2-astra', 'gpt-6.1-terra', 'gpt-6.1-sol', 'gpt-6-astra',
+    'gpt-6-sol', 'gpt-6-luna', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna',
+  ];
+  for (const [task, model, explicit] of [
+    ['page_summary', 'gpt-6-luna', undefined],
+    ['field_notes', 'gpt-6.1-terra', undefined],
+    ['page_enrichment', 'gpt-6.2-sol', 'gpt-6.2-sol'],
+  ] as const) {
+    const audited: string[] = [];
+    const sent: string[] = [];
+    ctx.authorizeDispatch = async (_id, dispatch) => {
+      audited.push(dispatch.model);
+      return () => {};
+    };
+    respond = async (request) => {
+      if (new URL(request.url).pathname === '/v1/models') {
+        return Response.json({ models: catalog.map((slug) => ({ slug, display_name: slug, visibility: 'list' })) });
+      }
+      sent.push((await request.json()).model);
+      return stream(delta('{"summary":"A Page"}'), completed);
+    };
+    expect(await complete({ task, model: explicit, auditId: crypto.randomUUID() })).toMatchObject({ type: 'llm.complete' });
+    expect(sent).toEqual([model]);
+    expect(audited).toEqual(sent);
+  }
 });
 
 const errors = [
@@ -194,10 +282,14 @@ test('does not attempt inference without sign-in or a plan grant', async () => {
 test('temporary refresh failure backs off; a terminal grant failure requires sign-in', async () => {
   await signIn();
   now += 3_600_000;
+  const lines: string[] = [];
+  ctx.log = (line) => lines.push(line);
   mock.behavior.refreshError = 'temporarily_unavailable';
   expect(await complete()).toMatchObject({ type: 'error', code: 'usage_unavailable', retryAfterMs: 5_000 });
+  expect(lines.pop()).toBe('llm.complete failed provider=chatgpt code=usage_unavailable reason=auth_unavailable status=400');
   mock.behavior.refreshError = 'invalid_grant';
   expect(await complete()).toMatchObject({ type: 'error', code: 'not_signed_in' });
+  expect(lines.pop()).toBe('llm.complete failed provider=chatgpt code=not_signed_in reason=not_signed_in status=400');
 });
 
 test('an explicit SSE error stops a partial stream even if a completion event follows', async () => {

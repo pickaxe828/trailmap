@@ -22,7 +22,7 @@ test('install --user-data-dir writes a manifest for the pinned extension ID, uni
   const profile = join(home, 'profile');
   const manifest = join(profile, 'NativeMessagingHosts', 'com.trailmap.companion.json');
 
-  const installed = await cli('install', '--user-data-dir', profile, '--binary', '/opt/trailmap-companion');
+  const installed = await cli('install', '--browser', 'chromium', '--user-data-dir', profile, '--binary', '/opt/trailmap-companion');
   expect(installed.code).toBe(0);
   expect(installed.stdout).toContain(manifest);
   expect(JSON.parse(readFileSync(manifest, 'utf8'))).toMatchObject({
@@ -32,23 +32,49 @@ test('install --user-data-dir writes a manifest for the pinned extension ID, uni
     allowed_origins: [`chrome-extension://${EXTENSION_ID}/`],
   });
 
-  const removed = await cli('uninstall', '--user-data-dir', profile);
+  const removed = await cli('uninstall', '--browser', 'chromium', '--user-data-dir', profile);
   expect(removed.code).toBe(0);
   expect(existsSync(manifest)).toBe(false);
 });
 
-test('install into every detected browser (HOME is temporary, so nothing real is touched)', async () => {
-  const chrome = process.platform === 'darwin' ? join(home, 'Library', 'Application Support', 'Google', 'Chrome') : join(home, '.config', 'google-chrome');
-  mkdirSync(chrome, { recursive: true });
+test('default CLI install registers both families and reports Zen in the shared Mozilla location', async () => {
+  const mac = process.platform === 'darwin';
+  const support = join(home, 'Library', 'Application Support');
+  const chrome = mac ? join(support, 'Google', 'Chrome') : join(home, '.config', 'google-chrome');
+  const zen = mac ? join(support, 'zen') : join(home, '.zen');
+  const firefox = mac ? join(support, 'Firefox') : join(home, '.mozilla', 'firefox');
+  const geckoManifest = mac ? join(support, 'Mozilla', 'NativeMessagingHosts', 'com.trailmap.companion.json')
+    : join(home, '.mozilla', 'native-messaging-hosts', 'com.trailmap.companion.json');
+  for (const dir of [chrome, zen, firefox]) mkdirSync(dir, { recursive: true });
   const result = await cli('install', '--binary', '/opt/trailmap-companion');
   expect(result.code).toBe(0);
+  expect(result.stdout).toContain(`Installed for Firefox / Zen`);
+  expect(result.stdout).toContain(geckoManifest);
+  expect(existsSync(geckoManifest)).toBe(true);
   expect(existsSync(join(chrome, 'NativeMessagingHosts', 'com.trailmap.companion.json'))).toBe(true);
 });
 
 test('install says so, and fails, when no browser is found', async () => {
-  const result = await cli('install', '--binary', '/opt/trailmap-companion');
+  const result = await cli('install', '--browser', 'chromium', '--binary', '/opt/trailmap-companion');
   expect(result.code).toBe(1);
   expect(result.stderr).toContain('No Chromium-based browser found');
+});
+
+test('Gecko override installs and removes its manifest and reports the family', async () => {
+  const dir = join(home, 'other-gecko');
+  const manifest = join(dir, process.platform === 'darwin' ? 'NativeMessagingHosts' : 'native-messaging-hosts', 'com.trailmap.companion.json');
+  const flags = ['--browser', 'firefox', '--mozilla-dir', dir];
+  const installed = await cli('install', ...flags, '--binary', '/opt/trailmap-companion');
+  expect(installed).toMatchObject({ code: 0, stdout: `Installed for Firefox family: ${manifest}\n` });
+  expect(JSON.parse(readFileSync(manifest, 'utf8')).allowed_extensions).toEqual(['trailmap@pickaxe828']);
+  expect(await cli('uninstall', ...flags)).toMatchObject({ code: 0, stdout: `Removed for Firefox family: ${manifest}\n` });
+  expect(existsSync(manifest)).toBe(false);
+});
+
+test.each([['--browser'], ['--browser', 'safari'], ['--mozilla-dir', '--browser', 'firefox']].map((flags) => ({ flags })))('install rejects malformed Gecko flags ($flags)', async ({ flags }) => {
+  const result = await cli('install', '--binary', '/opt/trailmap-companion', ...flags);
+  expect(result.code).toBe(1);
+  expect(result.stderr).toContain(`Invalid ${flags[0]}`);
 });
 
 test('install refuses to register a relative or interpreter path, which the browser could not launch', async () => {

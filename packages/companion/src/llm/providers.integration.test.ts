@@ -109,6 +109,7 @@ test('isolates unavailable catalogs and maps upstream errors without echoing pro
       ] });
       const invalidKey = await completion('anthropic');
       expect(invalidKey).toMatchObject({ type: 'error', code: 'invalid_api_key' });
+      expect(logs).toContain('llm.complete failed provider=anthropic code=invalid_api_key reason=http_status status=401');
       expect(JSON.stringify([catalog, invalidKey, logs])).not.toContain(fakeKey);
       response = () => Response.json({}, { status: 429, headers: { 'retry-after': '12' } });
       expect(await completion('anthropic')).toMatchObject({ type: 'error', code: 'provider_rate_limited', retryAfterMs: 12000 });
@@ -121,6 +122,16 @@ test('isolates unavailable catalogs and maps upstream errors without echoing pro
     });
   });
   expect(await completion('ollama')).toMatchObject({ type: 'error', code: 'provider_unreachable' });
+});
+
+test('an unsaved Anthropic key is distinct from a rejected key', async () => {
+  await withApi('OLLAMA', () => Response.json({ models: [] }), async () => {
+    expect(await send('keys.status', { provider: 'anthropic' })).toMatchObject({ keySet: false });
+    expect(await send('llm.models')).toMatchObject({ providers: [
+      { provider: 'chatgpt', error: 'not_signed_in' }, { provider: 'anthropic', error: 'api_key_missing' }, { provider: 'ollama' },
+    ] });
+    expect(await completion('anthropic')).toMatchObject({ type: 'error', code: 'api_key_missing' });
+  });
 });
 
 test('Ollama reports when a local model disappears or the server rate limits inference', async () => {

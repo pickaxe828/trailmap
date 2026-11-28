@@ -1,9 +1,21 @@
 import { extractPageText, hasPasswordField, hashText, screenableRoots } from '../capture/extract';
-import { PAGE_CONTENT_MESSAGE, type PageContent, type PageContentMessage, type PageContentReply } from '../capture/page-messages';
+import { chatSurfaceFor } from '../capture/chat-extract';
+import { chatSiteOf, sameChatConversation } from '../capture/chat-sites';
+import { extractForumThread, forumSiteOf } from '../capture/forum';
+import { googleAiModeSurface, isAiModeEntryControl } from '../capture/google-ai-mode';
+import { PAGE_CONTENT_MESSAGE, RESCREEN_CHAT_MESSAGE, type PageContent, type PageContentMessage, type PageContentReply } from '../capture/page-messages';
+import { isPdfDocument } from '../capture/pdf';
+import { googleSearchSurface } from '../capture/search';
+import { watchAiConversation } from '../capture/watch-ai-mode';
+import { WatchClock } from '../capture/watch-video';
+import { extractVideoText, playerVideo, youtubeWatchId } from '../capture/youtube';
+import { captureFavicon, isFirefox, openOrClosedShadowRoot } from '../platform/browser';
 
 const EXTRACTION_DELAY_MS = 2_000;
 const SCROLL_INTERVAL_MS = 250;
 const SELECTION_DELAY_MS = 250;
+const WATCH_TICK_MS = 1_000;
+const WATCH_REPORT_TICKS = 5;
 const words = new Intl.Segmenter(undefined, { granularity: 'word' });
 
 function canonicalLink(): string | undefined {
@@ -14,6 +26,16 @@ function canonicalLink(): string | undefined {
 function send(content: PageContent): Promise<PageContentReply | undefined> {
   const message: PageContentMessage = { type: PAGE_CONTENT_MESSAGE, pageUrl: location.href, ...content };
   return chrome.runtime.sendMessage(message).catch(() => undefined);
+}
+
+/** Google results and chat assistants are metadata-only: only an opted-in typed turn is ever read from them. */
+const metadataOnly = () => !!googleSearchSurface(location.href) || !!chatSiteOf(location.href);
+
+/** Read the current watch page after a same-document video change, without cookies or cross-origin redirects. */
+async function fetchWatchHtml(url: string): Promise<string> {
+  const response = await fetch(url, { mode: 'same-origin', credentials: 'omit' });
+  if (!response.ok) throw new Error('request failed');
+  return response.text();
 }
 
 function selectedText(): string {
@@ -39,7 +61,7 @@ export default defineContentScript({
   allFrames: true,
   main(ctx) {
     const shadowOf = (element: Element) => element.shadowRoot ?? (element.namespaceURI === 'http://www.w3.org/1999/xhtml'
-      ? chrome.dom?.openOrClosedShadowRoot(element as HTMLElement) ?? null : null);
+      ? openOrClosedShadowRoot(element as HTMLElement) : null);
     const findPassword = () => hasPasswordField(document, shadowOf);
 
     function watchPasswordFields(check: () => void, enabled: () => boolean) {
@@ -82,16 +104,32 @@ export default defineContentScript({
     let admitted = false;
     let passwordDetected = false;
     let generation = 0;
-    let url = location.href.split('#')[0];
+    let url = location.href.split('#', 1)[0]!;
+    const initialVideoId = youtubeWatchId(url);
     let lastSelection = '';
     let maxDepth = 0;
     let reportedDepth = 0;
+    let favicon: Promise<string | undefined> | undefined;
+    const watchClock = new WatchClock();
+    let reportedWatchMs = 0;
+    let watchTicks = 0;
 
     const screen = async (started: number) => {
       if (document.readyState === 'loading' || passwordDetected || generation !== started) return;
       passwordDetected = findPassword();
       const reply = await send({ kind: 'screen', hasPassword: passwordDetected });
-      if (generation === started && !passwordDetected) admitted = !!reply;
+      if (generation === started && !passwordDetected) {
+        admitted = !!reply;
+        if (reply?.aiPending?.length) aiMode.resume(reply.aiPending);
+        if (isFirefox && reply?.visitId && !metadataOnly() && isPublic()) {
+          favicon ??= captureFavicon(new URL(location.href));
+          void favicon.then((icon) => {
+            if (icon && generation === started && isPublic()) {
+              return send({ kind: 'favicon', visitId: reply.visitId, icon });
+            }
+          });
+        }
+      }
     };
 
     const isPublic = () => {
@@ -103,19 +141,38 @@ export default defineContentScript({
       return admitted && !passwordDetected;
     };
 
+    // The chat sites' composers are not read at all until the background admits the document, which it does
+    // only for a site the user has opted in. The background tells us when that changes (below).
+    const aiMode = watchAiConversation(document, chatSurfaceFor(location.href)?.surface ?? googleAiModeSurface, isPublic, send);
+    ctx.onInvalidated(() => aiMode.dispose());
+    ctx.addEventListener(document, 'click', (event) => {
+      if (event.isTrusted && event.button === 0 && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey &&
+          googleSearchSurface(location.href) === 'search' && isPublic() && isAiModeEntryControl(document, event.target)) {
+        void send({ kind: 'ai-enter' });
+      }
+    }, { capture: true });
+
     const capture = async (started: number) => {
       if (!document.body) return;
       if (!admitted) await screen(started);
-      if (generation !== started || !isPublic()) return;
+      if (generation !== started || !isPublic() || metadataOnly()) return;
       const sourceHash = hashText(document.documentElement.outerHTML);
-      const reply = await send({ kind: 'probe', sourceHash, canonicalLink: canonicalLink() });
+      // A PDF's text is read by the background (the viewer's document is not ours to read), so a PDF only says so here.
+      const pdf = isPdfDocument(document);
+      const reply = await send({ kind: 'probe', sourceHash, canonicalLink: canonicalLink(), ...(pdf ? { pdf: true as const } : {}) });
       if (!reply?.extract || generation !== started || !isPublic()) return;
 
       // The DOM may have changed while the service worker looked up the Page.
       const latestHash = hashText(document.documentElement.outerHTML);
-      const article = extractPageText(document);
+      const pageUrl = location.href;
+      const videoId = youtubeWatchId(pageUrl);
+      // Specialised extractors fail closed. Readability would pick up recommendations or unrelated comments.
+      const article = videoId
+        ? await extractVideoText({ document, url: pageUrl, fetchWatchHtml: videoId !== initialVideoId ? fetchWatchHtml : undefined })
+        : forumSiteOf(pageUrl) ? extractForumThread(document, pageUrl) : extractPageText(document);
+      if (generation !== started || !isPublic() || location.href !== pageUrl) return;
       if (article) {
-        await send({ kind: 'text', visitId: reply.visitId, ...article, sourceHash: latestHash });
+        await send({ kind: 'text', visitId: reply.visitId, text: article.text, textHash: article.textHash, sourceHash: latestHash });
       }
     };
 
@@ -125,6 +182,21 @@ export default defineContentScript({
       if (maxDepth <= reportedDepth || !isPublic()) return;
       reportedDepth = maxDepth;
       void send({ kind: 'scroll', depth: maxDepth });
+    };
+
+    const reportWatch = () => {
+      const watchMs = Math.round(watchClock.watchMs);
+      if (watchMs <= reportedWatchMs || !isPublic()) return;
+      reportedWatchMs = watchMs;
+      void send({ kind: 'watch', watchMs });
+    };
+
+    const watchVideo = () => {
+      if (!youtubeWatchId(location.href) || !admitted) return;
+      const video = playerVideo(document);
+      const playing = !!video && !video.paused && !video.ended && video.readyState > 2 && document.visibilityState === 'visible';
+      watchClock.tick(Date.now(), playing);
+      if (++watchTicks % WATCH_REPORT_TICKS === 0) reportWatch();
     };
 
     const trackScroll = () => {
@@ -146,6 +218,8 @@ export default defineContentScript({
       clearTimeout(screenTimer);
       scrollTimer = undefined;
       maxDepth = reportedDepth = 0;
+      watchClock.reset();
+      reportedWatchMs = 0;
       lastSelection = '';
       admitted = passwordDetected = false;
       trackScroll();
@@ -169,13 +243,17 @@ export default defineContentScript({
     ctx.addEventListener(window, 'pageshow', (event) => {
       if (event.persisted) schedule();
     });
-    ctx.addEventListener(window, 'pagehide', reportScroll);
+    ctx.setInterval(watchVideo, WATCH_TICK_MS);
+    ctx.addEventListener(window, 'pagehide', () => {
+      reportScroll();
+      reportWatch();
+    });
     ctx.addEventListener(window, 'scroll', trackScroll, { passive: true });
     ctx.addEventListener(window, 'scrollend', reportScroll);
     ctx.addEventListener(document, 'selectionchange', () => {
       clearTimeout(selectionTimer);
       selectionTimer = ctx.setTimeout(() => {
-        if (!isPublic()) return;
+        if (metadataOnly() || !isPublic()) return;
         const text = selectedText();
         if (text && text !== lastSelection) {
           void send(isHighlight(text)
@@ -186,16 +264,33 @@ export default defineContentScript({
       }, SELECTION_DELAY_MS);
     }, { capture: true });
     ctx.addEventListener(window, 'copy', (event) => {
-      if (!event.isTrusted || !isPublic()) return;
+      if (!event.isTrusted || metadataOnly() || !isPublic()) return;
       const text = event.clipboardData?.getData('text/plain').trim() || selectedText();
       if (text) void send({ kind: 'highlight', source: 'copy', text, canonicalLink: canonicalLink() });
     });
 
     window.navigation?.addEventListener('currententrychange', () => {
-      const currentUrl = location.href.split('#')[0];
+      const currentUrl = location.href.split('#', 1)[0]!;
       if (currentUrl === url) return;
+      const sameMode = (googleSearchSurface(url) === 'ai-mode' && googleSearchSurface(currentUrl) === 'ai-mode') ||
+        sameChatConversation(url, currentUrl);
       url = currentUrl;
+      if (sameMode) return;
+      aiMode.clear();
       schedule();
     });
+
+    if (chatSiteOf(location.href) || /(^|\.)reddit\.com$/.test(location.hostname)) {
+      // Chat sites and Reddit are opt-in: the background tells us when the rules change.
+      const rescreen = (message: unknown, sender: chrome.runtime.MessageSender) => {
+        if (sender.id !== chrome.runtime.id || (message as { type?: unknown } | null)?.type !== RESCREEN_CHAT_MESSAGE) return;
+        // Settings changed: stop reading the composer at once, then ask the background whether to admit this document.
+        admitted = false;
+        aiMode.clear();
+        schedule();
+      };
+      chrome.runtime.onMessage.addListener(rescreen);
+      ctx.onInvalidated(() => chrome.runtime.onMessage.removeListener(rescreen));
+    }
   },
 });

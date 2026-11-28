@@ -30,7 +30,7 @@ test('two related sittings become one Journal thread with both trails and an inc
     embedding: null, firstSeen: expeditions[0]!.startedAt, exposure: 1 };
   const conceptEvidence: ConceptEvidence[] = visits.map(({ id, startedAt }) => ({
     id: `evidence-${id}`, conceptId: concept.id, visitId: id, canonicalUrl, startedAt, name: concept.name, kind: concept.kind,
-    gloss: concept.gloss, role: 'explains', embedding: null,
+    gloss: concept.gloss, role: 'explains', salience: 'central', embedding: null,
   }));
   // Seed one sitting at a time: automatic closure would otherwise wrap up
   // both historical fixtures before the test can observe the first one alone.
@@ -39,14 +39,15 @@ test('two related sittings become one Journal thread with both trails and an inc
 
   const wrapUp = (expeditionId: string) => panel.evaluate((id) =>
     chrome.runtime.sendMessage({ type: 'trailmap.wrapUp', expeditionId: id }), expeditionId);
-  await wrapUp('session-0');
-  await expect.poll(async () => (await readCapture('expeditions')).find(({ id }) => id === 'session-0')?.fieldNotes).toContain('A tombstone');
+  expect(await wrapUp('session-0')).toBe(true);
+  await expect.poll(async () => (await readCapture('expeditions')).find(({ id }) => id === 'session-0')?.fieldNotes,
+    { timeout: 0, message: 'the first Expedition has persisted field notes' }).toContain('A tombstone');
   const journal = await openExtensionPage('journal.html');
   await expect(journal.getByRole('link', { name: 'CRDT replication basics' })).toBeVisible();
   await expect(journal.getByText('2 sessions')).toHaveCount(0);
 
   await seed(panel, { expeditions: [expeditions[1]!], visits: [visits[1]!], conceptEvidence: [conceptEvidence[1]!] });
-  await wrapUp('session-1');
+  expect(await wrapUp('session-1')).toBe(true);
   await expect(journal.getByText('2 sessions')).toBeVisible({ timeout: 30_000 });
   await expect(journal.getByRole('link', { name: 'CRDT replication deletes' })).toHaveCount(0);
   const proof = (name: string) => process.env.PROOF_DIR ? join(process.env.PROOF_DIR, name) : info.outputPath(name);
@@ -77,6 +78,43 @@ test('two related sittings become one Journal thread with both trails and an inc
     .toEqual(['thread-rename', 'thread-done']);
 });
 
+test('two related sittings that are not near-duplicates get a "Part of …?" suggestion and show why in Diagnostics', async ({
+  context, openExtensionPage, readCapture,
+}, info) => {
+  const panel = await openExtensionPage('sidepanel.html');
+  await signInToMockChatGpt(context, await openExtensionPage('settings.html#model-providers'));
+  const now = Date.now();
+  const sessions = ['Epaxial musculature', 'Back muscle group'].map((title, i) => {
+    const canonicalUrl = `https://learn.test/muscles-${i}`;
+    const expedition: Expedition = { id: `muscle-${i}`, rootVisitId: `muscle-visit-${i}`, title, startedAt: now - (2 - i) * 86_400_000,
+      endedAt: null, drivingQuestion: null, kind: 'learning', fieldNotes: null, userEdited: true, threadId: null };
+    const visit: Visit = { id: `muscle-visit-${i}`, startedAt: expedition.startedAt, expeditionId: expedition.id, url: canonicalUrl, canonicalUrl,
+      title, tabId: 1, parentVisitId: null, transition: 'typed', engagement: 'read', activeMs: 80_000, scrollDepth: 1 };
+    const page: Page = { canonicalUrl, sourceUrl: canonicalUrl, text: 'Raw article text must not be sent.', textHash: 'fixture',
+      summary: 'The erector spinae holds the spine upright.', takeaways: [], embedding: null, pageKind: 'article', enrichedAt: now };
+    return { expedition, visit, page };
+  });
+  const wrapUp = (expeditionId: string) => panel.evaluate((id) => chrome.runtime.sendMessage({ type: 'trailmap.wrapUp', expeditionId: id }), expeditionId);
+  for (const { expedition, visit, page } of sessions) {
+    await seed(panel, { expeditions: [expedition], visits: [visit], pages: [page] });
+    await wrapUp(expedition.id);
+    await expect.poll(async () => (await readCapture('expeditions')).find(({ id }) => id === expedition.id)?.fieldNotes).toContain('A tombstone');
+  }
+  const journal = await openExtensionPage('journal.html');
+  await expect(journal.getByRole('button', { name: 'Add: Part of Epaxial musculature?' })).toBeVisible({ timeout: 30_000 });
+  await expect(journal.getByText('2 sessions')).toHaveCount(0);
+  const settings = await openExtensionPage('settings.html#diagnostics');
+  const run = settings.getByRole('region', { name: 'Thread match for Back muscle group' });
+  await expect(run.getByText('A possible match: "Part of …?" is shown.')).toBeVisible();
+  await expect(run.getByRole('cell', { name: 'Epaxial musculature' })).toBeVisible();
+  await settings.setViewportSize({ width: 1280, height: 900 });
+  for (const scheme of ['light', 'dark'] as const) {
+    await settings.emulateMedia({ colorScheme: scheme });
+    await run.scrollIntoViewIfNeeded();
+    await settings.screenshot({ path: process.env.PROOF_DIR ? join(process.env.PROOF_DIR, `diagnostics-${scheme}.png`) : info.outputPath(`diagnostics-${scheme}.png`) });
+  }
+});
+
 test('a one-tap suggestion groups two sessions; detaching restores their Expedition cards', async ({ openExtensionPage, readCapture }, info) => {
   const setup = await openExtensionPage('sidepanel.html');
   const at = Date.now();
@@ -87,7 +125,7 @@ test('a one-tap suggestion groups two sessions; detaching restores their Expedit
   }));
   await seed(setup, { expeditions });
   const journal = await openExtensionPage('journal.html');
-  const suggestion = journal.getByRole('button', { name: 'Part of Replica clocks?' });
+  const suggestion = journal.getByRole('button', { name: 'Add: Part of Replica clocks?' });
   await expect(suggestion).toBeVisible();
   await journal.screenshot({ path: process.env.PROOF_DIR ? join(process.env.PROOF_DIR, 'suggestion.png') : info.outputPath('suggestion.png') });
   await suggestion.click();
@@ -98,9 +136,41 @@ test('a one-tap suggestion groups two sessions; detaching restores their Expedit
   await expect(journal.getByRole('link', { name: 'Clock drift' })).toBeVisible();
   await expect(journal.getByRole('link', { name: 'Replica clocks' })).toBeVisible();
   await expect(journal.getByText('2 sessions')).toHaveCount(0);
-  await expect(journal.getByRole('button', { name: 'Part of Replica clocks?' })).toHaveCount(0);
+  await expect(journal.getByText('Part of Replica clocks?')).toHaveCount(0);
   await expect.poll(async () => (await readCapture('corrections')).sort((a, b) => a.at - b.at).map(({ kind }) => kind))
-    .toEqual(['thread-attach', 'thread-detach']);
+    .toEqual(['journal-start', 'thread-detach']);
+});
+
+test('marking an expedition as learning generates field notes; marking it not learning clears them', async ({
+  context, openExtensionPage,
+}, info) => {
+  const panel = await openExtensionPage('sidepanel.html');
+  await signInToMockChatGpt(context, await openExtensionPage('settings.html#model-providers'));
+  const at = Date.now() - 86_400_000;
+  const canonicalUrl = 'https://learn.test/replicated-lists';
+  await seed(panel, {
+    expeditions: [{ id: 'learn', rootVisitId: 'visit', title: 'Replicated lists', kind: 'unclassified',
+      startedAt: at, endedAt: at + 1000, drivingQuestion: null, fieldNotes: null, userEdited: false, threadId: null }],
+    visits: [{ id: 'visit', startedAt: at, expeditionId: 'learn', url: canonicalUrl, canonicalUrl, title: 'Replicated lists',
+      tabId: 1, parentVisitId: null, transition: 'typed', engagement: 'read', activeMs: 80_000, scrollDepth: 1 }],
+    pages: [{ canonicalUrl, sourceUrl: canonicalUrl, text: 'Article text', textHash: 'fixture',
+      summary: 'Replicas track deletions with tombstones.', takeaways: [], embedding: null, pageKind: 'article', enrichedAt: at }],
+  });
+  const journal = await openExtensionPage('journal.html');
+  const markAsLearning = { name: 'Mark as learning', exact: true };
+  await expect(journal.getByRole('article').getByRole('button', markAsLearning)).toBeVisible();
+  await journal.getByRole('button', { name: 'Select', exact: true }).click();
+  await journal.getByRole('checkbox', { name: 'Select Replicated lists' }).check();
+  await journal.getByRole('toolbar', { name: 'Organise selected cards' }).getByRole('button', markAsLearning).click();
+  await expect(journal.getByText('New field notes')).toBeVisible({ timeout: 30_000 });
+  await journal.getByRole('heading', { name: 'Replicated lists' }).click();
+  const finding = journal.getByText(/A tombstone records/);
+  await expect(finding).toBeVisible();
+  await journal.screenshot({ path: process.env.PROOF_DIR ? join(process.env.PROOF_DIR, 'learning.png') : info.outputPath('learning.png') });
+  await journal.getByRole('button', { name: 'Mark as not learning' }).click();
+  await expect(finding).toHaveCount(0);
+  await journal.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(finding).toBeVisible();
 });
 
 async function seed(page: BrowserPage, rows: { expeditions: Expedition[]; visits?: Visit[]; pages?: Page[];

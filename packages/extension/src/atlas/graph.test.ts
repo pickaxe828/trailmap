@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import type { Concept, Edge } from '@trailmap/shared';
-import { buildAtlasGraph, isConceptShown, topConceptIds } from './graph';
+import { ALL_LABELS_MAX, buildAtlasGraph, isConceptShown, shouldLabelAll, topConceptIds } from './graph';
 
 const concept = (id: string, exposure: number, firstSeen = 1): Concept => ({
   id, name: id, aliases: [], kind: 'concept', gloss: id, embedding: null, exposure, firstSeen,
@@ -37,4 +37,16 @@ test('replaying the Atlas reveals Concepts at firstSeen without adding lower-ran
   expect(shownAt(19, 'Later')).toEqual(['Early']);
   expect(shownAt(20)).toEqual(['Later', 'Early']);
   expect(shownAt(20, 'Peripheral')).toEqual(['Later', 'Early', 'Peripheral']);
+});
+
+test('learned and studied concepts are solid nodes; the rest were only seen on pages', () => {
+  const graph = buildAtlasGraph([{ ...concept('Tombstone', 1), strength: 'learned' }, { ...concept('CRDT', 1), strength: 'studied' }, concept('Gossip', 2)], []);
+  expect(['Tombstone', 'CRDT', 'Gossip'].map((id) => graph.getNodeAttribute(id, 'strength'))).toEqual(['learned', 'studied', 'seen']);
+});
+
+test('a sparse map labels every node; a busy one leaves the culling to label collisions', () => {
+  expect(ALL_LABELS_MAX).toBeGreaterThanOrEqual(6);
+  expect(shouldLabelAll(0)).toBe(false);
+  for (const count of [1, 2, 6, ALL_LABELS_MAX]) expect(shouldLabelAll(count)).toBe(true);
+  expect(shouldLabelAll(ALL_LABELS_MAX + 1)).toBe(false);
 });

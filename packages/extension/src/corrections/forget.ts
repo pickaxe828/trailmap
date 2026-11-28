@@ -1,7 +1,9 @@
 import { forgetConceptEvidence, forgetEdgeEvidence } from '../concepts/forget';
 import type { TrailmapDb } from '../db/db';
 import { enqueuePageEnrichment } from '../enrichment/enqueue';
-import { isDefaultDenied, siteKey } from '../privacy/policy';
+import { enqueueNotesEnrichment } from '../notes/enqueue';
+import type { ChatCaptureSettings } from '../capture/chat-sites';
+import { chatConversationRetained, isDefaultDenied, siteKey } from '../privacy/policy';
 import { enqueueThreadMatch } from '../threads/match';
 import { refreshThread } from '../threads/model';
 import { repairExpedition } from './repair';
@@ -17,6 +19,10 @@ type ForgetInput = {
   host?: string;
   /** Upgrade cleanup for previously persisted deny-list and password records. */
   denied?: boolean;
+  /** With `denied`: captured conversations from sites opted in here are kept. Omitted, they all go (fail closed). */
+  chatCapture?: ChatCaptureSettings;
+  /** With `denied`: captured Reddit threads are kept only when this is true. Omitted, they all go (fail closed). */
+  redditThreads?: boolean;
   /** Expeditions that must not survive, even with legacy Queries that have no Visit. */
   expeditionIds?: string[];
   /** Log entries mentioning these ids (besides deleted Visits) go too. */
@@ -43,15 +49,26 @@ export const hostMatches = (url: string | undefined, host: string) => {
 export async function forgetCascade(db: TrailmapDb, input: ForgetInput): Promise<ForgetResult> {
   const { kind, now, newId } = input;
   const tables = [db.visits, db.queries, db.pages, db.highlights, db.notes, db.edges, db.jobs, db.sentToModel,
-    db.expeditions, db.corrections, db.concepts, db.conceptEvidence, db.threads];
+    db.expeditions, db.corrections, db.concepts, db.conceptEvidence, db.dismissedConcepts, db.threads, db.threadMatchRuns, db.digests,
+    db.reviewCards, db.reviewLogs, db.conceptStars];
   return db.transaction('rw', tables, async () => {
     const fromForgottenHost = (url: string | undefined) => !!url && (!!input.host && hostMatches(url, input.host) ||
-      !!input.denied && isDefaultDenied(url));
-    const visits = input.host || input.denied
+      !!input.denied && isDefaultDenied(url, { redditThreads: input.redditThreads }) && !chatConversationRetained(url, input.chatCapture && { paused: false, skippedHosts: [], chatCapture: input.chatCapture }));
+    let visits = input.host || input.denied
       ? await db.visits.filter(({ url, canonicalUrl, privacyBlocked }) => fromForgottenHost(url) || fromForgottenHost(canonicalUrl) ||
         !!input.denied && !!privacyBlocked).toArray()
       : (await db.visits.bulkGet(input.visitIds ?? [])).filter((v) => v !== undefined);
-    const visitIds = visits.map(({ id }) => id);
+    // The conversation follows its opening search into Forget. A synthetic
+    // opening Query is itself part of the conversation (not a separate search).
+    const linked = new Map(visits.map((visit) => [visit.id, visit]));
+    const parentIds = visits.flatMap((visit) => visit.aiConversation && visit.parentVisitId ? [visit.parentVisitId] : []);
+    for (const parent of await db.visits.bulkGet(parentIds)) {
+      if (parent?.aiOpeningQuery) linked.set(parent.id, parent);
+    }
+    const children = await db.visits.where('parentVisitId').anyOf([...linked.keys()]).filter((visit) => !!visit.aiConversation).toArray();
+    for (const child of children) linked.set(child.id, child);
+    visits = [...linked.values()];
+    const visitIds = [...linked.keys()];
     const gone = new Set(visitIds);
     const forgottenExpeditions = input.expeditionIds ?? [];
     if (input.denied) {
@@ -112,6 +129,7 @@ export async function forgetCascade(db: TrailmapDb, input: ForgetInput): Promise
     const audit = [...new Set([
       ...await db.sentToModel.where('canonicalUrl').anyOf(urls).primaryKeys(),
       ...await db.sentToModel.filter((row) => (!!row.expeditionId && forgottenExpeditions.includes(row.expeditionId)) ||
+        !!row.expeditionIds?.some((id) => forgottenExpeditions.includes(id)) ||
         !!row.visitIds?.some((id) => gone.has(id)) ||
         !!row.canonicalUrls?.some((url) => orphans.has(url) || invalidated.has(url) || fromForgottenHost(url))).primaryKeys(),
     ])];
@@ -125,12 +143,17 @@ export async function forgetCascade(db: TrailmapDb, input: ForgetInput): Promise
     const affectedSessions = await db.expeditions.filter(({ id, notesSource, wrapUpSource }) =>
       affected.has(id) || sourceRemoved(notesSource) || sourceRemoved(wrapUpSource)).toArray();
     for (const { id } of affectedSessions) affected.add(id);
+    // A digest's summary was written from its Expeditions' notes. If any source is gone or being re-derived, the words can no
+    // longer be trusted: the digest is deleted, not regenerated (the user can generate the week again).
+    const digests = await db.digests.filter(({ expeditionIds, sources }) => expeditionIds.some((id) => affected.has(id)) || sourceRemoved(sources)).primaryKeys();
+    await db.digests.bulkDelete(digests);
     const threadIds = new Set(affectedSessions.flatMap(({ threadId }) => threadId ? [threadId] : []));
     const jobs = await db.jobs.filter(({ kind, payload, status }) => 'canonicalUrl' in payload
       ? orphans.has(payload.canonicalUrl) || invalidated.has(payload.canonicalUrl) || gone.has(payload.visitId)
       : 'expeditionId' in payload && (forgottenExpeditions.includes(payload.expeditionId) ||
-        (affected.has(payload.expeditionId) && (kind === 'thread_match' ||
+        (affected.has(payload.expeditionId) && (kind === 'thread_match' || kind === 'notes_enrichment' ||
           (status === 'leased' && (kind === 'expedition_wrap_up' || kind === 'field_notes')))))).primaryKeys();
+    const notesJobs = new Set((await db.jobs.bulkGet(jobs)).flatMap((job) => job?.kind === 'notes_enrichment' && 'expeditionId' in job.payload ? [job.payload.expeditionId] : []));
     await db.jobs.bulkDelete(jobs);
     let replacedJobs = 0;
     for (const url of new Set([...candidates, ...invalidated])) {
@@ -141,8 +164,17 @@ export async function forgetCascade(db: TrailmapDb, input: ForgetInput): Promise
       if (engaged && page) await enqueuePageEnrichment(db, engaged, now(), page);
     }
 
-    const { removedConceptIds, changedConceptIds, removedJobs, evidenceVisits } = await forgetConceptEvidence(db, gone, [...urls, ...invalidated], now(), sourceRemoved);
+    const { removedConceptIds, changedConceptIds, removedJobs, evidenceVisits, learnedExpeditions } =
+      await forgetConceptEvidence(db, gone, [...urls, ...invalidated], now(), sourceRemoved, forgottenExpeditions);
     const nodeIds = new Set([...visitIds, ...queryIds, ...forgottenExpeditions, ...urls, ...removedConceptIds]);
+    await db.dismissedConcepts.bulkDelete(removedConceptIds);
+    // A review card (its schedule, its model-written question) and its grades were earned from the Concept's evidence: once any
+    // of that evidence goes, the card and its log go with it. A star is the user's own choice, so it only goes with the Concept.
+    const reviewIds = [...changedConceptIds];
+    const reviewCards = await db.reviewCards.bulkGet(reviewIds);
+    await db.reviewCards.bulkDelete(reviewIds);
+    const reviewLogs = await db.reviewLogs.where('conceptId').anyOf(reviewIds).delete();
+    await db.conceptStars.bulkDelete(removedConceptIds);
     const notes = await db.notes.where('nodeId').anyOf([...nodeIds]).primaryKeys();
     await db.notes.bulkDelete(notes);
 
@@ -156,6 +188,10 @@ export async function forgetCascade(db: TrailmapDb, input: ForgetInput): Promise
       if (forgottenExpeditions.includes(id)) continue;
       await repairExpedition(db, id, { derivedContentRemoved: true });
       if (!await db.expeditions.get(id)) nodeIds.add(id);
+    }
+    // What was learned from a forgotten stop's note is gone; the notes that remain are asked about again.
+    for (const id of new Set([...learnedExpeditions, ...notesJobs])) {
+      if (!forgottenExpeditions.includes(id) && await db.expeditions.get(id)) await enqueueNotesEnrichment(db, id, now());
     }
     // A suggestion's reason was written from the other Expedition's content too.
     await db.expeditions.filter(({ mergeSuggestions }) =>
@@ -172,9 +208,15 @@ export async function forgetCascade(db: TrailmapDb, input: ForgetInput): Promise
       await db.expeditions.update(id, { threadSignature: undefined, threadSuggestion: undefined });
       if (threadId) threadIds.add(threadId);
     }
+    // A match run recorded against forgotten or re-derived material no longer says anything true.
+    const runIds = new Set([...affected, ...forgottenExpeditions, ...invalidSignatures.map(({ id }) => id)]);
+    await db.threadMatchRuns.filter((run) => runIds.has(run.expeditionId) ||
+      run.candidates.some(({ id }) => runIds.has(id) || threadIds.has(id))).delete();
+    const survivingThreads = new Set<string>();
     for (const id of threadIds) {
       await refreshThread(db, id, now(), true);
-      if (!await db.threads.get(id)) await db.notes.where('nodeId').equals(id).delete();
+      if (await db.threads.get(id)) survivingThreads.add(id);
+      else await db.notes.where('nodeId').equals(id).delete();
     }
     for (const session of invalidSignatures) {
       if (!session.fieldNotes || !session.threadId || !await db.threads.get(session.threadId)) continue;
@@ -186,9 +228,20 @@ export async function forgetCascade(db: TrailmapDb, input: ForgetInput): Promise
       (suggestion.kind === 'thread' ? threadIds.has(suggestion.id) : affected.has(suggestion.id)))
       .modify({ threadSuggestion: undefined });
 
+    await db.expeditions.filter(({ dismissedSuggestions }) => !!dismissedSuggestions?.some(({ kind, id }) =>
+      kind === 'expedition' ? nodeIds.has(id) : threadIds.has(id) && !survivingThreads.has(id)))
+      .modify((session) => {
+        session.dismissedSuggestions = session.dismissedSuggestions?.filter(({ kind, id }) => kind === 'expedition'
+          ? !nodeIds.has(id) : !threadIds.has(id) || survivingThreads.has(id));
+      });
     const logIds = [...new Set([...nodeIds, ...affected, ...threadIds, ...(input.targetIds ?? [])])];
     const logged = await db.corrections.where('targetIds').anyOf(logIds).primaryKeys();
-    await db.corrections.bulkDelete([...new Set(logged)]);
+    const undoSources = await db.corrections.filter(({ kind, before }) => {
+      if (!kind.startsWith('journal-') || !before || typeof before !== 'object' || !('sourceUrls' in before)) return false;
+      const { sourceUrls } = before as { sourceUrls: string[] };
+      return sourceUrls.some((url) => orphans.has(url) || invalidated.has(url) || fromForgottenHost(url));
+    }).primaryKeys();
+    await db.corrections.bulkDelete([...new Set([...logged, ...undoSources])]);
 
     if (audit.length) {
       await db.sentToModel.add({
@@ -201,7 +254,7 @@ export async function forgetCascade(db: TrailmapDb, input: ForgetInput): Promise
       before: {
         visits: visitIds.length, pages: pagesDeleted, queries: queryIds.size, highlights: highlights.size,
         notes: notes.length, jobs: jobs.length + replacedJobs + removedJobs, auditRows: audit.length, edges: edgesTouched, concepts: removedConceptIds.length,
-        expeditions: forgottenExpeditions.length,
+        expeditions: forgottenExpeditions.length, digests: digests.length, reviewCards: reviewCards.filter(Boolean).length, reviewLogs,
       },
     });
     return { visitIds };

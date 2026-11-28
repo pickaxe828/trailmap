@@ -1,4 +1,6 @@
-import type { Highlight } from '@trailmap/shared';
+import type { AiTurn, Highlight } from '@trailmap/shared';
+import { isCapturedIcon } from '../platform/browser';
+import { AI_ANSWER_LIMIT, AI_CITATION_LIMIT, AI_QUESTION_LIMIT, type AiAnswer } from './google-ai-mode';
 
 /** Messages a content script sends the background (intra-extension, so not in @trailmap/shared). */
 export const PAGE_VISIBILITY_MESSAGE = 'trailmap.pageVisibility';
@@ -14,21 +16,32 @@ export function isPageVisibilityMessage(value: unknown): value is PageVisibility
   );
 }
 
+export const OPEN_AI_CITATION = 'trailmap.openAiCitation';
+/** Background to content script: capture rules for this chat site changed, so screen the document again. */
+export const RESCREEN_CHAT_MESSAGE = 'trailmap.rescreenChat';
 export const PAGE_CONTENT_MESSAGE = 'trailmap.pageContent';
 export const PAGE_TEXT_BYTE_LIMIT = 12_000;
+export const MAX_WATCH_MS = 24 * 60 * 60_000;
 
 type PageText = { text: string; textHash: string; sourceHash: string };
 
-export type PageContent =
+export type AiCapture =
+  | { kind: 'ai-submit'; turnId: string; question: string }
+  | { kind: 'ai-result'; turnId: string; result: AiAnswer | null };
+
+export type PageContent = AiCapture
+  | { kind: 'ai-enter' }
   | { kind: 'screen'; hasPassword: boolean }
-  | { kind: 'probe'; canonicalLink?: string; sourceHash: string }
+  | { kind: 'probe'; canonicalLink?: string; sourceHash: string; pdf?: true }
   | ({ kind: 'text'; visitId: string } & PageText)
+  | { kind: 'favicon'; visitId: string; icon: string }
   | { kind: 'scroll'; depth: number }
+  | { kind: 'watch'; watchMs: number }
   | { kind: 'selection' }
   | { kind: 'highlight'; source: Highlight['source']; text: string; canonicalLink?: string };
 
 export type PageContentMessage = PageContent & { type: typeof PAGE_CONTENT_MESSAGE; pageUrl: string };
-export type PageContentReply = { visitId: string; extract: boolean };
+export type PageContentReply = { visitId: string; extract: boolean; aiPending?: Pick<AiTurn, 'id' | 'question'>[] };
 
 const isHash = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);
 
@@ -37,7 +50,23 @@ export function isPageContentMessage(value: unknown): value is PageContentMessag
   const message = value as Record<string, unknown>;
   if (message.type !== PAGE_CONTENT_MESSAGE || typeof message.pageUrl !== 'string') return false;
   if (message.kind === 'screen') return typeof message.hasPassword === 'boolean';
-  if (message.kind === 'selection') return true;
+  if (message.kind === 'selection' || message.kind === 'ai-enter') return true;
+  if (message.kind === 'favicon') return typeof message.visitId === 'string' && isCapturedIcon(message.icon);
+  if (message.kind === 'ai-submit' || message.kind === 'ai-result') {
+    if (typeof message.turnId !== 'string' || !/^[\da-f-]{36}$/i.test(message.turnId)) return false;
+    if (message.kind === 'ai-submit') {
+      return typeof message.question === 'string' && !!message.question.trim() && message.question.length <= AI_QUESTION_LIMIT;
+    }
+    if (message.result === null) return true;
+    if (!message.result || typeof message.result !== 'object') return false;
+    const { answer, citations } = message.result as Partial<AiAnswer>;
+    return typeof answer === 'string' && !!answer.trim() && answer.length <= AI_ANSWER_LIMIT &&
+      Array.isArray(citations) && citations.length <= AI_CITATION_LIMIT && citations.every((url) =>
+        typeof url === 'string' && url.length <= 2_048 && /^https?:\/\//i.test(url));
+  }
+  if (message.kind === 'watch') {
+    return typeof message.watchMs === 'number' && Number.isFinite(message.watchMs) && message.watchMs > 0 && message.watchMs <= MAX_WATCH_MS;
+  }
   if (message.kind === 'scroll') {
     return typeof message.depth === 'number' && Number.isFinite(message.depth) && message.depth > 0 && message.depth <= 1;
   }
@@ -47,7 +76,7 @@ export function isPageContentMessage(value: unknown): value is PageContentMessag
       && typeof message.text === 'string' && message.text.trim().length > 0;
   }
   if (message.kind === 'probe') {
-    return validCanonical && isHash(message.sourceHash);
+    return validCanonical && isHash(message.sourceHash) && (message.pdf === undefined || message.pdf === true);
   }
   return message.kind === 'text'
     && typeof message.visitId === 'string'

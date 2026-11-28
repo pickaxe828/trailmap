@@ -1,6 +1,7 @@
 import { defineConfig } from 'wxt';
 import tailwindcss from '@tailwindcss/vite';
 import { EXTENSION_PUBLIC_KEY } from './extension-key';
+import { GECKO_EXTENSION_ID } from '@trailmap/shared';
 
 /**
  * The generated `src/astryx-themes.ts` imports the theme's fonts.css, which is a
@@ -21,21 +22,29 @@ export default defineConfig({
   vite: () => ({
     plugins: [noRemoteFonts, tailwindcss()],
   }),
-  manifest: {
+  manifest: ({ browser }) => ({
     name: 'Trailmap',
     description: 'Turns learning-oriented browsing into trails, field notes and a concept graph.',
-    key: EXTENSION_PUBLIC_KEY,
+    ...(browser === 'firefox' ? {
+      browser_specific_settings: {
+        gecko: {
+          id: GECKO_EXTENSION_ID,
+          // Gecko document IDs are needed to enforce password screening across navigations.
+          strict_min_version: '153.0',
+          data_collection_permissions: { required: ['browsingActivity', 'searchTerms', 'websiteContent', 'authenticationInfo'] },
+        },
+      },
+    } : { key: EXTENSION_PUBLIC_KEY }),
     // docs/PLAN.md §8
     permissions: [
       'webNavigation',
       'tabs',
       'history',
-      'favicon',
+      ...(browser === 'firefox' ? [] : ['favicon']),
       'idle',
       'storage',
       'unlimitedStorage',
-      'sidePanel',
-      'offscreen',
+      ...(browser === 'firefox' ? [] : ['sidePanel', 'offscreen']),
       'alarms',
       'nativeMessaging',
     ],
@@ -52,5 +61,5 @@ export default defineConfig({
         description: 'Pause or resume Trailmap recording',
       },
     },
-  },
+  }),
 });

@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Leveled versus size-tiered compaction | Hacker News</title>
+</head>
+<body>
+  <center><table id="hnmain" width="85%"><tbody>
+    <tr><td><table class="pagetop"><tbody><tr><td><span class="pagetop"><b class="hnname"><a href="news">Hacker News</a></b> <a href="user?id=sidebar_ghost">sidebar_ghost</a></span></td></tr></tbody></table></td></tr>
+    <tr id="pagespace" style="height:10px"></tr>
+    <tr><td>
+      <table class="fatitem" border="0"><tbody>
+        <tr class="athing" id="4242001">
+          <td class="title"><span class="titleline"><a href="https://blog.example.test/compaction">Leveled versus size-tiered compaction</a><span class="sitebit comhead"> (<a href="from?site=blog.example.test"><span class="sitestr">blog.example.test</span></a>)</span></span></td>
+        </tr>
+        <tr><td class="subtext"><span class="subline"><span class="score" id="score_4242001">318 points</span> by <a href="user?id=otter_dev" class="hnuser">otter_dev</a> <span class="age"><a href="item?id=4242001">5 hours ago</a></span> | <a href="item?id=4242001">142 comments</a></span></td></tr>
+        <tr><td><div class="toptext">We moved a write-heavy table from leveled to size-tiered compaction and write stalls vanished.</div></td></tr>
+      </tbody></table>
+      <br>
+      <table class="comment-tree"><tbody>
+        <tr class="athing comtr" id="4242010"><td><table border="0"><tbody><tr>
+          <td class="ind" indent="0"><img src="s.gif" height="1" width="0"></td>
+          <td class="default"><div style="margin-top:2px; margin-bottom:-10px;"><span class="comhead"><a href="user?id=compaction_fan" class="hnuser">compaction_fan</a> <span class="age"><a href="item?id=4242010">4 hours ago</a></span></span></div><br>
+            <div class="comment"><div class="commtext c00">Size-tiered favours writes, leveled favours reads. Thanks to <a href="user?id=leveled_lover" rel="nofollow">leveled_lover</a> for the benchmark.<p>The trade is space amplification.</p></div></div></td>
+        </tr></tbody></table></td></tr>
+        <tr class="athing comtr" id="4242011"><td><table border="0"><tbody><tr>
+          <td class="ind" indent="1"><img src="s.gif" height="1" width="40"></td>
+          <td class="default"><div style="margin-top:2px; margin-bottom:-10px;"><span class="comhead"><a href="user?id=write_amp" class="hnuser">write_amp</a> <span class="age"><a href="item?id=4242011">3 hours ago</a></span></span></div><br>
+            <div class="comment"><div class="commtext c00">Leveled compaction rewrites each byte about ten times, which is where the stall comes from.</div></div></td>
+        </tr></tbody></table></td></tr>
+        <tr class="athing comtr" id="4242012"><td><table border="0"><tbody><tr>
+          <td class="ind" indent="0"><img src="s.gif" height="1" width="0"></td>
+          <td class="default"><div style="margin-top:2px; margin-bottom:-10px;"><span class="comhead"><a href="user?id=flagged_user" class="hnuser">flagged_user</a> <span class="age">3 hours ago</span> <span class="coll">[flagged]</span></span></div><br>
+            <div class="comment"><span class="commtext c00 noshow">[flagged]</span></div></td>
+        </tr></tbody></table></td></tr>
+        <tr class="athing comtr" id="4242013"><td><table border="0"><tbody><tr>
+          <td class="ind" indent="0"><img src="s.gif" height="1" width="0"></td>
+          <td class="default"><div style="margin-top:2px; margin-bottom:-10px;"><span class="comhead"><a href="user?id=bloom_filter" class="hnuser">bloom_filter</a> <span class="age">2 hours ago</span></span></div><br>
+            <div class="comment"><div class="commtext c00">Bloom filters per SSTable keep read amplification down when you pick size-tiered.</div></div></td>
+        </tr></tbody></table></td></tr>
+      </tbody></table>
+    </td></tr>
+  </tbody></table></center>
+</body>
+</html>

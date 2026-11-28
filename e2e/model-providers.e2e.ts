@@ -78,6 +78,7 @@ test('onboarding can save an Anthropic key and select Ollama for notes', async (
   await onboarding.screenshot({ path: process.env.PROOF_DIR
     ? join(process.env.PROOF_DIR, 'onboarding-providers.png') : info.outputPath('onboarding-providers.png'), fullPage: true });
   await onboarding.getByRole('link', { name: 'Open Settings' }).click();
+  await onboarding.getByRole('tab', { name: 'Model providers' }).click();
   await expect(onboarding.getByRole('combobox', { name: 'Extraction provider', exact: true })).toHaveText('Anthropic');
   await expect(onboarding.getByRole('combobox', { name: 'Notes provider', exact: true })).toHaveText('Ollama');
 });
@@ -125,7 +126,8 @@ test('saves the key and uses independent model choices from Settings', async ({
 
   await panel.getByRole('button', { name: /^Wrap up expedition/ }).click();
   await expect.poll(async () => (await readCapture('expeditions'))[0]?.fieldNotes).toContain(mockNotes);
-  for (const [entry, model] of [[/Anthropic · page summary/, 'fixture-claude'], [/Ollama · field notes/, 'gemma:notes']] as const) {
+  await settings.getByRole('tab', { name: 'Sent-to-model log' }).click();
+  for (const [entry, model] of [[/Anthropic · Page summary/, 'fixture-claude'], [/Ollama · Field notes/, 'gemma:notes']] as const) {
     const trigger = settings.getByRole('button', { name: entry });
     await trigger.click();
     const controls = await trigger.getAttribute('aria-controls');

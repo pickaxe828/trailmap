@@ -19,6 +19,7 @@ export type Engagement = z.infer<typeof Engagement>;
 
 export const Visit = z.object({
   captureDocumentId: z.string().optional(), // Groups same-document visits for late password screening.
+  favicon: z.string().optional(), // Bounded local raster icon captured on browsers without a favicon cache API.
   id: z.string(),
   url: z.string(),
   canonicalUrl: z.string(),
@@ -30,9 +31,13 @@ export const Visit = z.object({
   activeMs: z.number(),
   lastActiveAt: z.number().optional(), // Wall-clock end of the last recorded reading interval.
   scrollDepth: z.number().min(0).max(1),
+  watchMs: z.number().optional(), // Video pages only: time the video played while the tab was visible.
+  pdf: z.literal(true).optional(), // A PDF in the browser's viewer: its Page text is read from the file, not the DOM.
   engagement: Engagement,
   privacyBlocked: z.literal(true).optional(),
   imported: z.literal(true).optional(),
+  aiConversation: z.literal(true).optional(),
+  aiOpeningQuery: z.literal(true).optional(), // Synthetic Query for a session started in the AI Mode composer.
   starred: z.literal(true).optional(), // The user marked this a key page.
   expeditionId: z.string().nullable(),
   segmentationPending: z.literal(1).optional(),
@@ -46,8 +51,12 @@ export type PageKind = z.infer<typeof PageKind>;
 export const ConceptKind = z.enum(['concept', 'person', 'tool', 'work', 'event', 'place']);
 export type ConceptKind = z.infer<typeof ConceptKind>;
 
+/** How central a concept is to the Page it was found on. An example, a list item or a side remark is `passing`. */
+export const ConceptSalience = z.enum(['central', 'supporting', 'passing']);
+export type ConceptSalience = z.infer<typeof ConceptSalience>;
 export const ConceptMention = z.object({
   name: z.string(), kind: ConceptKind, gloss: z.string(), role: z.enum(['explains', 'mentions', 'uses']),
+  salience: ConceptSalience,
 });
 export const ConceptRelationType = z.enum([
   'is_a', 'part_of', 'uses', 'alternative_to', 'contrasts_with', 'prerequisite_of', 'related_to',
@@ -73,10 +82,20 @@ export type ConceptMergeVerdicts = z.infer<typeof ConceptMergeVerdicts>;
 export const ModelSources = z.object({ visitIds: z.array(z.string()), canonicalUrls: z.array(z.string()) });
 export type ModelSources = z.infer<typeof ModelSources>;
 
+export const AiTurn = z.object({
+  id: z.string(),
+  question: z.string(),
+  answer: z.string().nullable(),
+  citations: z.array(z.string()),
+  extractionFailed: z.literal(true).optional(),
+});
+export type AiTurn = z.infer<typeof AiTurn>;
+
 export const Page = z.object({
   canonicalUrl: z.string(),
   text: z.string(),
   textHash: z.string(),
+  aiTurns: z.array(AiTurn).optional(), // Present only for AI conversation Pages.
   sourceHash: z.string().optional(), // Fingerprint of the input DOM for the last extraction.
   sourceUrl: z.string().optional(), // Cleaned source URL, which can differ from rel=canonical.
   summary: z.string().nullable(),
@@ -112,24 +131,28 @@ export type ExpeditionKind = z.infer<typeof ExpeditionKind>;
 export const MergeSuggestion = z.object({ expeditionId: z.string(), reason: z.string() });
 export type MergeSuggestion = z.infer<typeof MergeSuggestion>;
 
+export const SuggestionTarget = z.object({ kind: z.enum(['thread', 'expedition']), id: z.string() });
+export type SuggestionTarget = z.infer<typeof SuggestionTarget>;
+
 export const Expedition = z.object({
   id: z.string(),
   rootVisitId: z.string().optional(),
   centroid: z.instanceof(Int8Array).nullable().optional(),
   title: z.string(),
   drivingQuestion: z.string().nullable(),
-  kind: ExpeditionKind,
+  kind: ExpeditionKind.or(z.literal('unclassified')),
+  kindOverride: z.boolean().optional(), // Manual classification wins over later wrap-up.
   startedAt: z.number(),
   endedAt: z.number().nullable(),
   imported: z.literal(true).optional(),
   fieldNotes: z.string().nullable(),
-  userEdited: z.boolean(),
+  userEdited: z.boolean(), // The user renamed this Expedition; its title is theirs.
+  myNotes: z.string().optional(), // The user's own Markdown, kept beside the generated fieldNotes. Never regenerated.
+  myNotesAt: z.number().optional(), // When My notes last changed.
   threadId: z.string().nullable(),
-  threadSuggestion: z.discriminatedUnion('kind', [
-    z.object({ kind: z.literal('thread'), id: z.string() }),
-    z.object({ kind: z.literal('expedition'), id: z.string() }),
-  ]).optional(),
-  threadSignature: z.object({ vector: z.instanceof(Int8Array), conceptIds: z.array(z.string()) }).optional(),
+  threadSuggestion: SuggestionTarget.optional(),
+  dismissedSuggestions: z.array(SuggestionTarget).optional(),
+  threadSignature: z.object({ vector: z.instanceof(Int8Array), conceptIds: z.array(z.string()), descriptionHash: z.string().optional() }).optional(),
   threadAutoExcluded: z.boolean().optional(),
   wrappedUpAt: z.number().optional(), // The wrap-up pass (title, question, kind) committed.
   wrapUpSource: ModelSources.optional(),
@@ -158,6 +181,13 @@ export const FieldNotesDraft = z.object({
   loose_ends: z.array(z.string()),
 });
 export type FieldNotesDraft = z.infer<typeof FieldNotesDraft>;
+
+/** PLAN §4.5a. Concepts the user wrote about. Each cites the note it came from (n0 = My notes, n1… = stop notes). */
+export const NotesEnrichment = z.object({
+  concepts: z.array(z.object({ name: z.string(), kind: ConceptKind, gloss: z.string(), note: z.string() })),
+  relations: z.array(RelationMention),
+});
+export type NotesEnrichment = z.infer<typeof NotesEnrichment>;
 
 /** PLAN §4.7. A revision of the note from the prior synthesis and one session. */
 export const LivingNoteDraft = z.object({ markdown: z.string() });

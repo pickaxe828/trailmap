@@ -55,6 +55,9 @@ test('a Visit updates engagement from time, scroll and selection, then stops acc
   expect(await byUrl(first)).toMatchObject({ engagement: 'skimmed' });
 
   await browser.reportPageContent(TAB, first, { kind: 'scroll', depth: 0.51 });
+  expect(await byUrl(first)).toMatchObject({ engagement: 'skimmed' }); // scrolled, but not enough time
+  clock.advance(35_000);
+  await browser.tick();
   expect(await byUrl(first)).toMatchObject({ engagement: 'read' });
   const second = `${LEARN}/another`;
   await browser.commit(TAB, second);
@@ -62,7 +65,7 @@ test('a Visit updates engagement from time, scroll and selection, then stops acc
   expect(await byUrl(second)).toMatchObject({ engagement: 'read' });
   clock.advance(60_001);
   await browser.tick();
-  expect(await byUrl(first)).toMatchObject({ activeMs: 10_000, engagement: 'read' });
+  expect(await byUrl(first)).toMatchObject({ activeMs: 45_000, engagement: 'read' });
   expect(await byUrl(second)).toMatchObject({ activeMs: 60_001, engagement: 'read' });
 });
 
@@ -96,7 +99,7 @@ test('recorded Visits strip session parameters while still accepting title and c
 });
 
 test('a late password field hard-deletes the earlier Visit, Query, Highlight and Page', async () => {
-  const url = 'https://www.google.com/search?q=private-fixture';
+  const url = 'https://kagi.com/search?q=private-fixture';
   await browser.commit(TAB, url);
   const id = (await byUrl(url))!.id;
   await browser.reportPageContent(TAB, url, { kind: 'highlight', source: 'copy', text: 'private-fixture' });
@@ -107,6 +110,47 @@ test('a late password field hard-deletes the earlier Visit, Query, Highlight and
   expect(recorder.isPasswordProtected(TAB)).toBe(true);
   expect(recorder.getCurrentVisit(TAB)).toBeUndefined();
   for (const table of [db.visits, db.queries, db.highlights, db.pages, db.jobs]) expect(await table.count()).toBe(0);
+});
+
+test('Google results record the search query but never DOM text or highlights', async () => {
+  const url = 'https://www.google.com/search?q=normal-search';
+  await browser.commit(TAB, url);
+  const id = (await byUrl(url))!.id;
+  expect(await browser.reportPageContent(TAB, url, { kind: 'probe', sourceHash: 'source' })).toBeUndefined();
+  await browser.reportPageContent(TAB, url, { kind: 'text', visitId: id, text: 'Overview junk', textHash: 'hash', sourceHash: 'source' });
+  await browser.reportPageContent(TAB, url, { kind: 'highlight', source: 'copy', text: 'Overview junk' });
+  expect(await db.queries.toArray()).toMatchObject([{ q: 'normal-search' }]);
+  for (const table of [db.pages, db.highlights, db.jobs, db.sentToModel]) expect(await table.count()).toBe(0);
+});
+
+test.each(['different question', 'back', 'new tab', 'unrelated parent', 'password', 'expired'] as const)(
+  'a Search-to-Mode click does not admit a turn for %s', async (reason) => {
+    const source = reason === 'unrelated parent' ? `${LEARN}/search?q=light` : 'https://www.google.com/search?q=light';
+    const destination = `https://www.google.com/search?mstk=fixture&q=${reason === 'different question' ? 'sound' : 'light'}`;
+    const modeTab = reason === 'new tab' ? TAB + 1 : TAB;
+    await browser.commit(TAB, source);
+    await browser.reportPageContent(TAB, source, { kind: 'ai-enter' });
+    if (reason === 'expired') clock.advance(60_000);
+    await browser.commit(modeTab, destination, { transitionType: 'link', qualifiers: reason === 'back' ? ['forward_back'] : [] });
+    const screen = await browser.reportPageContent(modeTab, destination, { kind: 'screen', hasPassword: reason === 'password' });
+    expect(screen?.aiPending).toBeUndefined();
+    expect(recorder.getCurrentVisit(modeTab)).toBeUndefined();
+    expect(await db.pages.toArray()).toEqual([]);
+  },
+);
+
+test('leaving Mode before a reply arrives retains the typed question as a diagnostic failure', async () => {
+  const url = 'https://www.google.com/search?udm=50';
+  await browser.commit(TAB, url);
+  await browser.reportPageContent(TAB, url, { kind: 'ai-submit', turnId: 'pending', question: 'What is light?' });
+  expect(await db.aiModeStats.get('google-ai-mode')).toBeUndefined();
+  await browser.commit(TAB, `${LEARN}/other`);
+  const aiVisit = (await visits()).find((visit) => visit.aiConversation);
+  expect(await db.pages.get(aiVisit!.canonicalUrl)).toMatchObject({
+    text: '', aiTurns: [{ id: 'pending', question: 'What is light?', answer: null, citations: [], extractionFailed: true }],
+  });
+  expect(await db.aiModeStats.get('google-ai-mode')).toMatchObject({ successes: 0, failures: 1 });
+  expect(await db.jobs.count()).toBe(0);
 });
 
 test('forgetting the Visit shown in a tab stops its capture and starts the next trail fresh', async () => {

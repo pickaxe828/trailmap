@@ -42,3 +42,42 @@ test('bounced Visits and skipped Page sources do not produce a model input', () 
   expect(buildEnrichmentInput({ visit: { ...visit, engagement: 'bounced' }, page, highlights: [] }, { paused: false, skippedHosts: [] })).toBeUndefined();
   expect(buildEnrichmentInput({ visit, page: { ...page, sourceUrl: 'https://skipped.test/delete' }, highlights: [] }, { paused: false, skippedHosts: ['skipped.test'] })).toBeUndefined();
 });
+
+test('a YouTube watch Page sends title and description as video input through the same privacy gate', () => {
+  const url = 'https://www.youtube.com/watch?v=aaaaaaaaaaa';
+  const video = { ...visit, url, canonicalUrl: url, title: 'LSM trees', watchMs: 50_000, parentVisitId: null };
+  const description = { ...newPage(url, 'LSM trees A walkthrough of memtables and compaction.', 'hash'), sourceUrl: url };
+  expect(buildEnrichmentInput({ visit: video, page: description, highlights: [] }, { paused: false, skippedHosts: [] }))
+    .toMatchObject({ contentKind: 'video', text: 'LSM trees A walkthrough of memtables and compaction.' });
+  for (const settings of [{ paused: true, skippedHosts: [] }, { paused: false, skippedHosts: ['youtube.com'] }]) {
+    expect(buildEnrichmentInput({ visit: video, page: description, highlights: [] }, settings)).toBeUndefined();
+  }
+});
+
+test('a PDF Page is sent as a pdf document, through the same privacy gate as any Page', () => {
+  const url = 'https://papers.test/lsm.pdf';
+  const paper = { ...visit, url, canonicalUrl: url, title: 'LSM trees', pdf: true as const, parentVisitId: null };
+  const text = { ...newPage(url, 'A memtable buffers writes.', 'hash'), sourceUrl: url };
+  expect(buildEnrichmentInput({ visit: paper, page: text, highlights: [] }, { paused: false, skippedHosts: [] }))
+    .toMatchObject({ contentKind: 'pdf', title: 'LSM trees', url, text: 'A memtable buffers writes.' });
+  for (const settings of [{ paused: true, skippedHosts: [] }, { paused: false, skippedHosts: ['papers.test'] }]) {
+    expect(buildEnrichmentInput({ visit: paper, page: text, highlights: [] }, settings)).toBeUndefined();
+  }
+  // A password-protected or bounced Visit sends nothing, and neither does a Page that has no text layer.
+  expect(buildEnrichmentInput({ visit: { ...paper, privacyBlocked: true }, page: text, highlights: [] }, { paused: false, skippedHosts: [] })).toBeUndefined();
+  expect(buildEnrichmentInput({ visit: { ...paper, engagement: 'bounced' }, page: text, highlights: [] }, { paused: false, skippedHosts: [] })).toBeUndefined();
+});
+
+test('a forum thread is sent as contentKind forum, through the same privacy gate and only while Reddit is opted in', () => {
+  for (const url of ['https://news.ycombinator.com/item?id=4242001', 'https://www.reddit.com/r/databases/comments/abc123/why/']) {
+    const thread = { ...visit, url, canonicalUrl: url, title: 'LSM trees', parentVisitId: null };
+    const text = { ...newPage(url, 'Why compaction?\n- Size-tiered favours writes.', 'hash'), sourceUrl: url };
+    const settings = { paused: false, skippedHosts: [], redditThreads: true };
+    expect(buildEnrichmentInput({ visit: thread, page: text, highlights: [] }, settings))
+      .toMatchObject({ contentKind: 'forum', text: 'Why compaction?\n- Size-tiered favours writes.' });
+    for (const blocked of [{ ...settings, paused: true }, { ...settings, skippedHosts: [new URL(url).hostname] }, { ...settings, redditThreads: false }]) {
+      if (blocked.redditThreads === false && url.includes('ycombinator')) continue; // HN needs no opt-in
+      expect(buildEnrichmentInput({ visit: thread, page: text, highlights: [] }, blocked)).toBeUndefined();
+    }
+  }
+});

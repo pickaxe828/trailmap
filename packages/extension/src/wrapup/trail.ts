@@ -1,5 +1,7 @@
 import type { Expedition, FieldNotesDraft, Highlight, Page, Query, Visit } from '@trailmap/shared';
+import { googleSearchSurface } from '../capture/search';
 import { cap } from '../enrichment/input';
+import { dismissed } from '../journal/suggestions';
 import { eligibleMetadata as allowed, maySendToModel, recordingState, type RecordingSettings } from '../privacy/policy';
 import { allowsSources, modelSources } from '../privacy/sources';
 import { markdownLink as link, oneLine } from './markdown';
@@ -22,13 +24,14 @@ export type SameDay = { expedition: Expedition; root: Visit | undefined };
 type SearchEntry = { ref: string; q: string; cameFrom: string | null };
 type PageEntry = {
   ref: string; title: string; url: string; engagement: Visit['engagement']; cameFrom: string | null;
-  summary: string | null; takeaways: string[]; highlights: string[];
+  summary: string | null; takeaways: string[]; highlights: string[]; contentKind?: 'ai_conversation';
 };
 export type TrailEntry = SearchEntry | PageEntry;
-type Link = { title: string; url: string };
+type Link = { title: string; url: string; aiGenerated?: true };
 
 const hostOf = (url: string) => URL.parse(url)?.hostname ?? url;
-const byTime = (a: Visit, b: Visit) => a.startedAt - b.startedAt || a.id.localeCompare(b.id);
+const byTime = (a: Visit, b: Visit) => a.startedAt - b.startedAt ||
+  Number(!!b.aiOpeningQuery) - Number(!!a.aiOpeningQuery) || a.id.localeCompare(b.id);
 
 const sourceMap = ({ visits, sourceVisits }: TrailSources) => new Map([...sourceVisits, ...visits].map((visit) => [visit.id, visit]));
 
@@ -55,6 +58,7 @@ export function collectTrail({ visits, pages, highlights, queries, sourceVisits 
       if (allowed(visit, settings) && query.q.trim()) picked.push({ visit, query });
       continue;
     }
+    if (!visit.aiConversation && googleSearchSurface(visit.url)) continue;
     const page = pageByUrl.get(visit.canonicalUrl);
     const source = page?.sourceVisitId ? sourceById.get(page.sourceVisitId) : undefined;
     const hasText = maySendToModel(visit, page, settings, source);
@@ -117,7 +121,8 @@ export function collectTrail({ visits, pages, highlights, queries, sourceVisits 
         canonicalUrls: page.sourceUrl ? [page.sourceUrl] : [] });
     }
     entries.push({
-      ref, title: cap(visit.title || hostOf(visit.canonicalUrl), 768), url: visit.canonicalUrl,
+      ref, title: cap(visit.title || hostOf(visit.canonicalUrl), 768), url: visit.aiConversation ? visit.url : visit.canonicalUrl,
+      ...(visit.aiConversation ? { contentKind: 'ai_conversation' as const } : {}),
       engagement: visit.engagement, cameFrom: cameFrom(visit),
       summary: enriched ? cap(page!.summary!, 1500) : null,
       takeaways: enriched ? page!.takeaways.slice(0, 5).map((takeaway) => cap(takeaway, 600)) : [],
@@ -145,7 +150,8 @@ export function buildWrapUpInput(sources: TrailSources & { sameDay: SameDay[] },
   const sameDaySources: Expedition['wrapUpSource'][] = [];
   const sameDay = sources.sameDay.flatMap(({ expedition, root }) => {
     if (sameDayIds.size >= 10 || expedition.id === sources.expedition.id || !allowed(root, settings) || root.id !== expedition.rootVisitId ||
-      !allowsSources(expedition.wrapUpSource, byId, settings)) return [];
+      !allowsSources(expedition.wrapUpSource, byId, settings) ||
+      dismissed(sources.expedition, { kind: 'expedition', id: expedition.id }, expedition)) return [];
     const id = `e${sameDayIds.size + 1}`;
     sameDayIds.set(id, expedition.id);
     sameDaySources.push(modelSources([root], expedition.wrapUpSource));
@@ -171,7 +177,9 @@ export function buildFieldNotesInput(sources: TrailSources, settings: RecordingS
   const { entries, unread, provenance } = collectTrail(sources, settings);
   if (!entries.some((entry) => 'url' in entry)) return;
   const { title, drivingQuestion, provenance: context } = expeditionContext(sources, settings, provenance.visitIds);
-  const links = new Map(entries.flatMap((entry) => 'url' in entry ? [[entry.ref, { title: entry.title, url: entry.url }] as const] : []));
+  const links = new Map<string, Link>(entries.flatMap((entry) => 'url' in entry ? [[entry.ref, {
+    title: entry.title, url: entry.url, ...(entry.contentKind === 'ai_conversation' ? { aiGenerated: true as const } : {}),
+  }] as const] : []));
   return { input: { expedition: { title, drivingQuestion }, trail: entries }, links, unread,
     provenance: modelSources([], provenance, context), question: drivingQuestion?.trim() || title };
 }
@@ -180,12 +188,14 @@ export function buildFieldNotesInput(sources: TrailSources, settings: RecordingS
 export function renderFieldNotes(draft: FieldNotesDraft, built: NonNullable<ReturnType<typeof buildFieldNotesInput>>): string {
   const ideas = draft.key_ideas.flatMap(({ idea, page }) => {
     const source = built.links.get(page.trim());
-    return source && oneLine(idea) ? [`- ${oneLine(idea)} (${link(source)})`] : [];
+    return source && oneLine(idea) ? [`- ${oneLine(idea)} (${source.aiGenerated ? 'AI-generated; not a source' : link(source)})`] : [];
   });
   const looseEnds = draft.loose_ends.map(oneLine).filter(Boolean).map((end) => `- ${end}`);
   return [
     '## Question', '', oneLine(built.question), '',
-    '## What you found', '', draft.found.trim(), '',
+    '## What you found', '',
+    ...([...built.links.values()].some(({ aiGenerated }) => aiGenerated) ? ['Includes AI-generated material from an AI conversation, not an independent source.', ''] : []),
+    draft.found.trim(), '',
     '## Key ideas', '', ...ideas, '',
     '## How the trail went', '', draft.trail.trim(), '',
     '## Loose ends', '', ...(looseEnds.length ? looseEnds : ['- Nothing left open.']), '',

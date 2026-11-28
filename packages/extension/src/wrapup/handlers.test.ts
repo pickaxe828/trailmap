@@ -122,7 +122,7 @@ test('Wrap up classifies and titles a read Visit without Page text, and handles 
   calls.length = 0;
   await drain(queue({ expedition_wrap_up: result }, calls));
   expect(calls).toEqual([]);
-  expect(await db.expeditions.get('expedition:v1')).toMatchObject({ title: 'Bounced fixture', kind: 'errand', wrappedUpAt: now });
+  expect(await db.expeditions.get('expedition:v1')).toMatchObject({ title: 'Bounced fixture', kind: 'unclassified', wrappedUpAt: now });
 });
 
 test('merge suggestions keep only real same-day Expeditions and are stored for the Journal', async () => {
@@ -136,6 +136,19 @@ test('merge suggestions keep only real same-day Expeditions and are stored for t
   await q.runNext();
   expect(JSON.parse(calls[0]!.input).sameDay).toEqual([{ id: 'e1', title: 'CRDT basics', drivingQuestion: null }]);
   expect((await db.expeditions.get('expedition:v1'))!.mergeSuggestions).toEqual([{ expeditionId: 'expedition:other', reason: 'Same topic' }]);
+});
+
+test('wrap-up respects manual classification and never offers a dismissed pair again', async () => {
+  await seed({ kind: 'errand', kindOverride: true });
+  const other = 'expedition:other';
+  await db.expeditions.put(expedition({ id: other, rootVisitId: 'o', title: 'CRDT basics', startedAt: 500, endedAt: 800,
+    dismissedSuggestions: [{ kind: 'expedition', id: 'expedition:v1' }] }));
+  await db.visits.put(visit('o', 'basics.test', { expeditionId: other, startedAt: 500 }));
+  const calls: Call[] = [];
+  await drain(queue({ expedition_wrap_up: { ...wrapUp, merge_with: [{ id: 'e1', reason: 'Same topic' }] } }, calls));
+  expect(JSON.parse(calls[0]!.input).sameDay).toEqual([]);
+  expect(calls.map(({ task }) => task)).toEqual(['expedition_wrap_up']);
+  expect(await db.expeditions.get('expedition:v1')).toMatchObject({ kind: 'errand', mergeSuggestions: [] });
 });
 
 test('a wrap-up audit includes the selected stop and all sources behind same-day context', async () => {
@@ -170,26 +183,27 @@ test('an in-flight wrap-up cannot commit after a same-day source is forgotten', 
   expect(await db.expeditions.get('expedition:v1')).toMatchObject({ title: 'crdt', drivingQuestion: null });
 });
 
-test('a title the user chose and notes the user edited are never overwritten', async () => {
-  await seed({ title: 'My own title', userEdited: true, fieldNotes: 'My notes' });
+test('a title the user chose is never overwritten, and generated notes never touch My notes', async () => {
+  await seed({ title: 'My own title', userEdited: true, myNotes: 'My notes', myNotesAt: 50 });
   await drain(queue({ expedition_wrap_up: wrapUp, field_notes: notes }));
-  expect(await db.expeditions.get('expedition:v1')).toMatchObject({
-    title: 'My own title', fieldNotes: 'My notes', userEdited: true, drivingQuestion: 'How do CRDTs represent deletes?',
-  });
-  expect((await db.expeditions.get('expedition:v1'))!.unseenNotes).toBeUndefined();
+  const stored = (await db.expeditions.get('expedition:v1'))!;
+  expect(stored).toMatchObject({ title: 'My own title', myNotes: 'My notes', myNotesAt: 50, userEdited: true, unseenNotes: 1,
+    drivingQuestion: 'How do CRDTs represent deletes?' });
+  expect(stored.fieldNotes).toContain('## Key ideas');
 });
 
-test('a field-notes edit wins even when regeneration is already in flight', async () => {
+test('regenerating notes replaces the generated field notes and keeps My notes, even when saved mid-flight', async () => {
   await seed({ fieldNotes: 'Previously generated notes' });
   const corrections = createCorrections({ db, now: () => now, newId: () => 'note-edit' });
   await drain(queueWith(async (_db, payload, guard) => {
     expect(await guard.allow()).toBe(true);
     if (payload.task === 'expedition_wrap_up') return { output: wrapUp };
-    // An empty edit is intentional, not the null marker for never-written notes.
-    await corrections.editFieldNotes('expedition:v1', '');
+    await corrections.editMyNotes('expedition:v1', 'What I took from it');
     return { output: notes };
   }));
-  expect(await db.expeditions.get('expedition:v1')).toMatchObject({ fieldNotes: '', userEdited: true });
+  const stored = (await db.expeditions.get('expedition:v1'))!;
+  expect(stored.myNotes).toBe('What I took from it');
+  expect(stored.fieldNotes).toContain('## Key ideas');
 });
 
 test('a renamed Expedition that has no notes yet still gets them', async () => {
@@ -226,4 +240,45 @@ test('closing the same Expedition twice queues one wrap-up', async () => {
   await enqueueWrapUp(db, expedition(), now);
   await enqueueWrapUp(db, expedition(), now + 1);
   expect(await db.jobs.count()).toBe(1);
+});
+
+const symbolOnly = { ...wrapUp, title: 'ˤ', driving_question: 'What is the pharyngealization mark ˤ in IPA?' };
+
+test('a symbol-only title is retried once with a corrective note, and the worded title is stored', async () => {
+  await seed();
+  const titles = [symbolOnly, { ...symbolOnly, title: 'ˤ: the pharyngealization mark in IPA' }];
+  const calls: { instructions: string }[] = [];
+  const q = queueWith(async (_db, payload) => {
+    calls.push({ instructions: payload.instructions });
+    return { output: payload.task === 'expedition_wrap_up' ? titles.shift() : notes };
+  });
+  await q.runNext();
+  expect((await db.expeditions.get('expedition:v1'))!.title).toBe('ˤ: the pharyngealization mark in IPA');
+  expect(calls).toHaveLength(2);
+  expect(calls[0]!.instructions).toContain('readable words');
+  expect(calls[1]!.instructions).toContain('previous title');
+});
+
+test('when the retry is still symbol-only, the driving question is appended', async () => {
+  await seed();
+  const calls: Call[] = [];
+  await queue({ expedition_wrap_up: symbolOnly }, calls).runNext();
+  expect(calls).toHaveLength(2);
+  expect((await db.expeditions.get('expedition:v1'))!.title).toBe('ˤ: What is the pharyngealization mark ˤ in IPA?');
+});
+
+test('with no driving question the first search text is appended', async () => {
+  await seed();
+  await db.visits.put(visit('v3', 'www.google.com', { url: 'https://www.google.com/search?q=pharyngealization', canonicalUrl: 'https://www.google.com/search?q=pharyngealization', startedAt: 500 }));
+  await db.queries.put({ id: 'q1', visitId: 'v3', expeditionId: 'expedition:v1', q: 'pharyngealization', engine: 'google', at: 500 });
+  await queue({ expedition_wrap_up: { ...symbolOnly, driving_question: '' } }).runNext();
+  expect((await db.expeditions.get('expedition:v1'))!.title).toBe('ˤ: pharyngealization');
+});
+
+test('the local fallback title gets the same guard', async () => {
+  await seed();
+  await db.pages.clear();
+  await db.visits.update('v1', { engagement: 'bounced', title: 'ˤ' });
+  await queue({}).runNext();
+  expect((await db.expeditions.get('expedition:v1'))!.title).toBe('ˤ: learn.test');
 });

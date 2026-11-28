@@ -5,7 +5,11 @@ type Inference = {
   stream?: boolean; store?: boolean; text?: { format: { name: string } };
 };
 const calls: Inference[] = [];
+const modelSlugs = process.argv.slice(2);
+const catalog = modelSlugs.length ? modelSlugs.map((slug) => ({ slug, display_name: slug.toUpperCase(), visibility: 'list' }))
+  : [{ slug: 'fixture-model', display_name: 'Fixture Model', visibility: 'list' }];
 let planErrorCleared = false;
+let failWrapUp = false;
 const mock = startMockOAuth(async (request) => {
   const path = new URL(request.url).pathname;
   if (path === '/test/calls') return Response.json(calls);
@@ -13,25 +17,74 @@ const mock = startMockOAuth(async (request) => {
     planErrorCleared = true;
     return new Response(null, { status: 204 });
   }
+  if (path === '/test/wrap-up-failure' && request.method === 'POST') {
+    failWrapUp = (await request.text()) === 'on';
+    return new Response(null, { status: 204 });
+  }
   if (request.headers.get('authorization') !== 'Bearer mock-access-0') return new Response(null, { status: 401 });
   if (path === '/v1/models' && request.method === 'GET') {
-    return Response.json({ models: [{ slug: 'fixture-model', display_name: 'Fixture Model', visibility: 'list' }] });
+    return Response.json({ models: catalog });
   }
   if (path !== '/v1/responses' || request.method !== 'POST') return new Response(null, { status: 404 });
   const body = await request.json() as Inference;
   calls.push(body);
+  if (!catalog.some(({ slug }) => slug === body.model)) return new Response(null, { status: 400 });
   const text = body.input?.[0]?.content ?? '';
   const task = body.text?.format.name;
   if (task === 'living_note') {
     const { livingNote, fieldNotes } = JSON.parse(text) as { livingNote: string | null; fieldNotes: string };
-    if (body.model !== 'fixture-model' || !fieldNotes.includes('A tombstone records')) return new Response(null, { status: 400 });
+    if (!fieldNotes.includes('A tombstone records')) return new Response(null, { status: 400 });
     return stream(JSON.stringify({ markdown: livingNote ? 'Both sessions support the revised conclusion.' : 'The first session explains tombstones.' }));
+  }
+  if (task === 'notes_enrichment') {
+    // Only the user's own notes arrive here, each with a ref.
+    const { notes } = JSON.parse(text) as { notes: { ref: string; text: string }[] };
+    return stream(JSON.stringify({
+      concepts: notes.filter((note) => /tombstone/i.test(note.text)).map((note) => ({
+        name: 'Tombstone', kind: 'concept', gloss: 'A marker that records a deletion.', note: note.ref })),
+      relations: [],
+    }));
+  }
+  if (task === 'weekly_digest') {
+    // Field notes and living notes only: rank the first Expedition and thread, and name one ref that was never sent.
+    const { expeditions, threads } = JSON.parse(text) as { expeditions: { ref: string }[]; threads: { ref: string }[] };
+    return stream(JSON.stringify({
+      summary: 'You spent the week on how replicas agree on deletes.',
+      expeditions: [...expeditions.map(({ ref }) => ({ ref, why: 'It explained tombstones.' })), { ref: 'e99', why: 'Never sent.' }],
+      threads: threads.map(({ ref }) => ({ ref, why: 'Two sittings built on each other.' })), concepts: [],
+    }));
+  }
+  if (task === 'ask_answer') {
+    // Only the question and the passages arrive here; answer from the first one that mentions the question's subject.
+    const { question, passages } = JSON.parse(text) as { question: string; passages: { ref: string; text: string }[] };
+    const hit = /tombstone/i.test(question) ? passages.find((passage) => /tombstone/i.test(passage.text)) : undefined;
+    return stream(JSON.stringify(hit
+      ? { answerable: true, answer: 'Tombstones mark deleted items so every replica can see the deletion.', sources: [hit.ref, 'p99'] }
+      : { answerable: false, answer: '', sources: [] }));
+  }
+  if (task === 'expedition_wrap_up' && failWrapUp) {
+    return Response.json({ error: { code: 'subscription_sharing_usage_unavailable', message: 'private provider detail' } }, { status: 503 });
   }
   if (task === 'expedition_wrap_up' || task === 'field_notes') {
     // Wrap-up inputs carry Page notes, never Page text.
-    if (body.model !== 'fixture-model') return new Response(null, { status: 400 });
-    const input = JSON.parse(text) as { trail: { ref: string; summary?: string }[] };
+    const input = JSON.parse(text) as { trail: { ref: string; summary?: string; contentKind?: string }[] };
     const page = input.trail.find((entry) => entry.summary);
+    const ai = input.trail.find((entry) => entry.contentKind === 'ai_conversation');
+    if (ai && task === 'expedition_wrap_up') return stream(JSON.stringify({
+      title: 'How light scatters', driving_question: 'Why is the sky blue?', kind: 'learning', merge_with: [],
+    }));
+    if (ai) return stream(JSON.stringify({
+      found: 'Google AI Mode described how air scatters light.',
+      key_ideas: [{ idea: 'Shorter wavelengths scatter more strongly.', page: ai.ref }],
+      trail: 'The conversation explored Rayleigh scattering.', loose_ends: ['Check the cited reference.'],
+    }));
+    if (task === 'expedition_wrap_up' && text.includes('pharyngealization')) {
+      // First answer is symbol-only; the corrective retry names the symbol.
+      return stream(JSON.stringify({
+        title: body.instructions?.includes('no readable words') ? 'ˤ: the pharyngealization mark in IPA' : 'ˤ',
+        driving_question: 'What does the IPA mark ˤ mean?', kind: 'learning', merge_with: [],
+      }));
+    }
     if (task === 'expedition_wrap_up') {
       return stream(JSON.stringify({
         title: 'How replicated lists delete items', driving_question: 'How do replicated lists represent deletes?',
@@ -45,7 +98,46 @@ const mock = startMockOAuth(async (request) => {
       loose_ends: ['How are tombstones garbage collected?'],
     }));
   }
-  if (body.model !== 'fixture-model' || body.store !== false || body.stream !== true ||
+  if (task === 'page_enrichment' && JSON.parse(text).contentKind === 'ai_conversation') return stream(JSON.stringify({
+    summary: 'The AI conversation explains Rayleigh scattering.',
+    takeaways: ['Shorter wavelengths scatter more strongly.', 'Air contains particles that scatter light.'],
+    answers_question: 'Why is the sky blue?', page_kind: 'other',
+    concepts: [
+      { name: 'Rayleigh scattering', kind: 'concept', gloss: 'Scattering by small particles.', role: 'explains', salience: 'central' },
+      { name: 'Wavelength', kind: 'concept', gloss: 'Distance between wave crests.', role: 'mentions', salience: 'passing' },
+    ],
+    relations: [{ from: 'Rayleigh scattering', to: 'Wavelength', type: 'related_to' }],
+  }));
+  if (task === 'page_enrichment' && JSON.parse(text).contentKind === 'video') {
+    // Only the title and description may arrive here, never the captions or recommendations.
+    if (JSON.parse(text).text !== 'Log-structured merge trees explained A walkthrough of memtables, SSTables and compaction.') return new Response(null, { status: 400 });
+    return stream(JSON.stringify({
+      summary: 'The video description promises a walkthrough of log-structured merge tree components.',
+      takeaways: ['The video covers memtables and SSTables.', 'Compaction is also covered.'],
+      answers_question: 'What does the video cover?', page_kind: 'video',
+      concepts: [{ name: 'SSTable', kind: 'concept', gloss: 'An immutable sorted file of key-value pairs.', role: 'explains', salience: 'central' }],
+      relations: [],
+    }));
+  }
+  if (task === 'page_enrichment' && JSON.parse(text).contentKind === 'pdf') {
+    // Only the PDF's own text layer may arrive here.
+    if (!text.includes('Compaction merges sorted runs')) return new Response(null, { status: 400 });
+    return stream(JSON.stringify({
+      summary: 'The paper explains how a log-structured merge tree buffers and compacts writes.',
+      takeaways: ['A memtable buffers writes before a flush.', 'Compaction merges sorted runs and discards overwritten keys.'],
+      answers_question: 'How does an LSM tree store writes?', page_kind: 'paper',
+      concepts: [{ name: 'Compaction', kind: 'concept', gloss: 'Merging sorted runs into larger ones.', role: 'explains', salience: 'central' }],
+      relations: [],
+    }));
+  }
+  if (task === 'page_enrichment' && text.includes('pharyngealization')) return stream(JSON.stringify({
+    summary: 'The modifier letter ˤ marks pharyngealization in the IPA.',
+    takeaways: ['ˤ marks pharyngealization.', 'ʕ and ʔ are neighbouring pharyngeal and glottal sounds.'],
+    answers_question: 'What does ˤ mean in the IPA?', page_kind: 'article',
+    concepts: [{ name: 'Pharyngealization', kind: 'concept', gloss: 'A secondary articulation marked by ˤ.', role: 'explains', salience: 'central' }],
+    relations: [],
+  }));
+  if (body.store !== false || body.stream !== true ||
     !text.includes('Tombstones preserve causal history across replicas.') || text.includes('This paragraph appears after the extraction limit.')) {
     return new Response(null, { status: 400 });
   }
@@ -70,7 +162,7 @@ const mock = startMockOAuth(async (request) => {
       summary: 'Tombstones retain deletion history across replicas.',
       takeaways: ['A tombstone records that an item was deleted.', 'Replicas can process updates out of order.'],
       answers_question: 'How do replicated lists represent deletes?', page_kind: 'article',
-      concepts: [{ name: 'Tombstone', kind: 'concept', gloss: 'A deletion marker.', role: 'explains' }],
+      concepts: [{ name: 'Tombstone', kind: 'concept', gloss: 'A deletion marker.', role: 'explains', salience: 'central' }],
       relations: [{ from: 'Tombstone', to: 'CRDT', type: 'part_of' }],
     }));
   }

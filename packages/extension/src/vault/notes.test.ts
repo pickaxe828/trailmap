@@ -22,3 +22,9 @@ test('an Expedition note has escaped frontmatter, field notes, and Concept wikil
     '## Concepts\n\n- [[trailmap-concept-id|Tombstone]]\n',
   );
 });
+
+test('My notes lead the Expedition note, before the generated field notes', () => {
+  const markdown = renderExpeditionNote({ ...expedition, myNotes: 'Keep the marker until every replica saw it.' }, [], []);
+  expect(markdown.indexOf('## My notes\n\nKeep the marker until every replica saw it.')).toBeGreaterThan(0);
+  expect(markdown.indexOf('## My notes')).toBeLessThan(markdown.indexOf('## What you found'));
+});

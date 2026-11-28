@@ -1,19 +1,19 @@
-import { AppShell } from '@astryxdesign/core/AppShell';
 import { Card } from '@astryxdesign/core/Card';
 import { Heading } from '@astryxdesign/core/Heading';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Selector } from '@astryxdesign/core/Selector';
 import { Slider } from '@astryxdesign/core/Slider';
+import { Switch } from '@astryxdesign/core/Switch';
 import { Text } from '@astryxdesign/core/Text';
-import { TopNav, TopNavHeading, TopNavItem } from '@astryxdesign/core/TopNav';
 import { Typeahead, type SearchableItem, type SearchSource } from '@astryxdesign/core/Typeahead';
 import { VStack } from '@astryxdesign/core/VStack';
 import { useMemo, useState } from 'react';
 import { AtlasMap } from '../../atlas/AtlasMap';
 import { readAtlas } from '../../atlas/data';
-import { buildAtlasGraph, isConceptInScope, isConceptShown, topConceptIds } from '../../atlas/graph';
+import { buildAtlasGraph, isConceptInScope, isConceptShown, shouldLabelAll, topConceptIds } from '../../atlas/graph';
 import { conceptNameKey } from '../../concepts/evidence';
 import { useJournalData } from '../../journal/data';
+import { TrailmapShell } from '../../ui/TrailmapShell';
 import { ConceptCard } from './ConceptCard';
 
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
@@ -22,7 +22,9 @@ const numberFormat = new Intl.NumberFormat();
 type AtlasData = Awaited<ReturnType<typeof readAtlas>>;
 type ConceptMatch = SearchableItem & { terms: string[]; firstSeen: number };
 
-function AtlasView({ concepts, edges, threads }: AtlasData) {
+function AtlasView({ concepts: learned, seen, dismissed, edges, threads }: AtlasData) {
+  const [includeSeen, setIncludeSeen] = useState(false);
+  const concepts = useMemo(() => includeSeen ? [...learned, ...seen] : learned, [includeSeen, learned, seen]);
   const { graph, byId, dates, matches } = useMemo(() => {
     const graph = buildAtlasGraph(concepts, edges);
     const byId = new Map(concepts.map((concept) => [concept.id, concept]));
@@ -40,11 +42,13 @@ function AtlasView({ concepts, edges, threads }: AtlasData) {
   const scope = thread?.conceptIds;
   const top = useMemo(() => topConceptIds(graph, undefined, scope), [graph, scope]);
   const replayIndex = replayAt === undefined ? dates.length - 1 : Math.max(0, dates.findLastIndex((date) => date <= replayAt));
-  const cutoff = dates[replayIndex]!;
+  const cutoff = dates[replayIndex] ?? 0;
+  const hidden = selection ? dismissed.find(({ id }) => id === selection) : undefined;
   const concept = selection ? byId.get(selection) : undefined;
   const selected = concept && isConceptInScope(concept.id, concept.firstSeen, { cutoff, scope }) ? concept : undefined;
-  const filter = useMemo(() => ({ top, cutoff, scope, focused: selected?.id }), [top, cutoff, scope, selected?.id]);
-  const shown = matches.filter(({ id, firstSeen }) => isConceptShown(id, firstSeen, filter)).length;
+  const base = useMemo(() => ({ top, cutoff, scope, focused: selected?.id }), [top, cutoff, scope, selected?.id]);
+  const shown = matches.filter(({ id, firstSeen }) => isConceptShown(id, firstSeen, base)).length;
+  const filter = useMemo(() => ({ ...base, labelAll: shouldLabelAll(shown) }), [base, shown]);
   const neighbours = selected ? graph.neighbors(selected.id).map((id) => byId.get(id)!)
     .filter(({ id, firstSeen }) => isConceptInScope(id, firstSeen, filter)).sort((a, b) => a.name.localeCompare(b.name)) : [];
   const searchSource = useMemo<SearchSource<ConceptMatch>>(() => ({
@@ -79,6 +83,11 @@ function AtlasView({ concepts, edges, threads }: AtlasData) {
           </VStack>
         )}
         <VStack className="min-w-0 grow basis-64">
+          <Switch label="Include concepts I only saw" value={includeSeen}
+            description={seen.length ? `${numberFormat.format(seen.length)} only glimpsed, shown faded` : 'Nothing is only glimpsed yet'}
+            onChange={setIncludeSeen} />
+        </VStack>
+        <VStack className="min-w-0 grow basis-64">
           <Slider label="Replay by date" min={0} max={Math.max(1, dates.length - 1)} value={replayIndex} valueDisplay="text"
             isDisabled={dates.length === 1} formatValue={(index) => dateFormat.format(dates[index] ?? dates[0])}
             onChange={(index: number) => {
@@ -90,17 +99,20 @@ function AtlasView({ concepts, edges, threads }: AtlasData) {
         </VStack>
       </HStack>
       <VStack className="grid min-h-0 grow grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]">
-        <Card variant="muted" padding={0}>
+        <Card padding={0}>
           <VStack className="min-h-full" gap={1}>
             <HStack paddingInline={4} paddingBlockStart={3} gap={2} wrap="wrap" justify="between" align="center">
               <Text type="supporting">{numberFormat.format(shown)} of {numberFormat.format(graph.order)} concepts on the map</Text>
-              <Text type="supporting">Size: exposure · Colour: community</Text>
+              <Text type="supporting">Size: pages studied · Colour: community · Solid: learned or studied · Faded: only seen on pages</Text>
             </HStack>
-            <AtlasMap graph={graph} filter={filter} onFocus={setSelection} />
+            {graph.order ? <AtlasMap graph={graph} filter={filter} onFocus={setSelection} /> : (
+              <VStack padding={5}><Text role="status">Nothing on the map yet. Turn on “Include concepts I only saw” to see what you glimpsed.</Text></VStack>
+            )}
           </VStack>
         </Card>
         <VStack className="min-h-0 min-w-0 lg:overflow-y-auto">
-          {selected ? <ConceptCard concept={selected} neighbours={neighbours} onFocus={setSelection} onClose={() => setSelection(undefined)} /> : (
+          {selected || hidden ? <ConceptCard key={(selected ?? hidden)!.id} concept={(selected ?? hidden)!} hidden={!!hidden}
+              neighbours={neighbours} onFocus={setSelection} onClose={() => setSelection(undefined)} /> : (
             <Card padding={5}>
               <VStack gap={2}>
                 <Heading level={2}>Where did I learn this?</Heading>
@@ -117,25 +129,12 @@ function AtlasView({ concepts, edges, threads }: AtlasData) {
 export function App() {
   const result = useJournalData(readAtlas);
   return (
-    <AppShell variant="surface" contentPadding={6} mobileNav={false} topNav={(
-      <TopNav label="Trailmap navigation" heading={<TopNavHeading heading="Trailmap" />} centerContent={(
-        <>
-          <TopNavItem label="Journal" href={chrome.runtime.getURL('/journal.html')} />
-          <TopNavItem label="Atlas" href={chrome.runtime.getURL('/atlas.html')} isSelected />
-        </>
-      )} />
-    )}>
-      <VStack gap={4} className="mx-auto min-h-full w-full">
-        <VStack gap={1}>
-          <Heading level={1}>Atlas</Heading>
-          <Text type="supporting">Explore the concepts you’ve learned across expeditions.</Text>
-        </VStack>
-        {!result && <Text role="status">Loading your Atlas…</Text>}
-        {result?.error && <Text role="alert">Could not load the Atlas. Try reloading the page.</Text>}
-        {result?.data && (result.data.concepts.length ? <AtlasView {...result.data} /> : (
-          <Card padding={5}><Text>Your Atlas will grow as you read pages that explain concepts or encounter them across multiple pages.</Text></Card>
-        ))}
-      </VStack>
-    </AppShell>
+    <TrailmapShell title="Atlas" section="atlas" description="Explore the concepts you’ve learned across expeditions.">
+      {!result && <Text role="status">Loading your Atlas…</Text>}
+      {result?.error && <Text role="alert">Could not load the Atlas. Try reloading the page.</Text>}
+      {result?.data && (result.data.concepts.length || result.data.seen.length || result.data.dismissed.length ? <AtlasView {...result.data} /> : (
+        <Card padding={5}><Text>Your Atlas will grow as you read pages that explain concepts and write about them in your notes. Opening a page is not learning, so passing mentions stay off the map.</Text></Card>
+      ))}
+    </TrailmapShell>
   );
 }

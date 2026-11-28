@@ -22,16 +22,18 @@ export function SummarizePage() {
 
   return (
     <VStack gap={2} align="start">
-      <Button label="Summarize this page" clickAction={summarize} />
-      <Text type="supporting">Sends this page’s captured text to your extraction provider.{' '}
-        <Link href="/settings.html#model-providers" target="_blank">Model settings</Link>
-      </Text>
+      <Button label="Summarize this page" size="sm" clickAction={summarize} />
+      <Text type="supporting">Sends this page’s captured text to your extraction provider.</Text>
+      <Link hasUnderline isStandalone href="/settings.html#model-providers" target="_blank">Model settings</Link>
       {reply && (
         <section aria-live="polite">
           {reply.ok ? (
             <VStack gap={1}>
               <Heading level={2}>Summary: {reply.title}</Heading>
               <Text as="p">{reply.summary.summary}</Text>
+              <Text type="supporting">Sent this page’s captured text to your extraction provider.{' '}
+                <Link hasUnderline href="/settings.html#sent-to-model" target="_blank">See what was sent</Link>
+              </Text>
               <List listStyle="disc" density="compact" edge="flush" header={<Heading level={3}>Key takeaways</Heading>}>
                 {reply.summary.takeaways.map((takeaway, index) => (
                   <ListItem key={index} align="first-line" label={<Text>{takeaway}</Text>} />
@@ -42,7 +44,7 @@ export function SummarizePage() {
             <Text>
               {reply.message}{' '}
               {reply.code === 'usage_limit_exceeded' && (
-                <Link href="https://chatgpt.com/settings/usage" target="_blank">ChatGPT usage settings</Link>
+                <Link hasUnderline href="https://chatgpt.com/settings/usage" target="_blank">ChatGPT usage settings</Link>
               )}
             </Text>
           )}

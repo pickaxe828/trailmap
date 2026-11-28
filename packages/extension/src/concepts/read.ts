@@ -1,6 +1,8 @@
 import { ConceptRelationType } from '@trailmap/shared';
 import type { TrailmapDb } from '../db/db';
 import type { ConceptEvidencePage } from './evidence';
+import { summarizeStrength } from './strength';
+import { loadStrengthContext } from './strength-read';
 
 /** Where did I learn this? One result per canonical Page, preserving the evidence Visits and their roles. */
 export async function readConceptEvidence(db: TrailmapDb, conceptId: string): Promise<ConceptEvidencePage[]> {
@@ -39,20 +41,25 @@ export function readConceptEvidenceBatch(db: TrailmapDb, conceptIds: string[]): 
   });
 }
 
-/** Visibility uses current engagement: a Visit may become read after it was enriched. */
+/** PLAN §4.5: a concept is visible when it is learned or studied and the user has not said they did not learn it. */
 export function readVisibleConcepts(db: TrailmapDb) {
-  return db.transaction('r', db.concepts, db.conceptEvidence, db.visits, async () => {
-    const explained = await db.conceptEvidence.filter((row) => row.role === 'explains').toArray();
-    const visits = await db.visits.bulkGet([...new Set(explained.map((row) => row.visitId))]);
-    const read = new Set(visits.flatMap((visit) => visit?.engagement === 'read' ? [visit.id] : []));
-    const taught = new Set(explained.filter((row) => read.has(row.visitId)).map((row) => row.conceptId));
-    return db.concepts.filter((c) => c.exposure >= 2 || taught.has(c.id)).toArray();
+  return db.transaction('r', [db.concepts, db.conceptEvidence, db.visits, db.highlights, db.dismissedConcepts], async () => {
+    const rows = await db.conceptEvidence.toArray();
+    const context = await loadStrengthContext(db, rows);
+    const dismissals = new Map((await db.dismissedConcepts.toArray()).map((row) => [row.conceptId, row]));
+    const byConcept = new Map<string, typeof rows>();
+    for (const row of rows) byConcept.set(row.conceptId, [...byConcept.get(row.conceptId) ?? [], row]);
+    const visible = new Set([...byConcept].filter(([id, evidence]) => {
+      const { strength, dismissed } = summarizeStrength(evidence, context, dismissals.get(id));
+      return strength !== 'seen' && !dismissed;
+    }).map(([id]) => id));
+    return db.concepts.filter((c) => visible.has(c.id)).toArray();
   });
 }
 
 /** Atlas-ready projection. Bridge edges start at a Visit ID, semantic edges at a Concept ID. */
 export function readVisibleConceptGraph(db: TrailmapDb) {
-  return db.transaction('r', [db.concepts, db.conceptEvidence, db.visits, db.edges], async () => {
+  return db.transaction('r', [db.concepts, db.conceptEvidence, db.visits, db.highlights, db.dismissedConcepts, db.edges], async () => {
     const concepts = await readVisibleConcepts(db);
     const visible = new Set(concepts.map((c) => c.id));
     const edges = await db.edges.where('to').anyOf([...visible]).filter((edge) => edge.evidence.length > 0 &&
@@ -66,11 +73,12 @@ export function readVisibleConceptGraph(db: TrailmapDb) {
 export function readExpeditionTopConcepts(db: TrailmapDb, expeditionId: string, limit = 5) {
   return db.transaction('r', [db.visits, db.conceptEvidence, db.concepts], async () => {
     const visitIds = await db.visits.where('expeditionId').equals(expeditionId).primaryKeys();
-    const rows = await db.conceptEvidence.where('visitId').anyOf(visitIds).toArray();
+    const rows = [...await db.conceptEvidence.where('visitId').anyOf(visitIds).toArray(),
+      ...await db.conceptEvidence.where('expeditionId').equals(expeditionId).filter((row) => !visitIds.includes(row.visitId)).toArray()];
     const pagesByConcept = new Map<string, Set<string>>();
     for (const row of rows) {
       const pages = pagesByConcept.get(row.conceptId) ?? new Set<string>();
-      pages.add(row.canonicalUrl);
+      pages.add(row.role === 'learned' ? `notes:${row.id}` : row.canonicalUrl);
       pagesByConcept.set(row.conceptId, pages);
     }
     const concepts = (await db.concepts.bulkGet([...pagesByConcept.keys()])).filter((c) => c !== undefined);

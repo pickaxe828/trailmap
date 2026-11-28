@@ -1,13 +1,21 @@
 import type { Visit } from '@trailmap/shared';
-import type { TrailmapDb } from '../db/db';
+import type { CorrectionLogEntry, TrailmapDb } from '../db/db';
 import { forgetCascade, type ForgetResult } from './forget';
 import { repairExpedition } from './repair';
+import { enqueueNotesEnrichment } from '../notes/enqueue';
+import { enqueueThreadMatch } from '../threads/match';
 import { refreshEditedSessions } from '../threads/corrections';
 import { refreshThread } from '../threads/model';
 import { preserveLegacyNotesSources } from '../threads/provenance';
 import { refreshExpeditionCentroid } from '../segmentation/expedition-recorder';
 
 export type CorrectionsOptions = { db: TrailmapDb; now: () => number; newId: () => string };
+type SessionEdit = { sessionId: string; allowVisit?: (visit: Visit | undefined) => boolean };
+const sessionKey = (id: string) => `notes-session:${id}`;
+const noteText = (value: unknown): string | null | undefined => {
+  const text = (value as { text?: unknown } | null)?.text;
+  return text === null || typeof text === 'string' ? text : undefined;
+};
 
 /**
  * One-click fixes to the trail (docs/PLAN.md §4.3 rule 5, §5 item 1). Every
@@ -19,6 +27,19 @@ export type CorrectionsOptions = { db: TrailmapDb; now: () => number; newId: () 
 export function createCorrections({ db, now, newId }: CorrectionsOptions) {
   const logEntry = (kind: string, targetIds: string[], before: unknown, after: unknown) =>
     db.corrections.add({ id: newId(), at: now(), kind, targetIds, before, after });
+
+  const noteTables = [db.notes, db.corrections, db.visits, db.queries, db.expeditions, db.jobs,
+    db.conceptEvidence, db.concepts, db.edges];
+  const notesAt = (nodeId: string) => db.notes.where('nodeId').equals(nodeId);
+  async function writeNote(nodeId: string, text: string | null, expeditionId?: string | null) {
+    await notesAt(nodeId).delete();
+    if (text) await db.notes.add({ id: newId(), nodeId, text, at: now() });
+    if (expeditionId) await enqueueNotesEnrichment(db, expeditionId, now());
+  }
+
+  const matchingSession = (entry: CorrectionLogEntry, kind: string, targetIds: string[]) =>
+    entry.kind === kind && entry.before !== null && entry.targetIds.length === targetIds.length &&
+    targetIds.every((id, i) => entry.targetIds[i] === id);
 
   /** Membership is Visit.expeditionId, mirrored on the Visit's Query (docs: notes-09). Call inside a transaction. */
   async function assign(visitIds: string[], expeditionId: string) {
@@ -42,15 +63,44 @@ export function createCorrections({ db, now, newId }: CorrectionsOptions) {
       });
     },
 
-    /** One Note per node: saving replaces it, empty text removes it. */
-    async note(nodeId: string, text: string) {
-      const trimmed = text.trim();
-      await db.transaction('rw', db.notes, db.corrections, async () => {
-        const existing = await db.notes.where('nodeId').equals(nodeId).toArray();
-        await db.notes.bulkDelete(existing.map(({ id }) => id));
-        if (trimmed) await db.notes.add({ id: newId(), nodeId, text: trimmed, at: now() });
-        await logEntry('note', [nodeId], { text: existing[0]?.text ?? null }, { text: trimmed || null });
+    /** One Note per node. Autosaves update the same log row, keeping the original `before`. */
+    async note(nodeId: string, text: string, edit?: SessionEdit) {
+      return db.transaction('rw', noteTables, async () => {
+        const visit = await db.visits.get(nodeId);
+        if (visit?.privacyBlocked || (edit?.allowVisit && !edit.allowVisit(visit))) return false;
+        const stop = visit ?? await db.queries.get(nodeId);
+        if (!stop && !await db.expeditions.get(nodeId)) return false;
+        const targetIds = [nodeId];
+        const id = edit ? sessionKey(edit.sessionId) : newId();
+        const entry = edit ? await db.corrections.get(id) : undefined;
+        const previous = (await notesAt(nodeId).first())?.text ?? null;
+        if (entry && (!matchingSession(entry, 'note', targetIds) || noteText(entry.after) !== previous)) return false;
+        const next = text.trim() || null;
+        if (previous === next) return true;
+        await writeNote(nodeId, next, stop?.expeditionId ?? (stop ? null : nodeId));
+        await db.corrections.put({ id, kind: 'note', targetIds, at: now(),
+          before: entry?.before ?? { text: previous }, after: { text: next } });
+        return true;
       });
+    },
+
+    async undoNote(entry: CorrectionLogEntry, at: number) {
+      const [nodeId] = entry.targetIds;
+      const before = noteText(entry.before);
+      const after = noteText(entry.after);
+      if (entry.kind !== 'note' || !nodeId || entry.targetIds.length !== 1 || before === undefined || after === undefined) return null;
+      const visit = await db.visits.get(nodeId);
+      if (visit?.privacyBlocked) return null;
+      const stop = visit ?? await db.queries.get(nodeId);
+      if (!stop && !await db.expeditions.get(nodeId)) return null;
+      if (((await notesAt(nodeId).first())?.text ?? null) !== after ||
+        await db.corrections.where('targetIds').equals(nodeId).filter((other) =>
+          other.kind === 'note' && other.at > entry.at && other.before !== null).first()) return null;
+      await writeNote(nodeId, before, stop?.expeditionId ?? (stop ? null : nodeId));
+      const id = newId();
+      await db.corrections.update(entry.id, { before: null, after: null });
+      await db.corrections.add({ id, at, kind: 'journal-undo', targetIds: entry.targetIds, before: entry.id, after: null });
+      return id;
     },
 
     async rename(expeditionId: string, title: string) {
@@ -66,18 +116,35 @@ export function createCorrections({ db, now, newId }: CorrectionsOptions) {
       });
     },
 
-    async editFieldNotes(expeditionId: string, text: string): Promise<boolean> {
-      return db.transaction('rw', [db.expeditions, db.corrections, db.threads, db.jobs], async () => {
+    /**
+     * My notes (PLAN §3) sit beside the generated field notes and are never overwritten by them. Saving rebuilds what the
+     * thread matcher and living note know about this Expedition and, after a pause, asks the model for its concepts.
+     */
+    async editMyNotes(expeditionId: string, text: string, edit?: SessionEdit & { visitId: string }): Promise<boolean> {
+      return db.transaction('rw', [db.expeditions, db.corrections, db.threads, db.jobs, db.visits, db.queries, db.notes,
+        db.conceptEvidence, db.concepts, db.edges], async () => {
         const expedition = await db.expeditions.get(expeditionId);
         if (!expedition) return false;
+        const targetIds = [expeditionId, ...(edit ? [edit.visitId] : [])];
+        const id = edit ? sessionKey(edit.sessionId) : newId();
+        const entry = edit ? await db.corrections.get(id) : undefined;
+        if (edit) {
+          const visit = await db.visits.get(edit.visitId);
+          if (visit?.expeditionId !== expeditionId || visit.privacyBlocked || (edit.allowVisit && !edit.allowVisit(visit))) return false;
+          if (entry && (!matchingSession(entry, 'my-notes', targetIds) || entry.at !== expedition.myNotesAt)) return false;
+        }
         const at = now();
-        await db.expeditions.update(expeditionId, { fieldNotes: text, userEdited: true, notesWrittenAt: at, unseenNotes: undefined });
+        const trimmed = text.trim();
+        if (trimmed === (expedition.myNotes ?? '')) return true;
+        await db.expeditions.update(expeditionId, { myNotes: trimmed || undefined, myNotesAt: trimmed || expedition.myNotes ? at : undefined,
+          threadSignature: undefined, threadSuggestion: undefined });
         await refreshEditedSessions(db, [expedition], at);
-        // Unlike a manual Note, generated field notes can quote many Visits. Avoid
-        // duplicating their content in the correction log when those Visits are forgotten.
-        await logEntry('field-notes', [expeditionId],
-          { userEdited: expedition.userEdited, notesWrittenAt: expedition.notesWrittenAt },
-          { userEdited: true, notesWrittenAt: at });
+        await enqueueNotesEnrichment(db, expeditionId, at);
+        const current = await db.expeditions.get(expeditionId);
+        if (current?.fieldNotes && !current.threadId) await enqueueThreadMatch(db, current, at);
+        // Counts only: the text itself would outlive a Forget of the pages it was written about.
+        await db.corrections.put({ id, kind: 'my-notes', at, targetIds,
+          before: entry?.before ?? { length: expedition.myNotes?.length ?? 0 }, after: { length: trimmed.length } });
         return true;
       });
     },
@@ -138,7 +205,7 @@ export function createCorrections({ db, now, newId }: CorrectionsOptions) {
     },
 
     /** Folds `fromId` into `intoId`. The target keeps its title and notes. */
-    async merge(intoId: string, fromId: string) {
+    async merge(intoId: string, fromId: string, { log = true } = {}) {
       if (intoId === fromId) return false;
       return db.transaction('rw', [db.visits, db.queries, db.expeditions, db.notes, db.corrections, db.threads, db.jobs, db.pages], async () => {
         const into = await db.expeditions.get(intoId);
@@ -160,7 +227,7 @@ export function createCorrections({ db, now, newId }: CorrectionsOptions) {
         const merged = await db.expeditions.get(intoId);
         if (merged?.threadId && merged.endedAt === null) await db.expeditions.update(intoId, { threadId: null });
         await refreshEditedSessions(db, [into, from], now());
-        await logEntry('merge', [intoId, fromId, ...ids],
+        if (log) await logEntry('merge', [intoId, fromId, ...ids],
           { visits: before, intoId, fromId, fromTitle: from.title }, { visits: await membership(ids) });
         return true;
       });

@@ -12,6 +12,8 @@ import {
 import '@xyflow/react/dist/base.css';
 import type { Visit } from '@trailmap/shared';
 import { memo, useMemo, type DragEvent } from 'react';
+import { expeditionHref } from '../journal/links';
+import { trailFavicon } from '../platform/browser';
 import { webUrl } from '../ui/web-url';
 import { formatActiveTime } from './format';
 import type { TrailGraph, TrailGraphEdge, TrailGraphNode } from './graph';
@@ -19,6 +21,8 @@ import { TRAIL_CARD, useTrailLayout } from './useTrailLayout';
 
 type ReviewActions = {
   summaries: ReadonlyMap<string, string | null>;
+  /** Trail node ids that have a note of the user's own. */
+  noted?: ReadonlyMap<string, string>;
   onSelect: (id: string) => void;
   onDragVisit?: (event: DragEvent, visit: Visit) => void;
 };
@@ -29,31 +33,37 @@ const EDGE_STROKE_WIDTH = 1.5;
 const SKIPPED_EDGE_DASH = '6 4';
 const FAVICON_BITMAP_PX = 32;
 
-/** Chrome's local favicon cache; it doesn't contact the site or a third party. */
-function faviconUrl(pageUrl: string): string {
-  const url = new URL(chrome.runtime.getURL('/_favicon/'));
-  url.searchParams.set('pageUrl', pageUrl);
-  url.searchParams.set('size', String(FAVICON_BITMAP_PX));
-  return url.href;
-}
-
 const interactive = 'pointer-events-auto block size-full rounded-lg text-start hover:outline focus-visible:outline outline-accent';
+
+/** A stop with a note of the user's own. A marker, not a dashed outline: dashes already mean skipped pages. */
+function NoteMarker() {
+  return (
+    <HStack as="span" gap={1} align="center" className="shrink-0 text-accent" role="img" aria-label="Has my note">
+      <svg viewBox="0 0 16 16" aria-hidden="true" className="size-4 fill-current">
+        <path d="M3 1.5h10A1.5 1.5 0 0 1 14.5 3v7a1.5 1.5 0 0 1-1.5 1.5H7.4L4 14.5v-3A1.5 1.5 0 0 1 1.5 10V3A1.5 1.5 0 0 1 3 1.5Zm2 3.75v1.2h6v-1.2H5Zm0 2.4v1.2h4v-1.2H5Z" />
+      </svg>
+    </HStack>
+  );
+}
 
 const TrailCard = memo(function TrailCard({ data: { stop, review } }: NodeProps<CardNode>) {
   const visit = stop.kind === 'skipped' ? null : stop.visit;
   const url = visit && webUrl(visit.url);
+  const favicon = url && trailFavicon(url.href, FAVICON_BITMAP_PX, visit?.favicon);
   const title = stop.kind === 'question' ? stop.query.q : stop.kind === 'skipped' ? `+${stop.visits.length} skipped`
     : stop.visit.title || url?.hostname || 'Untitled Visit';
   const summary = visit && review?.summaries.get(visit.canonicalUrl);
+  const href = visit?.aiConversation ? (visit.expeditionId ? expeditionHref(visit.expeditionId, visit.id) : undefined) : url?.href;
   const caption = stop.kind === 'question' ? 'Search question' : stop.kind === 'skipped' ? 'Pages you didn’t read'
-    : summary || url?.hostname || 'Page';
+    : stop.kind === 'ai-conversation' ? 'AI conversation' : summary || url?.hostname || 'Page';
   const content = (
     <VStack as="span" height="100%" padding={3} gap={1} vAlign="center">
       <HStack as="span" gap={2} align="center">
-        {stop.kind === 'question' ? <Icon icon="search" size="sm" /> : url && (
-          <img src={faviconUrl(url.href)} alt="" draggable={false} className="size-4 shrink-0" />
+        {stop.kind === 'question' ? <Icon icon="search" size="sm" /> : favicon && (
+          <img src={favicon} alt="" draggable={false} className="size-4 shrink-0" />
         )}
-        <Text type="label" maxLines={1} hasTruncateTooltip={false}>{title}</Text>
+        <Text type="label" maxLines={2} className="min-w-0 grow" hasTruncateTooltip={false}>{title}</Text>
+        {review?.noted?.has(stop.id) && <NoteMarker />}
       </HStack>
       <HStack as="span" gap={2} justify="between" align="center">
         <Text type="supporting" maxLines={1} hasTruncateTooltip={false}>{caption}</Text>
@@ -74,8 +84,8 @@ const TrailCard = memo(function TrailCard({ data: { stop, review } }: NodeProps<
               onDragStart={drag ? (event) => drag(event, visit) : undefined}>
               {content}
             </button>
-          ) : url ? (
-            <a href={url.href} target="_blank" rel="noopener noreferrer" title={title} className={interactive}>{content}</a>
+          ) : href ? (
+            <a href={href} target="_blank" rel="noopener noreferrer" title={title} className={interactive}>{content}</a>
           ) : content}
         </Card>
       </VStack>
@@ -93,9 +103,9 @@ function GraphControls() {
     <Panel position="bottom-right">
       <Card padding={1} elevation="low">
         <HStack gap={1}>
-          <Button size="sm" variant="ghost" label="Zoom out" onClick={() => void zoomOut()} />
-          <Button size="sm" variant="ghost" label="Fit trail" onClick={() => void fitView(fitOptions)} />
-          <Button size="sm" variant="ghost" label="Zoom in" onClick={() => void zoomIn()} />
+          <Button size="sm" label="Zoom out" onClick={() => void zoomOut()} />
+          <Button size="sm" label="Fit trail" onClick={() => void fitView(fitOptions)} />
+          <Button size="sm" label="Zoom in" onClick={() => void zoomIn()} />
         </HStack>
       </Card>
     </Panel>
@@ -130,7 +140,7 @@ export function TrailGraphView({ graph, review }: { graph: TrailGraph; review?: 
   return (
     <ReactFlow
       nodes={nodes} edges={edges} nodeTypes={nodeTypes}
-      className="bg-body [--xy-edge-stroke:var(--color-icon-secondary)]"
+      className="[--xy-edge-stroke:var(--color-icon-secondary)]"
       defaultMarkerColor="var(--color-icon-secondary)"
       fitView fitViewOptions={fitOptions} minZoom={0.01} maxZoom={2}
       nodesDraggable={false} nodesConnectable={false} nodesFocusable={false}

@@ -1,0 +1,65 @@
+<!doctype html>
+<!-- Reply envelopes reduced from a real saved Google AI Mode page on 2026-11-28; synthetic sky/scattering content. -->
+<html lang="en">
+<head><meta charset="utf-8"><title>Google Search</title></head>
+<body>
+<section class="bzXtMb">
+  <div data-complete="true"><div jsname="coFSxe"><div class="qRuFed"><div class="CKgc1d" jsname="CS7uPe">
+    <div data-subtree><div class="FkX2oe">
+      <h3 class="MheKwc" data-ignore-copy>AI Mode reply for Why is the sky blue?</h3>
+      <div class="pWvJNd j2luwe"><div data-container-id="main-col" jsname="KFl8ub" class="mZJni Dn7Fzd">
+        <div>
+          <div class="n6owBd awi2gc">Air scatters shorter wavelengths more strongly.</div>
+          <div class="n6owBd awi2gc">Blue light is scattered in many directions. <span class="WBgIic Wg1cdb notranslate"><a class="PMDqCb" href="https://science.test/light.html">Light and scattering</a></span></div>
+          <div hidden>Hidden content</div>
+          <div aria-roledescription="carousel">Related image caption</div>
+        </div>
+        <div class="alk4p q4PqPb">Reply actions</div>
+      </div></div>
+      <div><div data-container-id="rhs-col">Source side panel</div></div>
+    </div></div>
+  </div></div></div></div>
+</section>
+<div jsname="RH7zg" class="tonYlb"></div>
+<template id="follow-up">
+  <div class="CKgc1d" jsname="CS7uPe"><div data-subtree><div class="Zkbeff" data-complete="false">
+    <h3 class="iMqumd" data-ignore-copy></h3>
+    <div class="pWvJNd"><div data-container-id="main-col" jsname="KFl8ub" class="mZJni">
+      <div data-container-id="8"><div class="n6owBd awi2gc"></div></div>
+      <div class="alk4p q4PqPb">Reply actions</div>
+    </div></div>
+  </div></div></div>
+</template>
+<form><textarea aria-label="Ask anything"></textarea><button type="submit" aria-label="Send">Send</button></form>
+<script>
+  // Local test driver (not part of the saved page).
+  const form = document.querySelector('form');
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const question = form.querySelector('textarea').value;
+    form.reset();
+    const url = new URL(location.href);
+    url.searchParams.set('q', question);
+    url.searchParams.set('aai', 'fixture-session-token');
+    history.pushState({}, '', url);
+    const turn = document.querySelector('#follow-up').content.cloneNode(true);
+    const reply = turn.querySelector('.Zkbeff');
+    const prose = turn.querySelector('.n6owBd');
+    turn.querySelector('h3').textContent = `AI Mode reply for ${question}`;
+    document.querySelector('[jsname="RH7zg"]').append(turn);
+    if (question === 'Where did the answer go?') {
+      prose.remove();
+      reply.querySelector('[data-container-id="8"]').textContent = 'Sidebar junk';
+      reply.dataset.complete = 'true';
+      return;
+    }
+    setTimeout(() => {
+      prose.textContent = question === 'What is Rayleigh scattering?'
+        ? 'Rayleigh scattering explains how light scatters from particles much smaller than its wavelength.'
+        : 'Molecules scatter blue light more than red light.';
+      reply.dataset.complete = 'true';
+    }, 250);
+  });
+</script>
+</body>
+</html>

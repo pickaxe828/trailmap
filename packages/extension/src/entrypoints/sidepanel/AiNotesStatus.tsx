@@ -20,7 +20,7 @@ export function AiNotesStatus() {
       description={(
         <>
           AI notes using ChatGPT are paused until your limit resets. Browsing is still recorded.{' '}
-          <Link href="https://chatgpt.com/settings/usage" target="_blank" rel="noopener noreferrer">ChatGPT usage settings</Link>
+          <Link hasUnderline href="https://chatgpt.com/settings/usage" target="_blank" rel="noopener noreferrer">ChatGPT usage settings</Link>
         </>
       )} />;
   }
@@ -33,5 +33,5 @@ export function AiNotesStatus() {
   return <Banner status="info"
     title={hold.reason === 'plan_usage_not_granted'
       ? 'ChatGPT jobs are waiting for plan permission.' : 'Sign in with ChatGPT to resume ChatGPT jobs.'}
-    description={<Link href="/settings.html#model-providers" target="_blank" rel="noopener noreferrer">Open model settings</Link>} />;
+    description={<Link hasUnderline href="/settings.html#model-providers" target="_blank" rel="noopener noreferrer">Open model settings</Link>} />;
 }

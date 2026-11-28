@@ -47,7 +47,7 @@ function RecurrenceLines({ recurrences }: { recurrences: Recurrence[] }) {
   );
 }
 
-export function SessionTimeline({ sessions, recurrences, onDetach }: Pick<ThreadReview, 'sessions' | 'recurrences'> & {
+export function SessionTimeline({ sessions, recurrences, noted, onDetach }: Pick<ThreadReview, 'sessions' | 'recurrences' | 'noted'> & {
   onDetach: (id: string) => void;
 }) {
   const titles = new Map(sessions.map(({ expedition }) => [expedition.id, expedition.title]));
@@ -63,20 +63,23 @@ export function SessionTimeline({ sessions, recurrences, onDetach }: Pick<Thread
           <VStack key={expedition.id} role="listitem" id={sessionAnchor(expedition.id)} gap={2} className="min-w-0">
             <HStack gap={2} justify="between" wrap="wrap" data-session-anchor={expedition.id}>
               <VStack gap={1}>
-                <Text type="supporting">{formatExpeditionDate(expedition.startedAt)}</Text>
-                <Heading level={3}><Link href={expeditionHref(expedition.id)}>{expedition.title}</Link></Heading>
+                <HStack gap={2} wrap="wrap" data-my-notes={noted.has(expedition.id) ? 'written' : 'none'}>
+                  <Text type="supporting">{formatExpeditionDate(expedition.startedAt)}</Text>
+                  {noted.has(expedition.id) ? <Text type="label" color="accent">My notes</Text> : <Text type="supporting">No notes yet</Text>}
+                </HStack>
+                <Heading level={3} maxLines={2} className="wrap-anywhere"><Link hasUnderline className={noted.has(expedition.id) ? undefined : 'text-secondary'} href={expeditionHref(expedition.id)}>{expedition.title}</Link></Heading>
               </VStack>
-              <Button variant="ghost" size="sm" label="Detach session" onClick={() => onDetach(expedition.id)} />
+              <Button variant="destructive" size="sm" label="Detach session" onClick={() => onDetach(expedition.id)} />
             </HStack>
             {recurrences.filter(({ to }) => to === expedition.id).map(({ from, pages, concepts }) => (
-              <VStack gap={1} key={from} padding={2} className="rounded-lg border border-border bg-body">
-                <Text type="supporting">From <Link href={`#${encodeURIComponent(sessionAnchor(from))}`}>{titles.get(from)}</Link></Text>
+              <VStack gap={1} key={from} padding={2} className="rounded-lg border border-border bg-card">
+                <Text type="supporting">From <Link hasUnderline href={`#${encodeURIComponent(sessionAnchor(from))}`}>{titles.get(from)}</Link></Text>
                 {!!pages.length && <Text type="supporting">Revisited: {pages.join(', ')}</Text>}
                 {!!concepts.length && <Text type="supporting">Concepts returned: {concepts.join(', ')}</Text>}
               </VStack>
             ))}
             {graph.nodes.length > 0 ? (
-              <VStack height="clamp(14rem, 32dvh, 24rem)" className="overflow-hidden rounded-lg border border-border">
+              <VStack height="clamp(14rem, 32dvh, 24rem)" className="overflow-hidden rounded-lg border border-border bg-card">
                 <TrailGraphView graph={graph} />
               </VStack>
             ) : <Text type="supporting">This session has no recorded stops.</Text>}

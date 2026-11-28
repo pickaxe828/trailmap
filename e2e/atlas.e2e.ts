@@ -40,7 +40,7 @@ async function seedAtlas(setup: BrowserPage, count: number, withThread = false) 
   const evidence = (concept: Concept, visit: Visit, name = concept.name): ConceptEvidence => ({
     id: `${concept.id}:${visit.id}`, conceptId: concept.id, visitId: visit.id, canonicalUrl: visit.canonicalUrl,
     startedAt: visit.startedAt, name, gloss: concept.gloss, kind: concept.kind, embedding: null,
-    role: concept.id === 'provisional' ? 'mentions' : 'explains',
+    role: concept.id === 'provisional' ? 'mentions' : 'explains', salience: concept.id === 'provisional' ? 'passing' : 'supporting',
   });
   const conceptEvidence = [evidence(concepts[0], visits[0]), evidence(concepts[0], visits[1]),
     evidence(concepts[1], visits[1]), evidence(concepts[1], visits[2], 'Deletion marker'), evidence(concepts[2], visits[0]),
@@ -64,7 +64,7 @@ async function seedAtlas(setup: BrowserPage, count: number, withThread = false) 
 test('the Atlas focuses a Concept through search and shows its Pages, Expeditions and neighbours', async ({ context, openExtensionPage }, info) => {
   const panel = await openExtensionPage('sidepanel.html');
   await seedAtlas(panel, 24);
-  const [atlas] = await Promise.all([context.waitForEvent('page'), panel.getByRole('link', { name: 'Open Atlas' }).click({ timeout: 5000 })]);
+  const [atlas] = await Promise.all([context.waitForEvent('page'), panel.getByRole('link', { name: 'Open Atlas' }).click()]);
   await atlas.emulateMedia({ colorScheme: 'light' });
   await expect(atlas.getByRole('heading', { name: 'Atlas', exact: true })).toBeVisible();
   await expect(atlas.locator('canvas.sigma-nodes')).toBeVisible();
@@ -120,7 +120,7 @@ test('the Atlas Thread filter shows only Concepts with evidence in its sessions'
   await search.fill('Tombstone');
   await atlas.getByRole('option', { name: 'Tombstone' }).click();
   await expect(atlas.getByRole('heading', { name: 'Tombstone' })).toBeVisible();
-  await thread.click({ timeout: 5000 });
+  await thread.click();
   await atlas.getByRole('option', { name: 'Replication foundations' }).click();
   await expect(atlas.getByText('1 of 24 concepts on the map')).toBeVisible();
   await expect(atlas.getByRole('heading', { name: 'Tombstone' })).toHaveCount(0);
@@ -146,4 +146,82 @@ test('the Atlas caps the default map and can focus lower-ranked Concepts in a 2,
   await atlas.getByRole('option', { name: 'Replication reference 1997' }).click();
   await expect(atlas.getByRole('heading', { name: 'Replication reference 1997' })).toBeVisible();
   await expect(atlas.getByText('81 of 2,000 concepts on the map')).toBeVisible();
+});
+
+async function seedGlimpsed(setup: BrowserPage) {
+  const learning = { kind: 'learning' as const, centroid: null, drivingQuestion: null, threadId: null, userEdited: false, fieldNotes: null };
+  const expedition: Expedition = { id: 'phonetics', title: 'Vowel phonation', startedAt: earlier, endedAt: earlier + 1000, ...learning };
+  const makeVisit = (id: string, engagement: Visit['engagement'], activeMs: number, scrollDepth: number): Visit => ({
+    id, title: id, expeditionId: 'phonetics', startedAt: earlier, url: `https://learn.test/${id}`, canonicalUrl: `https://learn.test/${id}`,
+    tabId: 1, parentVisitId: null, transition: 'link', activeMs, scrollDepth, engagement });
+  const visits = [makeVisit('skim-one', 'skimmed', 20_000, 0.2), makeVisit('skim-two', 'skimmed', 15_000, 0.5), makeVisit('read-it', 'read', 90_000, 0.9)];
+  const concept = (id: string, name: string): Concept => ({ id, name, aliases: [], kind: 'concept', gloss: `About ${name}.`, embedding: null, exposure: 2, firstSeen: earlier });
+  const evidence = (id: string, concept: Concept, visit: Visit, role: ConceptEvidence['role'], salience: ConceptEvidence['salience']): ConceptEvidence => ({
+    id, conceptId: concept.id, visitId: visit.id, canonicalUrl: visit.canonicalUrl, startedAt: earlier, name: concept.name, gloss: concept.gloss,
+    kind: 'concept', embedding: null, role, salience });
+  const taa = concept('taa', 'Taa');
+  const pharyngealization = concept('pharyngealization', 'Pharyngealization');
+  await seedCapture(setup, {
+    concepts: [taa, pharyngealization], expeditions: [expedition], visits,
+    pages: visits.map(({ canonicalUrl }) => ({ canonicalUrl, text: '', textHash: 'hash', summary: null, takeaways: [], embedding: null, pageKind: 'article', enrichedAt: null })),
+    conceptEvidence: [evidence('t1', taa, visits[0]!, 'mentions', 'passing'), evidence('t2', taa, visits[1]!, 'mentions', 'passing'),
+      evidence('p1', pharyngealization, visits[2]!, 'explains', 'central')],
+  });
+}
+
+test('the Atlas shows what I learned, offers what I only saw, and lets me say I did not learn something', async ({ openExtensionPage }, info) => {
+  const proof = (name: string) => process.env.PROOF_DIR ? join(process.env.PROOF_DIR, name) : info.outputPath(name);
+  const setup = await openExtensionPage('sidepanel.html');
+  await seedGlimpsed(setup);
+  const atlas = await openExtensionPage('atlas.html');
+  await atlas.setViewportSize({ width: 1280, height: 900 });
+  for (const scheme of ['light', 'dark'] as const) {
+    await atlas.emulateMedia({ colorScheme: scheme });
+    await expect(atlas.getByText('1 of 1 concepts on the map')).toBeVisible();
+    await atlas.screenshot({ path: proof(`atlas-default-${scheme}.png`) });
+  }
+  const search = atlas.getByRole('combobox', { name: 'Find a concept' });
+  await search.fill('Taa');
+  await expect(atlas.getByRole('option', { name: 'No matching concepts' })).toBeVisible();
+
+  // Two skimmed passing mentions appear only when asked for, faded.
+  await atlas.getByRole('switch', { name: 'Include concepts I only saw' }).check();
+  await expect(atlas.getByText('2 of 2 concepts on the map')).toBeVisible();
+  for (const scheme of ['light', 'dark'] as const) {
+    await atlas.emulateMedia({ colorScheme: scheme });
+    // Few concepts, so every one is labelled: Pharyngealization and Taa both have label pixels drawn.
+    await expect.poll(() => atlas.evaluate(() => {
+      const canvas = document.querySelector<HTMLCanvasElement>('canvas.sigma-labels')!;
+      const data = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data;
+      const half = canvas.height / 2;
+      const inked = (from: number, to: number) => { for (let y = from; y < to; y++) for (let x = 0; x < canvas.width; x++) if (data[(y * canvas.width + x) * 4 + 3]! > 0) return true; return false; };
+      return inked(0, half) && inked(half, canvas.height);
+    })).toBe(true);
+    await atlas.screenshot({ path: proof(`atlas-include-seen-${scheme}.png`) });
+    await atlas.locator('canvas.sigma-labels').screenshot({ path: proof(`atlas-map-labels-${scheme}.png`) });
+  }
+  await search.fill('');
+  await search.fill('Taa');
+  await atlas.getByRole('option', { name: 'Taa', exact: true }).click();
+  await expect(atlas.getByText('Only seen on pages.')).toBeVisible();
+
+  // "I didn't learn this" hides the concept, Undo brings it back.
+  await search.fill('Pharyngealization');
+  await atlas.getByRole('option', { name: 'Pharyngealization', exact: true }).click();
+  await expect(atlas.getByText('Studied: it is a main topic of a page you read.')).toBeVisible();
+  await atlas.getByRole('button', { name: 'I didn’t learn this' }).click();
+  await expect(atlas.getByText('Hidden: you said you didn’t learn this.')).toBeVisible();
+  await expect(atlas.getByText('1 of 1 concepts on the map')).toBeVisible();
+  await atlas.screenshot({ path: proof('atlas-hidden-card.png') });
+  await atlas.getByRole('button', { name: 'Undo: show on the Atlas' }).click();
+  await expect(atlas.getByText('2 of 2 concepts on the map')).toBeVisible();
+
+  // Settings lists the hidden concept and restores it too.
+  await atlas.getByRole('button', { name: 'I didn’t learn this' }).click();
+  const settings = await openExtensionPage('settings.html#privacy');
+  await settings.setViewportSize({ width: 1280, height: 900 });
+  await expect(settings.getByRole('heading', { name: 'Concepts hidden from the Atlas' })).toBeVisible();
+  await settings.screenshot({ path: proof('settings-hidden-concepts.png'), fullPage: true });
+  await settings.getByRole('button', { name: 'Show Pharyngealization on the Atlas' }).click();
+  await expect(settings.getByText('No hidden concepts.')).toBeVisible();
 });

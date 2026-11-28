@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>ˤ pharyngealization in the IPA</title>
+  </head>
+  <body>
+    <article>
+      <h1>ˤ pharyngealization in the IPA</h1>
+      <p id="highlight">The modifier letter ˤ marks pharyngealization, a secondary articulation made by retracting the tongue root. It sits beside ʕ, the voiced pharyngeal fricative, and ʔ, the glottal stop.</p>
+    </article>
+    <script>
+      const article = document.querySelector('article');
+      const paragraph = document.getElementById('highlight').textContent;
+      for (let index = 0; index < 140; index++) {
+        const copy = document.createElement('p');
+        copy.textContent = paragraph;
+        article.append(copy);
+      }
+    </script>
+  </body>
+</html>

@@ -13,19 +13,19 @@ import type {
   NavTransitionType,
 } from './events';
 import { WINDOW_ID_NONE } from './events';
-import { isPageContentMessage, isPageVisibilityMessage } from './page-messages';
-import type { RecorderState, RecorderStateStore } from './state-store';
-
-const STORAGE_KEY = 'trailmap.recorderState';
+import { isPageContentMessage, isPageVisibilityMessage, OPEN_AI_CITATION } from './page-messages';
+import type { VisitRecorder } from './recorder';
+import { RECORDER_STATE_KEY, type RecorderState, type RecorderStateStore } from './state-store';
+import { isActiveDocument } from '../platform/browser';
 
 /** Session storage shares the browser lifetime of the tab IDs in RecorderState. */
 export class ChromeSessionStateStore implements RecorderStateStore {
   async load() {
-    const stored = (await chrome.storage.session.get(STORAGE_KEY))[STORAGE_KEY] as RecorderState | undefined;
+    const stored = (await chrome.storage.session.get(RECORDER_STATE_KEY))[RECORDER_STATE_KEY] as RecorderState | undefined;
     return stored?.version === 1 ? stored : null;
   }
   async save(state: RecorderState) {
-    await chrome.storage.session.set({ [STORAGE_KEY]: state });
+    await chrome.storage.session.set({ [RECORDER_STATE_KEY]: state });
   }
 }
 
@@ -58,11 +58,37 @@ function toNavigationEvent(d: CommittedDetails): NavigationEvent {
 
 async function passwordFrame(tabId: number, documentId: string, h: BrowserEventHandlers) {
   const frames = await chrome.webNavigation.getAllFrames({ tabId });
-  const byDocument = new Map(frames?.filter((frame) => frame.documentLifecycle === 'active').map((frame) => [frame.documentId, frame]));
+  const byDocument = new Map(frames?.filter((frame) => isActiveDocument(frame)).map((frame) => [frame.documentId, frame]));
   let frame = byDocument.get(documentId);
   while (frame?.parentDocumentId) frame = byDocument.get(frame.parentDocumentId);
   if (frame?.frameId === 0) await h.onPageContent({
     tabId, documentId: frame.documentId, url: frame.url, content: { kind: 'screen', hasPassword: true },
+  });
+}
+
+/** Detail links open normal web tabs, with the same capture rules as other links. */
+export function startAiCitationLinks(recorder: VisitRecorder) {
+  chrome.runtime.onMessage.addListener((message: unknown, sender, respond) => {
+    if (!message || typeof message !== 'object') return;
+    const { type, visitId, url, background } = message as Record<string, unknown>;
+    if (type !== OPEN_AI_CITATION || typeof visitId !== 'string' || typeof url !== 'string' || sender.frameId !== 0 ||
+        sender.url?.split(/[?#]/, 1)[0] !== chrome.runtime.getURL('/expedition.html')) return;
+    const destination = URL.parse(url);
+    if (!destination || !/^https?:$/.test(destination.protocol) || destination.username || destination.password) return;
+    void (async () => {
+      const tab = await chrome.tabs.create({ active: background !== true });
+      if (tab.id === undefined) return;
+      try {
+        if (await recorder.prepareCitationVisit(tab.id, visitId, url)) {
+          await chrome.tabs.update(tab.id, { url });
+        } else {
+          await chrome.tabs.remove(tab.id);
+        }
+      } catch {
+        await chrome.tabs.remove(tab.id).catch(() => {});
+      }
+    })().then(() => respond(), () => respond());
+    return true;
   });
 }
 
@@ -92,7 +118,7 @@ export class ChromeEventSource implements BrowserEventSource {
       const tabId = sender.tab?.id;
       if (tabId === undefined) return;
       if (sender.frameId !== 0) {
-        if (sender.documentLifecycle === 'active' && sender.documentId && isPageContentMessage(message) &&
+        if (isActiveDocument(sender) && sender.documentId && isPageContentMessage(message) &&
           message.kind === 'screen' && message.hasPassword) {
           void passwordFrame(tabId, sender.documentId, h).then(() => respond(), () => respond());
           return true;
@@ -103,7 +129,7 @@ export class ChromeEventSource implements BrowserEventSource {
         void h.onPageVisibilityChanged({ tabId, visible: message.visible });
         return;
       }
-      if (!sender.url || sender.documentLifecycle !== 'active' || !isPageContentMessage(message)) return;
+      if (!sender.url || !isActiveDocument(sender) || !isPageContentMessage(message)) return;
       // Chrome can report the document's original sender URL after pushState.
       const senderOrigin = URL.parse(sender.url)?.origin;
       if (!senderOrigin || URL.parse(message.pageUrl)?.origin !== senderOrigin) return;

@@ -56,11 +56,13 @@ test('the side panel pauses immediately, resumes on the next navigation and upda
   });
 
   await expect(recording).toBeChecked();
+  await expect(panel.getByRole('textbox', { name: 'Page note' })).toBeVisible();
   await expect.poll(badge).toBe('ON');
   await recording.evaluate((input: HTMLInputElement) => input.click());
   await expect(recording).not.toBeChecked();
   await expect.poll(badge).toBe('OFF');
-  await expect(panel.getByText('Recording paused', { exact: true })).toBeVisible();
+  await expect(panel.getByText('This page isn’t recorded.')).toBeVisible();
+  await expect(panel.getByRole('textbox', { name: 'Page note' })).toHaveCount(0);
   await panel.screenshot({ path: testInfo.outputPath('recording-paused.png') });
   await page.goto(fixtureUrl('learn.test', ARTICLE));
   await page.locator('#highlight').selectText();
@@ -113,9 +115,11 @@ test('the side panel purges earlier Visits and Queries for a skipped site and pr
   await expect.poll(async () => (await readCapture('queries')).map((row) => row.q)).toEqual(['before']);
   const site = panel.getByRole('switch', { name: 'Record www.google.com' });
   await expect(site).toBeChecked();
+  await expect(panel.getByRole('textbox', { name: 'Page note' })).toBeVisible();
   await site.evaluate((input: HTMLInputElement) => input.click());
   await expect(site).not.toBeChecked();
-  await expect(panel.getByText('Site is skipped')).toBeVisible();
+  await expect(panel.getByText('This page isn’t recorded.')).toBeVisible();
+  await expect(panel.getByRole('textbox', { name: 'Page note' })).toHaveCount(0);
   await panel.screenshot({ path: testInfo.outputPath('site-skipped.png') });
   const second = 'https://www.google.com/search?q=private';
   await page.goto(second);
