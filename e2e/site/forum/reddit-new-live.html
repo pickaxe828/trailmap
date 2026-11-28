@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Why does compaction hurt write throughput? : r/databases</title>
+  <link rel="canonical" href="https://www.reddit.com/r/databases/comments/abc123/why_does_compaction_hurt_write_throughput/">
+</head>
+<body>
+  <!-- Structure observed on a live signed-out thread on 2026-11-28 (tags, slots, nesting); all text and names are synthetic. -->
+  <shreddit-app>
+    <left-nav-sidebar><a href="/r/popular/">Popular</a> <a href="/user/some_account/">some_account</a> Recent: r/golang r/rust</left-nav-sidebar>
+    <main>
+      <shreddit-post id="t3_abc123" post-title="Why does compaction hurt write throughput?" author="otter_dev" score="212" permalink="/r/databases/comments/abc123/why_does_compaction_hurt_write_throughput/">
+        <div slot="credit-bar"><a href="/user/otter_dev/">otter_dev</a> <span>3 hr. ago</span></div>
+        <h1 slot="title" id="post-title-t3_abc123">Why does compaction hurt write throughput?</h1>
+        <div slot="post-flair"><span>Question</span></div>
+        <shreddit-post-text-body slot="text-body">
+          <div><div class="md">
+            <p>Our LSM tree stalls writes whenever compaction runs.</p>
+            <p>Is leveled or size-tiered compaction the better default for a write-heavy workload?</p>
+          </div>
+          <div><button type="button"><span>Read more</span></button></div></div>
+        </shreddit-post-text-body>
+        <rpl-dropdown slot="ssr-share-button"><button>Share</button></rpl-dropdown>
+      </shreddit-post>
+      <section>
+        <shreddit-comment-tree>
+          <shreddit-comment thingid="t1_c1" depth="0" author="compaction_fan" score="87" aria-hidden="false">
+            <details open>
+              <summary><div slot="commentAvatar"></div><div slot="commentMeta"><a href="/user/compaction_fan/">compaction_fan</a> <span>2h</span></div></summary>
+              <div><div>
+                <div slot="comment" id="t1_c1-comment-rtjson-content"><p>Size-tiered favours writes, leveled favours reads. Thanks to <a href="/user/leveled_lover/">u/leveled_lover</a> for the benchmark, and to u/plain_mention too.</p></div>
+                <div slot="actionRow"><button>Reply</button> <button>Award</button> <button>Share</button></div>
+              </div></div>
+              <shreddit-comment thingid="t1_c2" depth="1" author="write_amp" score="31" aria-hidden="false">
+                <details open>
+                  <summary><div slot="commentMeta"><a href="/user/write_amp/">write_amp</a></div></summary>
+                  <div><div>
+                    <div slot="comment"><p>Leveled compaction rewrites each byte about ten times, which is where the stall comes from.</p></div>
+                    <div slot="actionRow"><button>Reply</button></div>
+                  </div></div>
+                </details>
+              </shreddit-comment>
+            </details>
+          </shreddit-comment>
+          <shreddit-comment thingid="t1_c3" depth="0" author="[deleted]" score="1">
+            <details open><div><div><div slot="comment"><p>[removed]</p></div></div></div></details>
+          </shreddit-comment>
+          <shreddit-comment thingid="t1_c4" depth="0" author="bloom_filter" score="12">
+            <details open>
+              <summary><div slot="commentMeta"><a href="/user/bloom_filter/">bloom_filter</a></div></summary>
+              <div><div><div slot="comment"><p>Bloom filters per SSTable keep read amplification down when you pick size-tiered.</p></div></div></div>
+            </details>
+          </shreddit-comment>
+          <faceplate-partial loading="lazy" src="/svc/shreddit/more-comments/abc123">View more comments</faceplate-partial>
+        </shreddit-comment-tree>
+      </section>
+    </main>
+  </shreddit-app>
+</body>
+</html>

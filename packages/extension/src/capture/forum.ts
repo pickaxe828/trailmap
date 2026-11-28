@@ -63,7 +63,8 @@ function readText(element: Element, base: string): string {
   for (const anchor of clone.querySelectorAll('a')) {
     if (isUserLink(anchor, base)) anchor.replaceWith(clone.ownerDocument.createTextNode(` ${USER_PLACEHOLDER} `));
   }
-  for (const hidden of clone.querySelectorAll('script, style, template, [hidden], .morecomments, .reply, .collapsed')) hidden.remove();
+  // Buttons are controls ("Read more", "Reply"), never content.
+  for (const hidden of clone.querySelectorAll('script, style, template, button, [hidden], .morecomments, .reply, .collapsed')) hidden.remove();
   for (const block of clone.querySelectorAll(BLOCKS)) block.append(' ');
   return squash(squash(clone.textContent ?? '').replace(/(?<![\w/])\/?u\/[\w-]{2,}/giu, USER_PLACEHOLDER));
 }
@@ -102,7 +103,9 @@ function parseShreddit(document: Document, id: string): Parsed | undefined {
   const post = posts[0]!;
   const postId = post.getAttribute('id') ?? post.getAttribute('post-id');
   if (postId !== `t3_${id}` && postId !== id) return;
-  const slot = (element: Element, name: string) => children(element).find((child) => child.getAttribute('slot') === name);
+  // Live shreddit nests a comment's slots inside `details > div > div`; a slot belongs to its nearest host element.
+  const slot = (host: Element, name: string) => Array.from(host.querySelectorAll(`[slot="${name}"]`))
+    .find((element) => element.parentElement?.closest(host.localName) === host);
   const title = slot(post, 'title');
   if (!title) return;
   const body = slot(post, 'text-body');
