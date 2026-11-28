@@ -460,7 +460,7 @@ Before the stream opens, the response may carry a `detail` field. Use the HTTP s
 | **M1: Expeditions** (1–2 wks) | Engagement scoring, filters, local embeddings (segmentation needs them), segmentation, side panel live trail, manual merge and split. | At least 80% of your expeditions look right without manual fixes. |
 | **M2: Notes** (2 wks) | LLM provider layer in the companion (ChatGPT sign-in, Anthropic key, Ollama), a queue that respects the weekly cap, per-page enrichment, expedition titles and questions, field notes, Obsidian export. | **You stop wanting to take notes by hand.** Use it daily for 2 weeks before going further. |
 | **M3: Threads and Atlas** (2–3 wks) | Threads (matching, living notes, the "picking up" card, the thread page), concept resolution, Atlas view, hybrid search. | Coming back to a topic after a few days lands in the same thread, and clicking a concept answers "where did I learn this?" correctly. |
-| **M4: Depth** (ongoing) | History backfill, YouTube transcripts, PDFs (pdf.js), Reddit/HN thread extractors, weekly digest, Ask, Firefox build, optional spaced-repetition review of concepts. | — |
+| **M4: Depth** (ongoing) | History backfill, YouTube title and description capture (transcripts deferred), PDFs (pdf.js), Reddit/HN thread extractors, weekly digest, Ask, Firefox build, optional spaced-repetition review of concepts. | — |
 
 ## 10. Hard parts, ranked
 

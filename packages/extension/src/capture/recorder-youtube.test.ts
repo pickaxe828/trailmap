@@ -9,8 +9,8 @@ import { FakeBrowser, FakeClock } from './testing';
 const TAB = 1;
 const DOC = 'doc-1';
 const VIDEO = 'https://www.youtube.com/watch?v=aaaaaaaaaaa';
-const TRANSCRIPT = 'A log-structured merge tree buffers writes in a memtable.';
-const text = (visitId: string) => ({ kind: 'text', visitId, text: TRANSCRIPT, textHash: 'a'.repeat(64), sourceHash: 'b'.repeat(64) }) as const;
+const TITLE_AND_DESCRIPTION = 'LSM trees A walkthrough of memtables and compaction.';
+const text = (visitId: string) => ({ kind: 'text', visitId, text: TITLE_AND_DESCRIPTION, textHash: 'a'.repeat(64), sourceHash: 'b'.repeat(64) }) as const;
 
 let db: TrailmapDb;
 let browser: FakeBrowser;
@@ -44,11 +44,11 @@ const open = async (url = VIDEO) => {
 const visit = async () => (await db.visits.toArray())[0]!;
 const everything = async () => JSON.stringify(await Promise.all(db.tables.map((table) => table.toArray())));
 
-test('a watch page is admitted, and its transcript is stored as the Page text and queued for enrichment', async () => {
+test('an admitted watch page stores its title and description as Page text', async () => {
   const { visitId, extract } = await open();
   expect(extract).toBe(true);
   await browser.reportPageContent(TAB, VIDEO, text(visitId), DOC);
-  expect(await db.pages.toArray()).toMatchObject([{ canonicalUrl: VIDEO, text: TRANSCRIPT }]);
+  expect(await db.pages.toArray()).toMatchObject([{ canonicalUrl: VIDEO, text: TITLE_AND_DESCRIPTION }]);
 });
 
 test('watch time, not scroll depth or tab time, drives a video Visit\'s engagement', async () => {
@@ -90,7 +90,7 @@ test('watch time from a document that is no longer the tab\'s is ignored', async
   expect(await visit()).toMatchObject({ engagement: 'bounced' });
 });
 
-test('paused recording or a skipped site stores no transcript and no watch time', async () => {
+test('paused recording or a skipped site stores no video description and no watch time', async () => {
   const { visitId } = await open();
   await recorder.changeRecordingPolicy(async () => { settings = { ...settings, paused: true }; });
   await browser.reportPageContent(TAB, VIDEO, text(visitId), DOC);
@@ -111,7 +111,7 @@ test('a skipped site is never admitted, so the content script has nothing to rea
   expect(await db.visits.count()).toBe(0);
 });
 
-test('forgetting the Visit removes the transcript from every table', async () => {
+test('forgetting the Visit removes the video description from every table', async () => {
   const { visitId } = await open();
   await browser.reportPageContent(TAB, VIDEO, text(visitId), DOC);
   await browser.reportPageContent(TAB, VIDEO, { kind: 'watch', watchMs: 50_000 }, DOC);
