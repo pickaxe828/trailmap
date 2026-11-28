@@ -60,7 +60,8 @@ describe('thread URLs', () => {
   });
 });
 
-describe.each([['old Reddit', 'reddit-old.html', OLD], ['new Reddit', 'reddit-new.html', NEW], ['Hacker News', 'hn-item.html', HN]] as const)(
+describe.each([['old Reddit', 'reddit-old.html', OLD], ['new Reddit', 'reddit-new.html', NEW],
+  ['new Reddit (live layout)', 'reddit-new-live.html', NEW], ['Hacker News', 'hn-item.html', HN]] as const)(
   '%s extractor', (_name, file, url) => {
     test('reads the post and its comments with their nesting depth', async () => {
       const result = (await extract(file, url))!;
@@ -92,6 +93,12 @@ describe('post and comment layout', () => {
     const { text } = (await extract('reddit-old.html', OLD))!;
     expect(text.startsWith('Why does compaction hurt write throughput?\n')).toBe(true);
     expect(text).toContain('Our LSM tree stalls writes whenever compaction runs. Is leveled or size-tiered compaction the better default');
+  });
+  test('new Reddit (live layout): the post body has no button labels and no comment controls', async () => {
+    const { text } = (await extract('reddit-new-live.html', NEW))!;
+    expect(text.startsWith('Why does compaction hurt write throughput?\n')).toBe(true);
+    expect(text).toContain('Our LSM tree stalls writes whenever compaction runs. Is leveled or size-tiered compaction the better default');
+    expect(text).not.toMatch(/Read more|Reply|Award|Share|Question|hr\. ago/);
   });
   test('Hacker News: the story text is the post body', async () => {
     const { text } = (await extract('hn-item.html', HN))!;
