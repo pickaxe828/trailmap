@@ -1,0 +1,202 @@
+name: Release
+
+# Every merge to main is released once CI has passed on it: the version is the latest `vX.Y.Z` release with the patch
+# number raised by one, or `packages/extension/package.json`'s version when that is higher (set it there to start a
+# new minor or major). Running the workflow by hand makes a draft release to inspect. A pull request that changes
+# this workflow builds every asset but publishes nothing.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version for the draft release, e.g. 0.1.0'
+        required: true
+  pull_request:
+    paths: ['.github/workflows/release.yml', '.github/release-notes.md']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  BUN_VERSION: 1.4.2
+  # The commit CI passed on (workflow_run), or the triggering commit otherwise.
+  SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+jobs:
+  version:
+    # Release only after a successful CI run on a push to main, never after a failed one.
+    if: github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SHA }}
+      - id: v
+        env:
+          INPUT: ${{ inputs.version }}
+          RUN: ${{ github.run_number }}
+        run: |
+          semver='^[0-9]+\.[0-9]+\.[0-9]+$'
+          case "$GITHUB_EVENT_NAME" in
+            workflow_dispatch) version="${INPUT#v}" ;;
+            pull_request) version="0.0.$RUN" ;;
+            *)
+              latest=$(git ls-remote --tags --refs origin 'v*' | sed 's#.*refs/tags/v##' | grep -E "$semver" | sort -V | tail -1)
+              declared=$(jq -r .version packages/extension/package.json)
+              if [ -n "$latest" ]; then
+                IFS=. read -r major minor patch <<< "$latest"
+                bumped="$major.$minor.$((patch + 1))"
+              else
+                bumped=0.1.0
+              fi
+              version=$(printf '%s\n%s\n' "$bumped" "$declared" | grep -E "$semver" | sort -V | tail -1)
+              ;;
+          esac
+          # Browsers accept only dot-separated integers as an extension version.
+          [[ "$version" =~ $semver ]] || { echo "::error::Version must look like 1.2.3, got '$version'"; exit 1; }
+          if [ "$GITHUB_EVENT_NAME" != pull_request ] && git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null; then
+            echo "::error::v$version already exists"; exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Release version: $version"
+
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SHA }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun run test
+
+  extension:
+    needs: [version, check]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+      AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SHA }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - name: Stamp the manifest version
+        working-directory: packages/extension
+        run: bun -e 'const f = "package.json"; const p = await Bun.file(f).json(); p.version = process.env.VERSION; await Bun.write(f, JSON.stringify(p, null, 2) + "\n")'
+      - name: Zip the Chromium and Firefox builds
+        working-directory: packages/extension
+        run: |
+          bunx wxt zip
+          bunx wxt zip -b firefox --mv3
+      - run: bun run lint:firefox
+      - name: Collect assets
+        run: |
+          mkdir -p dist
+          cp "packages/extension/.output/trailmapextension-$VERSION-chrome.zip" "dist/trailmap-$VERSION-chrome.zip"
+          cp "packages/extension/.output/trailmapextension-$VERSION-firefox.zip" "dist/trailmap-$VERSION-firefox.zip"
+      # Only a real release is signed: AMO accepts each version once, so a dry run must not use it up.
+      - name: Sign the Firefox build (unlisted)
+        if: github.event_name == 'workflow_run' && env.AMO_JWT_ISSUER != '' && env.AMO_JWT_SECRET != ''
+        run: |
+          bun run sign:firefox --upload-source-code "packages/extension/.output/trailmapextension-$VERSION-sources.zip"
+          cp packages/extension/.output/firefox-signed/*.xpi "dist/trailmap-$VERSION-firefox.xpi"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: extension
+          path: dist/
+          if-no-files-found: error
+
+  companion:
+    needs: [version, check]
+    strategy:
+      matrix:
+        include:
+          - { os: macos-latest, target: darwin-arm64 }
+          - { os: macos-latest, target: darwin-x64 }
+          - { os: ubuntu-latest, target: linux-x64 }
+          - { os: ubuntu-latest, target: linux-arm64 }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SHA }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - name: Compile
+        working-directory: packages/companion
+        run: bun build --compile --target="bun-$TARGET" src/main.ts --outfile "out/trailmap-companion"
+      # macOS refuses to run an unsigned arm64 binary; an ad-hoc signature is enough for a local executable.
+      - name: Ad-hoc sign
+        if: runner.os == 'macOS'
+        run: codesign --force --sign - packages/companion/out/trailmap-companion
+      - name: Smoke test
+        if: (runner.os == 'macOS' && matrix.target == 'darwin-arm64') || (runner.os == 'Linux' && matrix.target == 'linux-x64')
+        run: packages/companion/out/trailmap-companion --version
+      - name: Package
+        run: |
+          mkdir -p dist
+          tar -czf "dist/trailmap-companion-$VERSION-$TARGET.tar.gz" -C packages/companion/out trailmap-companion
+      - uses: actions/upload-artifact@v4
+        with:
+          name: companion-${{ matrix.target }}
+          path: dist/
+          if-no-files-found: error
+
+  release:
+    needs: [version, extension, companion]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SHA }}
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum -- * > SHA256SUMS && cat SHA256SUMS
+      - name: Release notes
+        run: sed "s/{{VERSION}}/$VERSION/g" .github/release-notes.md > notes.md
+      - name: Publish
+        if: github.event_name != 'pull_request'
+        run: |
+          draft=()
+          [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && draft=(--draft)
+          gh release create "v$VERSION" dist/* "${draft[@]}" --target "$SHA" \
+            --title "Trailmap $VERSION" --notes-file notes.md --generate-notes
+      - name: Dry run summary
+        if: github.event_name == 'pull_request'
+        run: |
+          { echo "## Release dry run ($VERSION)"; echo; echo '```'; ls -l dist; echo; cat dist/SHA256SUMS; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
