@@ -8,6 +8,16 @@ An MV3 extension for Chromium, Firefox and Zen that turns learning-oriented brow
 
 Status: under construction.
 
+## Install a release
+
+Every merge to `main` that passes CI is published on the [Releases](../../releases) page:
+- the Chromium build (`trailmap-<version>-chrome.zip`);
+- the Firefox and Zen build (`trailmap-<version>-firefox.zip`), plus a signed `.xpi` when AMO keys are configured;
+- the companion for macOS (Apple silicon and Intel) and Linux (x64 and arm64);
+- `SHA256SUMS`.
+
+Each release's notes give the install steps.
+
 ## Quick start
 
 Requires [Bun](https://bun.sh) 1.4+.

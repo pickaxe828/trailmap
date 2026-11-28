@@ -153,6 +153,15 @@ Only the **public** key is committed (`packages/extension/extension-key.ts`). Th
 
 `.github/workflows/ci.yml` (ubuntu): install, typecheck, test, build, build:companion, then install Chromium and run E2E. It runs on pull requests to any branch and on pushes to `main` and `integration`.
 
+`.github/workflows/release.yml` publishes a GitHub Release after every successful CI run on a push to `main`.
+- **Version:** the latest `vX.Y.Z` tag with the patch raised by one, or `packages/extension/package.json`'s version if that is higher. Raise that version to start a new minor or major. It is stamped into the manifest only at release time; the repository keeps `0.0.0` until someone raises it.
+- **Assets:**
+  - `wxt zip` output for Chromium and Firefox.
+  - The companion compiled for `darwin-arm64`, `darwin-x64`, `linux-x64` and `linux-arm64`. The macOS builds are ad-hoc signed and not notarized.
+  - `SHA256SUMS`.
+- **Firefox signing:** a signed unlisted `.xpi` is added only for a real release, and only if the `AMO_JWT_ISSUER` and `AMO_JWT_SECRET` secrets exist.
+- **Other runs:** running the workflow by hand creates a draft release. A pull request that changes the workflow or `.github/release-notes.md` (the install steps) builds everything and publishes nothing.
+
 ## Astryx
 
 The block below was written by `astryx init`, run from `packages/extension` (where Astryx is installed), and copied here. After an Astryx upgrade, run `bun run astryx init --agent codex`, copy the refreshed block from the `packages/extension/AGENTS.md` it writes into this file, and delete that file. Run its commands as `bun run astryx <cmd>` from the repo root.
