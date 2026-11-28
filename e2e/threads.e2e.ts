@@ -157,10 +157,11 @@ test('marking an expedition as learning generates field notes; marking it not le
       summary: 'Replicas track deletions with tombstones.', takeaways: [], embedding: null, pageKind: 'article', enrichedAt: at }],
   });
   const journal = await openExtensionPage('journal.html');
-  await expect(journal.getByText('Mark as learning?', { exact: true })).toBeVisible();
+  const markAsLearning = { name: 'Mark as learning', exact: true };
+  await expect(journal.getByRole('article').getByRole('button', markAsLearning)).toBeVisible();
   await journal.getByRole('button', { name: 'Select', exact: true }).click();
   await journal.getByRole('checkbox', { name: 'Select Replicated lists' }).check();
-  await journal.getByRole('button', { name: 'Mark as learning', exact: true }).click();
+  await journal.getByRole('toolbar', { name: 'Organise selected cards' }).getByRole('button', markAsLearning).click();
   await expect(journal.getByText('New field notes')).toBeVisible({ timeout: 30_000 });
   await journal.getByRole('heading', { name: 'Replicated lists' }).click();
   const finding = journal.getByText(/A tombstone records/);
