@@ -26,20 +26,20 @@ export function SuggestionRows({ expedition, group, merges, busy, run }: {
   expedition: Expedition; group?: ThreadTarget; merges?: Expedition[];
   busy: boolean; run: (action: JournalAction) => Promise<boolean>;
 }) {
-  function row(question: string, subject: string, verb: string, glyph: typeof LinkIcon, action: JournalAction, target?: SuggestionTarget): ReactNode {
-    const label = subject ? `${question} ${subject}?` : `${question}?`;
+  function row(question: string, subject: string, verb: string, glyph: typeof LinkIcon, action: JournalAction, target: SuggestionTarget): ReactNode {
+    const label = `${question} ${subject}?`;
     return (
-      <HStack key={target ? `${verb}:${target.kind}:${target.id}` : verb} role="group" aria-label={label}
+      <HStack key={`${verb}:${target.kind}:${target.id}`} role="group" aria-label={label}
         align="center" gap={2} wrap="wrap">
         <HStack align="start" gap={2} className="min-w-0 flex-1 basis-48">
           <Icon icon={glyph} size="sm" color="secondary" />
-          <Text type="supporting" maxLines={2} className="min-w-0 flex-1">{subject ? <>{question} <b>{subject}</b>?</> : `${question}?`}</Text>
+          <Text type="supporting" maxLines={2} className="min-w-0 flex-1">{question} <b>{subject}</b>?</Text>
         </HStack>
         <HStack align="center" gap={1} className="shrink-0">
           <Button label={verb} aria-label={`${verb}: ${label}`} variant="secondary" size="sm"
             isDisabled={busy} onClick={() => void run(action)} />
-          {target && <IconButton label={`Dismiss: ${label}`} icon={<Icon icon="close" />} variant="ghost" size="sm" isDisabled={busy}
-            tooltip="Dismiss" onClick={() => void run({ action: 'dismiss', expeditionId: expedition.id, target })} />}
+          <IconButton label={`Dismiss: ${label}`} icon={<Icon icon="close" />} variant="ghost" size="sm" isDisabled={busy}
+            tooltip="Dismiss" onClick={() => void run({ action: 'dismiss', expeditionId: expedition.id, target })} />
         </HStack>
       </HStack>
     );
@@ -47,7 +47,11 @@ export function SuggestionRows({ expedition, group, merges, busy, run }: {
   const rows = [];
   if (expedition.kind === 'unclassified') {
     const plan = planOrganisation([expedition], { action: 'classify', kind: 'learning' });
-    if (plan) rows.push(row('Mark as learning', '', 'Mark as learning', LinkIcon, plan));
+    if (plan) rows.push(
+      <HStack key="classify">
+        <Button label="Mark as learning" variant="secondary" size="sm" isDisabled={busy} onClick={() => void run(plan)} />
+      </HStack>,
+    );
   }
   if (group) {
     const target = { id: group.id, kind: group.kind };

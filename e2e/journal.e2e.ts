@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import type { Page as BrowserPage } from '@playwright/test';
 import type { Expedition, Page, Query, Visit } from '../packages/shared/src/domain';
-import { expect, test } from './fixtures';
+import { expect, seedCapture, test } from './fixtures';
 
 const start = Date.UTC(2025, 4, 12, 12);
 const expedition = (id: string, title: string, startedAt: number, extra: Partial<Expedition> = {}): Expedition => ({
@@ -86,6 +86,83 @@ for (const width of [1280, 360]) {
     }
   });
 }
+
+test('Journal hover and keyboard focus highlight one surface per card', async ({ openExtensionPage }) => {
+  const setup = await openExtensionPage('sidepanel.html');
+  await seedCapture(setup, {
+    expeditions: [
+      expedition('solar', 'How solar panels work', start + 3000, { myNotes: 'Photovoltaics convert sunlight into electricity.' }),
+      expedition('cells', 'Photovoltaic cells', start + 2000, { kind: 'unclassified' }),
+      expedition('first', 'Vector clocks', start, { threadId: 'clocks' }),
+      expedition('second', 'Clock drift', start + 500, { threadId: 'clocks' }),
+      expedition('markers', 'Delete markers', start - 500, { mergeSuggestions: [{ expeditionId: 'replicas', reason: 'Same topic' }] }),
+      expedition('replicas', 'Replicated deletes', start - 1000),
+    ],
+    threads: [{ id: 'clocks', title: 'Distributed clocks', question: null, lastActiveAt: start + 1500,
+      status: 'active', livingNote: null, centroid: null, conceptIds: [] }],
+  });
+  const journal = await openExtensionPage('journal.html');
+  await journal.setViewportSize({ width: 1280, height: 900 });
+  const cards = journal.getByRole('article');
+  await expect(cards).toHaveCount(5);
+  const journalHeading = journal.getByRole('heading', { name: 'Journal', exact: true });
+  const unclassified = journal.getByRole('link', { name: 'Photovoltaic cells', exact: true });
+  const link = journal.getByRole('link', { name: 'How solar panels work', exact: true });
+  for (const colorScheme of ['light', 'dark'] as const) {
+    await journal.emulateMedia({ colorScheme, reducedMotion: 'reduce' });
+    const screenshot = async (state: string) => {
+      if (process.env.PROOF_DIR) await journal.screenshot({ path: join(process.env.PROOF_DIR, `journal-cards-${colorScheme}-${state}.png`) });
+    };
+    await journalHeading.click(); // Keep hover and keyboard focus off the cards at rest.
+    await screenshot('rest');
+    for (const [title, state] of [
+      ['How solar panels work', 'plain-hover'], ['Photovoltaic cells', 'unclassified-hover'],
+      ['Distributed clocks', 'thread-hover'], ['Delete markers', 'merge-hover'],
+    ] as const) {
+      const card = cards.filter({ has: journal.getByRole('heading', { name: title, exact: true }) });
+      const surface = card.locator('.astryx-card, .astryx-clickable-card');
+      await journalHeading.hover();
+      await expect(surface).toHaveCount(1);
+      // Astryx paints the hover tint with an overlay, not by recolouring the base card.
+      const paint = () => surface.evaluate((node) => [null, '::before', '::after'].map((pseudo) => {
+        const { backgroundColor, opacity } = getComputedStyle(node, pseudo);
+        return { backgroundColor, opacity };
+      }));
+      const restingPaint = await paint();
+      await card.getByRole('heading', { level: 3 }).hover();
+      await expect.poll(paint).not.toEqual(restingPaint);
+      expect(await surface.boundingBox()).toEqual(await card.boundingBox());
+      await screenshot(state);
+    }
+    await journalHeading.hover();
+    await journal.getByRole('button', { name: 'Select', exact: true }).focus();
+    await journal.keyboard.press('Tab');
+    await expect(link).toBeFocused();
+    await journal.keyboard.press('Tab');
+    await expect(unclassified).toBeFocused();
+    await screenshot('focus');
+  }
+  await journal.keyboard.press('Shift+Tab');
+  await expect(link).toBeFocused();
+  await journal.keyboard.press('Enter');
+  await expect(journal).toHaveURL(/expedition\.html\?id=solar$/);
+});
+
+test('an unclassified Journal card has one Mark as learning action and activating it does not open the Expedition', async ({ openExtensionPage }) => {
+  const setup = await openExtensionPage('sidepanel.html');
+  await seedCapture(setup, { expeditions: [expedition('cells', 'Photovoltaic cells', start, { kind: 'unclassified' })] });
+  const journal = await openExtensionPage('journal.html');
+  const card = journal.getByRole('article').filter({ has: journal.getByRole('heading', { name: 'Photovoltaic cells' }) });
+  const mark = card.getByRole('button', { name: 'Mark as learning', exact: true });
+  await expect(card.getByText(/Mark as learning/)).toHaveCount(1);
+  await mark.press('Enter');
+  await expect(card.getByText('Learning', { exact: true })).toBeVisible();
+  await expect(journal).toHaveURL(/journal\.html$/);
+  await journal.getByRole('button', { name: 'Undo', exact: true }).click();
+  await mark.click();
+  await expect(card.getByText('Learning', { exact: true })).toBeVisible();
+  await expect(journal).toHaveURL(/journal\.html$/);
+});
 
 test('select two cards to start a thread, then drop another expedition on it', async ({ openExtensionPage }, info) => {
   const setup = await openExtensionPage('sidepanel.html');
